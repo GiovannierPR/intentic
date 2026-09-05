@@ -1,4 +1,6 @@
-import { type CommandClass, CommandClassSchema } from "./schemas/agent.js";
+import { HISTORY_ROOT, WORKSPACE_ROOT } from "@intentic/constants";
+import { type CommandClass, CommandClassSchema, type CommandLocus } from "./schemas/agent.js";
+import { inertRegions, isLive } from "./shell-regions.js";
 
 /* WHICH CLASSES A SHELL COMMAND FALLS IN, the classifier behind every command gate, read before the command runs.
  *
@@ -27,6 +29,18 @@ import { type CommandClass, CommandClassSchema } from "./schemas/agent.js";
  * That changes what these patterns should optimise for: being OVER-inclusive is close to free, because a false
  * positive now costs one model call rather than one interruption, and a miss still costs everything. Anyone
  * tuning a pattern below should widen rather than narrow it.
+ *
+ * WITH ONE EXCEPTION, AND IT IS WHY `live` EXISTS. The hard rule (safety-policy.ts hardRuleClasses) still turns
+ * a match straight into an interruption nothing can waive, so for the classes it covers a false positive costs
+ * exactly what it always did. That left the old failure standing in the one place it could not be argued out
+ * of: `echo "rm -rf /" >> notes.md` and `rg 'rm -rf /'` were un-waivable cards over a string. So every match
+ * carries whether a shell would RUN the fragment or merely print, search or write it (shell-regions.ts), and
+ * only the hard rule reads that bit. The tables stay over-inclusive; the un-waivable tier stops firing on text.
+ *
+ * AND IT IS ASKED OF A PLACE. `rm -rf /usr` ends a laptop and costs a container nothing, because a container is
+ * rebuilt from an image; a Docker volume here is a dev database the agent made and there is the owner's data.
+ * Half the tables below therefore have two answers, chosen by CommandContext.locus, and the caller must say
+ * which machine it is asking about. schemas/agent.ts CommandLocus argues the split.
  *
  * Matching is deliberately UNANCHORED, substrings, not line starts. Another PreToolUse hook may have rewrapped
  * the command by the time this reads it (agent-terminals.ts wraps every Bash call in bin/tmux-run), and the
@@ -58,16 +72,30 @@ export interface CommandSpan {
     readonly end: number;
 }
 
-// One class the command fell in, and the fragments that put it there. `spans` is never empty: a class with
-// nothing to point at is a class this walk does not report.
+/* One class the command fell in, and the fragments that put it there. `spans` is never empty: a class with
+ * nothing to point at is a class this walk does not report. */
 export interface CommandMatch {
     readonly commandClass: CommandClass;
     readonly spans: readonly CommandSpan[];
+    /* Would a shell RUN any of those fragments, or are they all text — a heredoc body, a comment, a quoted
+     * argument to echo or a grep (shell-regions.ts says how that is decided and how wrong it is allowed to be)?
+     *
+     * ONLY THE HARD RULE READS THIS, and that is the whole point of it being a flag on the match rather than a
+     * filter over the tables. A mention still puts the command in the class, still reaches the judge, and is
+     * still marked on the card: the judge is the tier that can tell a README from a delete, and taking the
+     * class away would take the question away from it. What a mention must NOT do is trip the one tier that
+     * cannot be argued with, which is what `echo "rm -rf /" >> notes.md` used to do. */
+    readonly live: boolean;
 }
 
 /* WHAT THE CALLER CAN CHECK THAT THE PATTERNS CANNOT. Optional everywhere: absent ⇒ every table answers from
  * the command text alone, which is what the browser, the machine agent and every test that does not care get. */
 export interface CommandContext {
+    /* WHERE THIS COMMAND WOULD RUN, and it is the one field with no default. Half this catalog means something
+     * different on a disposable container than on somebody's laptop — which directories are roots, whether a
+     * Docker volume is a dev database or their data — and a default would be one of those two answers applied
+     * silently to the other machine. Callers state it; schemas/agent.ts CommandLocus argues the split. */
+    readonly locus: CommandLocus;
     /* Does the file at this path — as the command spells it, `~/.npmrc`, `.env`, `/work/app/.env.local` — hold
      * credential material? (credential-material.ts says what that means; the caller says how to read a file.)
      *
@@ -251,16 +279,38 @@ const parseRm = (command: string): RmInvocation[] => {
 };
 
 /* A TARGET THAT IS A ROOT RATHER THAN SOMETHING INSIDE ONE. This is the whole difference between the two
- * deletion classes, so it is deliberately a short, closed list of whole names rather than a clever heuristic:
- * the filesystem root and the top-level directories an OS keeps, the two trees this product keeps state in, a
- * home directory however it is spelled, and a Windows drive.
+ * deletion classes, so it is deliberately a short, closed list of whole names rather than a clever heuristic.
  *
- * `/tmp` is deliberately absent. It is scratch by definition and emptying it is a chore, not an incident. */
-const ROOT_DIRECTORIES = new Set([
-    // The empty string is what the filesystem root normalizes to, see trimTarget.
+ * AND IT IS A DIFFERENT LIST PER LOCUS, because "root" means "the thing nothing here brings back" and the two
+ * machines answer that very differently. Everything below is measured against one question: after this delete,
+ * what restores it?
+ *
+ * `/tmp` is deliberately absent from both. It is scratch by definition and emptying it is a chore, not an
+ * incident. */
+
+/* IN THIS SANDBOX: two entries, and the shortness is the point rather than an oversight.
+ *
+ *   ``        the filesystem root itself (what trimTarget normalizes `/` to). Nothing restores it.
+ *   /history  every OTHER conversation's worktrees and logs. THIS turn cannot recreate them at any price,
+ *             which is exactly what makes it a root here and the reason it outranks anything in /work.
+ *
+ * WHAT IS DELIBERATELY NOT HERE, and each was hard-ruled before this: `/usr`, `/etc`, `/bin`, `/var`, `/opt`
+ * and the rest of the container's OS come back with the image — recreating this sandbox is a documented
+ * operation, not a catastrophe. `/work` is a git worktree whose delta lands as uncommitted changes, and it is
+ * also the directory an agent has the most legitimate reason to clear. `/Users`, `/Applications`, `/System`,
+ * `/Library` and a Windows drive do not exist in this container at all, so holding them here bought nothing and
+ * cost a card. All of them are still files.destructive, still triaged, still judged — they have simply stopped
+ * being un-waivable. */
+const SANDBOX_ROOTS = new Set(["", HISTORY_ROOT]);
+
+/* ON THE OWNER'S OWN COMPUTER: the full list, because nothing there is rebuilt from an image and there is no
+ * checkpoint under any of it. The filesystem root, the top-level directories an OS keeps, both of this
+ * product's own trees (a device may be running one), a home directory however it is spelled, and a Windows
+ * drive. Unchanged from what this catalog held before the split. */
+const DEVICE_ROOTS = new Set([
     "",
-    "/work",
-    "/history",
+    WORKSPACE_ROOT,
+    HISTORY_ROOT,
     "/home",
     "/root",
     "/etc",
@@ -284,6 +334,8 @@ const ROOT_DIRECTORIES = new Set([
     "/Library",
 ]);
 
+const rootsAt = (locus: CommandLocus): ReadonlySet<string> => (locus === "sandbox" ? SANDBOX_ROOTS : DEVICE_ROOTS);
+
 const HOME_ALIAS = /^(?:~|\$HOME|\$\{HOME\}|%USERPROFILE%)$/;
 const WINDOWS_DRIVE = /^[A-Za-z]:$/;
 
@@ -293,14 +345,16 @@ const WINDOWS_DRIVE = /^[A-Za-z]:$/;
  * case this class exists to stay out of the way of. */
 const trimTarget = (operand: string): string => operand.replace(/[/\\]\*+$/, "").replace(/[/\\]+$/, "");
 
-const isRootTarget = (operand: string): boolean => {
+const isRootTarget = (operand: string, locus: CommandLocus): boolean => {
     const target = trimTarget(operand);
+    /* A home directory and a Windows drive are roots on a DEVICE only. In the container `~` is the agent's own
+     * scratch home, rebuilt with the image, and `C:` is not a path that exists. */
     if (HOME_ALIAS.test(target) || WINDOWS_DRIVE.test(target)) {
-        return true;
+        return locus === "device";
     }
     // Only an absolute path can name a root, and `""` is the root itself. A relative path is inside whatever
     // the shell is standing in, which this cannot know and must not guess about.
-    return target === "" ? operand.startsWith("/") || operand.startsWith("\\") : ROOT_DIRECTORIES.has(target);
+    return target === "" ? operand.startsWith("/") || operand.startsWith("\\") : rootsAt(locus).has(target);
 };
 
 /* --- the JS execution backend's own deletes -------------------------------------------------------------
@@ -355,9 +409,13 @@ const nodeDeleteTargets = (program: string): { readonly target: string; readonly
  * it), `docker image prune` (pull it again), `git reset --hard` (that is git.destructive, and the reflog has
  * it), `rm -rf node_modules` (install it again). The point of a floor is that it is rare enough to be worth
  * stopping for; a floor that fires on ordinary work is one people learn to click through. */
-const SYSTEM_DESTRUCTIVE = [
-    // Format, wipe or overwrite a block device. `dd` only counts when it is pointed AT a device: reading one
-    // into a file is how an image is taken, and holding a backup would be exactly the wrong lesson.
+/* A BLOCK DEVICE, FORMATTED, WIPED OR OVERWRITTEN. The only membership of system.destructive that does not
+ * depend on where the command runs: there is no image, checkpoint or worktree behind a disk at either locus,
+ * and this is what the shipped safety policy has always told the owner it holds unconditionally.
+ *
+ * `dd` only counts when it is pointed AT a device: reading one into a file is how an image is taken, and
+ * holding a backup would be exactly the wrong lesson. */
+const BLOCK_DEVICE = [
     /\bmkfs(?:\.\w+)?\b/,
     /\bwipefs\b/,
     /\bblkdiscard\b/,
@@ -366,11 +424,22 @@ const SYSTEM_DESTRUCTIVE = [
     /\bshred\b[^|;&]*\s\/dev\//,
     // A redirect straight onto a disk device, which is the same wipe without the ceremony.
     />\s*\/dev\/(?:[shv]d[a-z]|nvme\d|disk\d|mmcblk\d)/,
-    /* Docker state that is data rather than image. A named volume IS the database; `system prune` takes every
-     * unused one with it, and `compose down -v` is the spelling people reach for without reading the flag.
-     * In this sandbox these hit the nested engine (the host's socket is never mounted, see
-     * capabilities/handlers/docker.ts), so the blast radius is the dev databases the agent has been working
-     * against. Sent to somebody's own device through the host agent, it is whatever they run on it. */
+];
+
+/* CONTAINER STATE THAT IS DATA RATHER THAN IMAGE, its own class (container.state) because the two loci
+ * disagree about it more sharply than about anything else in this catalog.
+ *
+ * IN THIS SANDBOX these reach the NESTED engine — the host's Docker socket is never mounted, see
+ * capabilities/handlers/docker.ts — so the volumes in reach are the ones the agent itself created, and tearing
+ * down a smoke-test stack it just brought up is ordinary work. Holding it as an un-waivable card was the
+ * concrete complaint that produced this split: `docker volume rm` on a throwaway test container is not the
+ * class of thing a person needs woken for.
+ *
+ * ON SOMEBODY'S OWN COMPUTER a named volume IS the database, and the owner's policy says never. It stays
+ * hard-ruled there (safety-policy.ts hardRuleClasses), and the machine's own `destructive` scope sits under
+ * that (machine/src/device/tools/shell.ts GATED_CLASSES), which is the part that is a boundary rather than
+ * friction. */
+const CONTAINER_STATE = [
     /\b(?:docker|podman)\s+volume\s+(?:rm|remove|prune)\b/,
     /\b(?:docker|podman)\s+system\s+prune\b/,
     /\b(?:docker(?:\s+compose|-compose)?|podman-compose)\s+down\b[^|;&]*\s(?:-v\b|--volumes\b)/,
@@ -381,25 +450,27 @@ const recursiveForceRms = (command: string): CommandSpan[] =>
         .filter((invocation) => invocation.recursive && invocation.force)
         .map((invocation) => invocation.span);
 
-// A recursive delete aimed at a root, in either spelling the gate can be handed: the shell's `rm -rf /` and
-// the script's `fs.rmSync("/", { recursive: true })`.
-const rootDeletes = (program: string): CommandSpan[] => [
+/* A recursive delete aimed at a root, in either spelling the gate can be handed: the shell's `rm -rf /` and
+ * the script's `fs.rmSync("/", { recursive: true })`. Which targets count as roots is the locus's answer, so
+ * `rm -rf /usr` is this class on a laptop and merely files.destructive in a container built from an image. */
+const rootDeletes = (program: string, locus: CommandLocus): CommandSpan[] => [
     ...parseRm(program)
-        .filter((invocation) => invocation.recursive && invocation.force && invocation.operands.some(isRootTarget))
+        .filter((invocation) => invocation.recursive && invocation.force && invocation.operands.some((operand) => isRootTarget(operand, locus)))
         .map((invocation) => invocation.span),
     ...nodeDeleteTargets(program)
-        .filter((delete_) => isRootTarget(delete_.target))
+        .filter((delete_) => isRootTarget(delete_.target, locus))
         .map((delete_) => delete_.span),
 ];
 
 // The `g` twins, built once at load rather than per call: a card is minted per held command and a classify runs
-// per command the agent types, so recompiling six tables of patterns each time is work with no reader.
+// per command the agent types, so recompiling seven tables of patterns each time is work with no reader.
 const GIT_DESTRUCTIVE_G = globally(GIT_DESTRUCTIVE);
 const SECRET_REFERENCES_G = globally(SECRET_REFERENCES);
 const CREDENTIAL_PATHS_G = globally(CREDENTIAL_PATHS);
 const PACKAGE_PUBLISH_G = globally(PACKAGE_PUBLISH);
 const NETWORK_OUTBOUND_G = globally(NETWORK_OUTBOUND);
-const SYSTEM_DESTRUCTIVE_G = globally(SYSTEM_DESTRUCTIVE);
+const BLOCK_DEVICE_G = globally(BLOCK_DEVICE);
+const CONTAINER_STATE_G = globally(CONTAINER_STATE);
 
 /* THE PATH A MATCHED FRAGMENT SITS IN, so the oracle is asked about the file the command would actually open
  * rather than about the suffix that fired: `sed 's/…/' ~/.npmrc` fires on `.npmrc` and must ask about
@@ -463,20 +534,21 @@ const namesAPattern = (word: string): boolean =>
  * `!== false` is the whole fact-check, and the comparison is written against `false` rather than for `true` on
  * purpose: `undefined` (nobody could look) has to behave like `true` (there is a credential in there), or the
  * class would evaporate on every caller without a filesystem. */
-const credentialReads = (command: string, context: CommandContext | undefined): CommandSpan[] => [
+const credentialReads = (command: string, context: CommandContext): CommandSpan[] => [
     ...spansOf(SECRET_REFERENCES_G, command),
     ...spansOf(CREDENTIAL_PATHS_G, command).filter((span) => {
         const word = enclosingPath(command, span);
-        return !namesAPattern(word) && context?.holdsSecret?.(word) !== false;
+        return !namesAPattern(word) && context.holdsSecret?.(word) !== false;
     }),
 ];
 
 // WHERE each class fires, one entry per class. Empty ⇒ the command is not in it, so membership and evidence are
 // the same walk and cannot disagree: there is no way to be held for a class with nothing to show for it.
-const MATCHES: Readonly<Record<CommandClass, (command: string, context: CommandContext | undefined) => CommandSpan[]>> = {
+const MATCHES: Readonly<Record<CommandClass, (command: string, context: CommandContext) => CommandSpan[]>> = {
     "git.destructive": (command) => spansOf(GIT_DESTRUCTIVE_G, command),
     "files.destructive": (command) => [...recursiveForceRms(command), ...recursiveDeletes(command)],
-    "system.destructive": (command) => [...spansOf(SYSTEM_DESTRUCTIVE_G, command), ...rootDeletes(command)],
+    "system.destructive": (command, context) => [...spansOf(BLOCK_DEVICE_G, command), ...rootDeletes(command, context.locus)],
+    "container.state": (command) => spansOf(CONTAINER_STATE_G, command),
     "secrets.access": credentialReads,
     "package.publish": (command) => spansOf(PACKAGE_PUBLISH_G, command),
     "network.outbound": (command) => spansOf(NETWORK_OUTBOUND_G, command),
@@ -485,31 +557,61 @@ const MATCHES: Readonly<Record<CommandClass, (command: string, context: CommandC
 /* Every class the command falls in AND the fragments that put it there, in the catalog's own order so a card and
  * a log name them the same way twice. The primitive; classifyCommand is this with the offsets dropped.
  *
- * `context` is what a caller that can check a fact hands in (CommandContext); omitting it classifies from the
- * command text alone, which is every caller that has no filesystem to consult. */
-export const matchCommand = (command: string, context?: CommandContext): CommandMatch[] =>
-    CommandClassSchema.options.flatMap((commandClass) => {
+ * `context` is REQUIRED, unlike before: its `locus` decides what half of this catalog means (see
+ * CommandContext), and the fact-check is the optional part of it.
+ *
+ * THE INERT SCAN RUNS ONCE, here, and is handed to every class rather than being redone per table: it walks the
+ * whole command, and seven walks would be six more than the answer needs. A class with no live span is still
+ * reported — `live` rides on the match and only the hard rule reads it (shell-regions.ts argues why). */
+export const matchCommand = (command: string, context: CommandContext): CommandMatch[] => {
+    const regions = inertRegions(command);
+    return CommandClassSchema.options.flatMap((commandClass) => {
         const spans = mergeSpans(MATCHES[commandClass](command, context));
-        return spans.length === 0 ? [] : [{ commandClass, spans }];
+        return spans.length === 0 ? [] : [{ commandClass, spans, live: spans.some((span) => isLive(span, regions)) }];
     });
+};
 
 // Every class the command falls in, for the callers that only take a verdict from it (the gate's rulebook
 // consult, the machine agent's scope switch).
-export const classifyCommand = (command: string, context?: CommandContext): CommandClass[] =>
+export const classifyCommand = (command: string, context: CommandContext): CommandClass[] =>
     matchCommand(command, context).map((match) => match.commandClass);
 
 // What the card says the command would DO. The class name is a settings key, not a sentence to show a person.
 export const COMMAND_CLASS_LABELS: Readonly<Record<CommandClass, string>> = {
     "git.destructive": "rewrite or discard git history",
     "files.destructive": "delete files recursively",
-    "system.destructive": "wipe a disk, a container volume, or a whole home or root directory",
+    "system.destructive": "wipe a disk, or delete a whole root directory",
+    "container.state": "delete a container volume or the data in it",
     "secrets.access": "read credential material",
     "package.publish": "publish or release a package",
     "network.outbound": "send a request out to the internet",
 };
 
+/* THE PATTERNS BEHIND EACH CLASS, IN WORDS, for the one reader that is a person rather than a gate: the Safety
+ * page's "What gets stopped" panel (editor/web/.../AgentSafetyRules.vue). A card says which class fired; this
+ * says what the class is, so an owner can see the whole catalog without reading this file.
+ *
+ * PROSE RATHER THAN THE REGEXES THEMSELVES, deliberately. A `/\b(?:docker|podman)\s+volume\s+(?:rm|remove|prune)\b/`
+ * on a settings page is a worse answer to "what stops my commands" than "docker volume rm, remove, prune" is,
+ * and rendering source at somebody implies they can edit it. Pinned to the tables by the conformance test in
+ * command-classes.test.ts, so a pattern added without a line here fails the suite rather than going unlisted. */
+export const COMMAND_CLASS_PATTERNS: Readonly<Record<CommandClass, readonly string[]>> = {
+    "git.destructive": ["git push --force / -f / --force-with-lease / --delete", "git reset --hard", "git clean -f", "git branch -D", "git filter-branch"],
+    "files.destructive": ["rm -rf <path>", "fs.rm / rmSync / rmdir with recursive: true", "rimraf(<path>)"],
+    "system.destructive": [
+        "mkfs, wipefs, blkdiscard, sgdisk --zap-all",
+        "dd of=/dev/…, shred /dev/…, > /dev/sda",
+        "rm -rf aimed at a root directory",
+    ],
+    "container.state": ["docker / podman volume rm, remove, prune", "docker / podman system prune", "docker compose down -v"],
+    "secrets.access": ["a {{secret:NAME}} reference in the command", ".env, .ssh/*, id_rsa, .aws/credentials, .npmrc, .git-credentials"],
+    "package.publish": ["npm / pnpm / yarn / bun publish", "cargo publish", "gh release create", "docker push", "twine upload"],
+    "network.outbound": ["curl / wget to a non-loopback https:// host", 'fetch("https://…") in a script'],
+};
+
 /* No verdict set lives here any more. Which classes are worth stopping for is a POLICY question now, and it is
- * answered in two places that are honest about being different: safety-policy.ts's HARD_RULE_CLASSES for the
- * one thing nothing recovers, and the owner's own written policy for everything else. The machine agent keeps
- * its own set beside its scope switches (machine/src/device/tools/shell.ts), because "which commands need
- * the destructive switch" is a question about that capability card rather than about this catalog. */
+ * answered in two places that are honest about being different: safety-policy.ts's hardRuleClasses for the
+ * things nothing recovers at a given locus, and the owner's own written policy for everything else. The machine
+ * agent keeps its own set beside its scope switches (machine/src/device/tools/shell.ts), because "which
+ * commands need the destructive switch" is a question about that capability card rather than about this
+ * catalog. */

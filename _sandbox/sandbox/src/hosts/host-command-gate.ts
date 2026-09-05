@@ -1,4 +1,11 @@
-import { type AgentEvent, COMMAND_CLASS_LABELS, classifyCommand, type SafetyVerdict } from "@intentic/sandbox-contract";
+import {
+    type AgentEvent,
+    COMMAND_CLASS_LABELS,
+    type CommandJudgeMode,
+    type CommandLocus,
+    matchCommand,
+    type SafetyVerdict,
+} from "@intentic/sandbox-contract";
 import { createRequest } from "../agent/agent-requests.js";
 import { judgeCommand } from "../agent/command-judge.js";
 import { turnRunOf } from "../agent/turn-runs.js";
@@ -45,6 +52,11 @@ const DEADLINE_MS = 10 * 60_000;
 // program in them to classify.
 const RUN_COMMAND = "run_command";
 
+/* EVERY COMMAND THIS FILE SEES IS LEAVING THE CONTAINER, which is what makes the locus a constant here, the
+ * mirror of the `SANDBOX` one in guard/command-gate.ts. Nothing routes through this module that runs locally,
+ * so a call site that had to pass it in would only ever pass this. */
+const DEVICE: CommandLocus = "device";
+
 // What the model reads when the daemon stops the call. A VALUE rather than an error, the same choice policy.ts
 // makes on the machine: it travels back as an ordinary tool result, so the agent tells the owner what happened
 // instead of reporting a broken sandbox and retrying.
@@ -70,6 +82,57 @@ export const commandInCall = (payload: unknown): string | undefined => {
     return typeof command === "string" && command.trim() !== "" ? command : undefined;
 };
 
+/* WHAT THE JUDGE SAID, and under which setting, for one command already known to have tripped triage.
+ *
+ * THE SAME SWITCH THE SANDBOX'S OWN GATE READS (settings.commandJudge), applied to the same three tiers, so an
+ * owner who turned the judge off is not still being asked about their laptop. Read live rather than snapshotted,
+ * unlike the sandbox gate's, because this call arrives outside any turn's planning: there is no moment here that
+ * a snapshot could belong to.
+ *
+ * IT LOOSENS NOTHING THAT MATTERS. All of this is friction the daemon adds on top of the machine's own scopes,
+ * and the scopes are not reachable from this document or this setting — an off judge means the daemon has no
+ * objection of its own and the machine decides, which is where the security argument always rested. */
+const hostVerdict = async (
+    services: Services,
+    input: {
+        readonly machine: string;
+        readonly command: string;
+        readonly consequences: readonly string[];
+        readonly unattended: boolean;
+        readonly outsideSource: string | undefined;
+    },
+): Promise<{ readonly verdict: SafetyVerdict; readonly judging: CommandJudgeMode }> => {
+    const [policy, settings] = await Promise.all([services.safetyPolicy.text(), services.sandboxSettings.get()]);
+    const judging = settings.commandJudge;
+    if (judging === "off") {
+        return { judging, verdict: { decision: "allow", sentence: `The safety judge is turned off, so this was decided by the standing rule alone.` } };
+    }
+    const verdict = await judgeCommand(
+        services,
+        {
+            policy,
+            program: input.command,
+            models: settings.commandJudgeModels,
+            facts: {
+                consequences: input.consequences,
+                unattended: input.unattended,
+                language: "bash",
+                machine: input.machine,
+                ...(input.outsideSource === undefined ? {} : { outsideSource: input.outsideSource }),
+            },
+        },
+        AbortSignal.timeout(DEADLINE_MS),
+    ).catch(
+        // A judge that cannot run leaves the hard rule standing and lets everything else through to the machine,
+        // where the scopes decide. Same posture and reasoning as the sandbox gate's fallback.
+        (): SafetyVerdict => ({
+            decision: "allow",
+            sentence: `The safety judge could not be reached, so this was decided by the standing rule alone.`,
+        }),
+    );
+    return { verdict, judging };
+};
+
 /* Judge one command headed for `machine`. Undefined ⇒ forward it. A refusal ⇒ answer the agent with its text and
  * never touch the tunnel.
  *
@@ -81,54 +144,35 @@ export const judgeHostCommand = async (
     services: Services,
     input: { readonly machine: string; readonly command: string; readonly conversationId: string | undefined },
 ): Promise<HostGateRefusal | undefined> => {
-    const classes = classifyCommand(input.command);
+    /* READ AT THE `device` LOCUS, which is the whole reason this is not the sandbox's own consult. Half the
+     * catalog means something else out here: `/Users`, a home directory and a Windows drive are roots, `/usr`
+     * and `/etc` are the machine rather than an image, and a Docker volume is the owner's data rather than the
+     * nested engine's scratch. The classifier answers all of that from this one field. */
+    const matches = matchCommand(input.command, { locus: DEVICE });
+    const classes = matches.map((match) => match.commandClass);
     // TIER 1. Nothing matched, so nothing to judge and no model spent — the same economy the sandbox's own gate
     // runs on, and most of what an agent sends a machine lands here.
-    if (classes.length === 0) {
+    if (matches.length === 0) {
         return undefined;
     }
     const at = Date.now();
     const conversationId = input.conversationId;
     const run = conversationId === undefined ? undefined : turnRunOf(conversationId);
-    const hard = classes.find((commandClass) => guard(commandRun, { commandClass }).effect !== "allow");
+    /* The hard rule, on the same `live` discipline the sandbox gate uses: a command that merely MENTIONS a
+     * delete is not one, wherever it was going to run. `echo "rm -rf ~/projects" >> notes.md` sent to a laptop
+     * still classifies, still reaches the judge, and no longer earns a card nobody can waive. */
+    const hard = matches.find(
+        (match) => guard(commandRun, { commandClass: match.commandClass, locus: DEVICE, live: match.live }).effect !== "allow",
+    )?.commandClass;
     const unattended = conversationId === undefined || conversationUnattended(conversationId);
     const outsideSource = conversationId === undefined ? undefined : conversationTaintSource(conversationId);
-    /* THE SAME SWITCH THE SANDBOX'S OWN GATE READS (settings.commandJudge), applied to the same three tiers, so
-     * an owner who turned the judge off is not still being asked about their laptop. Read live rather than
-     * snapshotted, unlike the sandbox gate's, because this call arrives outside any turn's planning: there is no
-     * moment here that a snapshot could belong to.
-     *
-     * IT LOOSENS NOTHING THAT MATTERS. Everything below is friction the daemon adds on top of the machine's own
-     * scopes, and the scopes are not reachable from this document or this setting — an off judge means the daemon
-     * has no objection of its own and the machine decides, which is where the security argument always rested. */
-    const [policy, settings] = await Promise.all([services.safetyPolicy.text(), services.sandboxSettings.get()]);
-    const judging = settings.commandJudge;
-    const verdict: SafetyVerdict =
-        judging === "off"
-            ? { decision: "allow", sentence: `The safety judge is turned off, so this was decided by the standing rule alone.` }
-            : await judgeCommand(
-                  services,
-                  {
-                      policy,
-                      program: input.command,
-                      models: settings.commandJudgeModels,
-                      facts: {
-                          consequences: classes.map((commandClass) => COMMAND_CLASS_LABELS[commandClass]),
-                          unattended,
-                          language: "bash",
-                          machine: input.machine,
-                          ...(outsideSource === undefined ? {} : { outsideSource }),
-                      },
-                  },
-                  AbortSignal.timeout(DEADLINE_MS),
-              ).catch(
-                  // A judge that cannot run leaves the hard rule standing and lets everything else through to the
-                  // machine, where the scopes decide. Same posture and reasoning as the sandbox gate's fallback.
-                  (): SafetyVerdict => ({
-                      decision: "allow",
-                      sentence: `The safety judge could not be reached, so this was decided by the standing rule alone.`,
-                  }),
-              );
+    const { verdict, judging } = await hostVerdict(services, {
+        machine: input.machine,
+        command: input.command,
+        consequences: classes.map((commandClass) => COMMAND_CLASS_LABELS[commandClass]),
+        unattended,
+        outsideSource,
+    });
     // Only at `on` does the verdict decide anything; at `off` and `watch` it is evidence for the log and the hard
     // rule is the whole gate. Which the hard rule can then only make stricter, never looser.
     const enforced = judging === "on" ? verdict.decision : "allow";

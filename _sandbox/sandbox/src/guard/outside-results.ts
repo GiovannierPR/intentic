@@ -88,7 +88,7 @@ export const outsideSourceOf = (toolName: string, toolInput: unknown): string | 
         }
         // The same classifier the command gate runs BEFORE the command: if it reached the open internet, what
         // came back is the open internet's words. Loopback is excluded by the class itself.
-        return classifyCommand(command).includes("network.outbound") ? "shell-fetch" : undefined;
+        return classifyCommand(command, { locus: "sandbox" }).includes("network.outbound") ? "shell-fetch" : undefined;
     }
     // The JS execution backend, by the same rule word for word: the script is the agent's own program, the
     // PAGE a fetching one brings back is the internet. Checked ahead of the server fallback because the `code`
@@ -98,7 +98,7 @@ export const outsideSourceOf = (toolName: string, toolInput: unknown): string | 
         if (typeof code !== "string") {
             return undefined;
         }
-        return classifyCommand(code).includes("network.outbound") ? "code-fetch" : undefined;
+        return classifyCommand(code, { locus: "sandbox" }).includes("network.outbound") ? "code-fetch" : undefined;
     }
     const server = mcpServerOf(toolName);
     if (server === undefined || INTERNAL_SERVERS.has(server)) {

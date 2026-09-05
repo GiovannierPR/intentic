@@ -19,6 +19,7 @@ import AgentRules from "./agent/AgentRules.vue";
 import AgentSafetyJudge from "./agent/AgentSafetyJudge.vue";
 import AgentSafetyLog from "./agent/AgentSafetyLog.vue";
 import AgentSafetyPolicy from "./agent/AgentSafetyPolicy.vue";
+import AgentSafetyRules from "./agent/AgentSafetyRules.vue";
 import AgentSkills from "./agent/AgentSkills.vue";
 import AgentSubagents from "./agent/AgentSubagents.vue";
 
@@ -169,6 +170,11 @@ const settingsBlocked = computed<NoticeModel | undefined>(() => {
              policy whose effects you cannot see is a policy you cannot write. -->
         <template v-else-if="section === `safety`">
             <AgentSafetyJudge />
+            <!-- Between the switch and the policy, in the order the questions arrive: whether anything judges,
+                 then WHAT it judges (and what it never gets to), then the document it judges against. Reading
+                 the policy before the catalog is what leaves somebody writing a line about a rule that is typed
+                 and cannot hear them. -->
+            <AgentSafetyRules />
             <AgentSafetyPolicy />
             <AgentSafetyLog />
         </template>

@@ -1,6 +1,6 @@
 import type { McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk";
+import { matchCommand } from "@intentic/sandbox-contract";
 import { sdk } from "../claude/claude-sdk.js";
-import { classifyCommand } from "@intentic/sandbox-contract";
 import { z } from "zod";
 import { commandRun } from "../guard/actions.js";
 import { createCredentialOracle } from "../guard/credential-files.js";
@@ -48,8 +48,9 @@ const answer = (payload: Record<string, unknown>): { content: [{ type: "text"; t
 const ruleRefusal = (command: string, cwd: string): string | undefined => {
     // The same fact-check the command gate runs, for the same reason: a check that reads a `.env` of ports must
     // not be refused as a credential read, least of all with a message telling the agent to go and ask about it.
-    for (const commandClass of classifyCommand(command, { holdsSecret: createCredentialOracle(cwd) })) {
-        const verdict = guard(commandRun, { commandClass });
+    // A watch check runs in this container, so it is read at the sandbox locus like everything the gate sees.
+    for (const match of matchCommand(command, { locus: "sandbox", holdsSecret: createCredentialOracle(cwd) })) {
+        const verdict = guard(commandRun, { commandClass: match.commandClass, locus: "sandbox", live: match.live });
         if (verdict.effect !== "allow") {
             return `${verdict.reason}: a watch check runs unattended, so it cannot ask. Run the command through Bash instead, or watch with a narrower read-only check.`;
         }

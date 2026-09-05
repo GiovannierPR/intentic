@@ -109,9 +109,13 @@ describe("command.run", () => {
      * written policy; the taint bit is a FACT it is handed rather than a hold applied behind it.
      *
      * The hard rule stayed typed because a model can be argued into anything by text inside the command it is
-     * reading, and being wrong once about a block device costs the machine. */
+     * reading, and being wrong once about a block device costs the machine. What it gained is two facts the
+     * classifier is the only place that knows: WHERE the command would run, and whether the fragment that fired
+     * would run at all. */
+    const ran = { locus: "sandbox", live: true } as const;
+
     test("the hard rule holds the classes where nothing recovers", () => {
-        const verdict = guard(commandRun, { commandClass: "system.destructive" });
+        const verdict = guard(commandRun, { commandClass: "system.destructive", ...ran });
         expect(verdict.effect).toBe("hold");
         expect(verdict.reason).toContain("nothing here undoes");
     });
@@ -119,19 +123,46 @@ describe("command.run", () => {
     /* Narrow on purpose, and this is the test that keeps it narrow. Every class below is left to the policy, so
      * an owner who wants to be asked about force-pushes writes a sentence and one who does not writes nothing.
      * A hard rule that reached any of these would be the old floor back under a new name. */
-    test("everything else is left to the policy", () => {
-        for (const commandClass of ["git.destructive", "files.destructive", "secrets.access", "package.publish", "network.outbound"] as const) {
-            expect(guard(commandRun, { commandClass }).effect, commandClass).toBe("allow");
+    test("everything else is left to the policy in the sandbox", () => {
+        for (const commandClass of [
+            "git.destructive",
+            "files.destructive",
+            "container.state",
+            "secrets.access",
+            "package.publish",
+            "network.outbound",
+        ] as const) {
+            expect(guard(commandRun, { commandClass, ...ran }).effect, commandClass).toBe("allow");
+        }
+    });
+
+    /* A DEVICE IS NOT THIS CONTAINER, and the decide says so rather than leaving one set to cover both. Nothing
+     * on somebody's laptop is rebuilt from an image, so what the sandbox hands to the judge is held out there —
+     * on top of the scope switch the machine enforces for itself, which this cannot reach either way. */
+    test("a device holds every class that destroys something", () => {
+        for (const commandClass of ["files.destructive", "system.destructive", "container.state"] as const) {
+            expect(guard(commandRun, { commandClass, locus: "device", live: true }).effect, commandClass).toBe("hold");
+        }
+    });
+
+    /* THE MENTION FIX, AT THE ONE SEAM THAT CARED. Everywhere else an over-inclusive match costs a judge call;
+     * here it cost an interruption nobody could waive, which is how `echo "rm -rf /" >> notes.md` earned a card.
+     * A class whose every fragment is text is allowed at both loci, and the reason says which it was. */
+    test("a class the command only mentions is not held, at either locus", () => {
+        for (const locus of ["sandbox", "device"] as const) {
+            const verdict = guard(commandRun, { commandClass: "system.destructive", locus, live: false });
+            expect(verdict.effect, locus).toBe("allow");
+            expect(verdict.reason, locus).toContain("only mentions");
         }
     });
 
     test("the reason says what the command would do, not which class matched", () => {
-        expect(guard(commandRun, { commandClass: "system.destructive" }).reason).toContain(COMMAND_CLASS_LABELS["system.destructive"]);
+        expect(guard(commandRun, { commandClass: "system.destructive", ...ran }).reason).toContain(COMMAND_CLASS_LABELS["system.destructive"]);
     });
 
     // A hold here is a real ask, so it must never carry the countdown that would turn it into "unless I'm slow".
     test("the hold carries no auto-run window", () => {
-        expect(guard(commandRun, { commandClass: "system.destructive" })).not.toHaveProperty("autoRunAfterS");
+        expect(guard(commandRun, { commandClass: "system.destructive", ...ran })).not.toHaveProperty("autoRunAfterS");
     });
 });
 

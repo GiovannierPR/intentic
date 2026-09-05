@@ -158,25 +158,28 @@ describe("command gate: triage", () => {
         expect(gate.logged.every((entry) => entry.outcome === "allowed")).toBe(true);
     });
 
-    /* THE COST THE HARD RULE ACTUALLY CHARGES, stated as a test so nobody discovers it as a bug. Triage matches
-     * `system.destructive` on the text `rm -rf /` wherever it appears, including inside a string being written
-     * to a file, and the hard rule fires before the judge and cannot be talked out of it. So this one false
-     * positive still interrupts somebody.
+    /* THE COST THE HARD RULE USED TO CHARGE, and no longer does. Triage matches `system.destructive` on the
+     * text `rm -rf /` wherever it appears, including inside a string being written to a file, and the hard rule
+     * fires before the judge and cannot be talked out of it — so this false positive interrupted somebody, and
+     * this test used to assert the card as a deliberate trade.
      *
-     * That is the deliberate trade and it should stay visible here rather than being tuned away. The alternative
-     * is a judge that can waive the rule, and a judge can be argued into anything by text inside the very
-     * command it is reading — which is the same text this test is about. Writing the words `rm -rf /` into a
-     * file is rare; being one mistyped path from a formatted disk is not recoverable. */
-    test("a false positive on the hard-ruled class still asks, because nothing may waive that rule", async () => {
+     * IT WAS NOT A TRADE, it was the one place the old "a match IS the verdict" design survived. Nothing about
+     * a judge that can be argued with is involved: whether a shell would RUN a fragment or merely print it is a
+     * fact about the text, and the classifier answers it (contract shell-regions.ts). The rule is untouched for
+     * the command that actually deletes; it has stopped firing on the sentence about one. */
+    test("a delete the command only mentions does not reach the hard rule", async () => {
         const gate = harness({ judge: always("allow", `Appends a line of prose to a notes file.`) });
-        const pending = gate.run(`echo "rm -rf /" >> notes.md`);
-        await settled();
-        // The one card that keeps a titled consequence, because the hard rule really is a typed verdict over a
-        // named class rather than triage's guess. The judge's sentence goes underneath it.
-        expect(cardOf(gate.events).title).toContain("wipe a disk");
-        expect(cardOf(gate.events).explain).toBe(`Appends a line of prose to a notes file.`);
-        resolveRequest({ kind: "permission", requestId: cardOf(gate.events).requestId, decision: "once" });
-        expect((await pending).hookSpecificOutput).toBeUndefined();
+        expect(await gate.run(`echo "rm -rf /" >> notes.md`)).toEqual({});
+        expect(gate.events).toEqual([]);
+    });
+
+    // It is still triaged and still judged, which is what keeps this a narrowing rather than a hole: the judge
+    // saw the command and allowed it, and the log says so.
+    test("a mention is still classified, judged and recorded", async () => {
+        const gate = harness({ judge: always("allow", `Appends a line of prose to a notes file.`) });
+        await gate.run(`echo "rm -rf /" >> notes.md`);
+        expect(gate.seen).toHaveLength(1);
+        expect(gate.logged).toMatchObject([{ classes: expect.arrayContaining(["system.destructive"]), outcome: "allowed" }]);
     });
 });
 
@@ -374,7 +377,10 @@ describe("command gate: the facts the judge is handed", () => {
  * where nothing recovers. This is the case the whole design turns on: a model can be argued into anything by
  * text inside the command it is judging, and being wrong once here costs the machine. */
 describe("command gate: the hard rule", () => {
-    const WIPES = ["mkfs.ext4 /dev/sda1", "docker volume rm app_data", "rm -rf ~", "dd if=/dev/zero of=/dev/sda"];
+    /* WHAT THE SANDBOX'S FLOOR IS, exactly: a block device, the filesystem root, and /history — the one tree
+     * holding work this turn cannot recreate because it is other conversations'. Read at the `sandbox` locus,
+     * which is what this gate always passes (contract command-classes.ts argues the split). */
+    const WIPES = ["mkfs.ext4 /dev/sda1", "dd if=/dev/zero of=/dev/sda", "rm -rf /", "rm -rf /history"];
 
     test("a judge that says allow cannot wave through a command that wipes a disk", async () => {
         for (const command of WIPES) {
@@ -383,6 +389,36 @@ describe("command gate: the hard rule", () => {
             await settled();
             const card = cardOf(gate.events);
             expect(card.title, command).toContain("wipe a disk");
+            resolveRequest({ kind: "permission", requestId: card.requestId, decision: "once" });
+            expect((await pending).hookSpecificOutput, command).toBeUndefined();
+        }
+    });
+
+    /* WHAT LEFT THE FLOOR, and why each one is a container fact rather than a softening. A named volume here
+     * belongs to the NESTED engine, so it is a dev database the agent made; `~` and `/work` are scratch and a
+     * worktree whose delta lands as uncommitted changes; `/usr` comes back with the image. Each is still
+     * triaged and still judged — the owner's policy decides, which is what it could not do before. */
+    test("what only a laptop cannot recover is judged here, not held", async () => {
+        for (const command of ["docker volume rm app_data", "docker compose down -v", "rm -rf ~", "rm -rf /work", "rm -rf /usr"]) {
+            const gate = harness({ judge: always("allow", `Tears down the throwaway stack this turn started.`) });
+            expect(await gate.run(command), command).toEqual({});
+            expect(gate.events, command).toEqual([]);
+            expect(gate.seen, command).toHaveLength(1);
+        }
+    });
+
+    // The same commands still ASK when the owner's policy says so, which is the whole point of moving them:
+    // the answer became theirs rather than being typed.
+    test("and the policy can still stop every one of them", async () => {
+        for (const command of ["docker volume rm app_data", "rm -rf ~"]) {
+            const gate = harness({ judge: always("ask", `Deletes a named volume.`) });
+            const pending = gate.run(command);
+            await settled();
+            const card = cardOf(gate.events);
+            /* The judge's own sentence is the TITLE here, not the sub-line: a card with no hard rule behind it
+             * has no typed consequence to head it with, so the verdict is the headline. The other shape — a
+             * titled consequence with the sentence underneath — is the hard rule's, asserted above. */
+            expect(card.title, command).toBe(`Deletes a named volume.`);
             resolveRequest({ kind: "permission", requestId: card.requestId, decision: "once" });
             expect((await pending).hookSpecificOutput, command).toBeUndefined();
         }

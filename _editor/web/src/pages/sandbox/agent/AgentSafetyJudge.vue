@@ -88,9 +88,13 @@ const judgeChain = computed<readonly string[]>(() => (pinnedJudges.value.length 
                     <!-- The floor under all three, said where somebody turning the judge off will read it. Without
                          this, "Off" reads as switching the gate off entirely, which it is not and must not be
                          mistaken for. It is the same promise the policy's own notice makes, and it holds here. -->
+                    <!-- No emphasis span on "What gets stopped": inside a toned Notice, `text-content` paints
+                         near-black over the tone's own colour and reads as a bug rather than as a highlight.
+                         The group name carries itself. -->
                     <Notice v-if="mode !== `on`" tone="info" class="text-2xs">
-                        Wiping a block device, or deleting anything under <code>/history</code>, still asks. That rule is typed rather than judged,
-                        so no setting here reaches it.
+                        Wiping a block device, deleting <code>/</code>, or deleting anything under <code>/history</code> still asks — and on your own
+                        computers, so does any delete. Those rules are typed rather than judged, so no setting here reaches them. They are listed
+                        under “What gets stopped” below.
                     </Notice>
                 </div>
             </template>

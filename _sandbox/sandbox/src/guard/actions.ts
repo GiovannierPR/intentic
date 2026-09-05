@@ -3,7 +3,8 @@ import {
     type AdmissionRule,
     COMMAND_CLASS_LABELS,
     type CommandClass,
-    HARD_RULE_CLASSES,
+    type CommandLocus,
+    hardRuleClasses,
     type Trigger,
     type WakeSource,
 } from "@intentic/sandbox-contract";
@@ -105,6 +106,19 @@ export interface CommandRunInput {
     // consults, and the gate keeps the most restrictive answer, which is what makes "most restrictive wins"
     // observable at the consult site instead of hidden inside a decide that was handed a list.
     readonly commandClass: CommandClass;
+    /* WHICH MACHINE would run it. The hard rule is a different set per locus (contract safety-policy.ts
+     * hardRuleClasses argues both), so this is not decoration: the same class is held in one place and judged
+     * in the other. `sandbox` for this container's own shell, `device` for a command headed down the tunnel to
+     * one of the owner's computers. */
+    readonly locus: CommandLocus;
+    /* Would a shell RUN the fragment that fired, or is it text — a heredoc body, a comment, a quoted argument to
+     * an echo or a grep (contract shell-regions.ts)?
+     *
+     * THE HARD RULE IS THE ONLY READER OF THIS, and that is deliberate. Everywhere else an over-inclusive match
+     * is free, because a false positive costs one judge call; here it costs an interruption nobody can waive, so
+     * it is the one place worth spending a scan to tell `echo "rm -rf /" >> notes.md` from the delete. A mention
+     * still classifies, still reaches the judge, and is still marked on the card. */
+    readonly live: boolean;
 }
 
 /* MAY THE AGENT RUN THIS COMMAND WHATEVER ANYONE SAYS? The HARD RULE, and after the safety redesign it is all
@@ -124,17 +138,28 @@ export interface CommandRunInput {
  * volume, a delete aimed at a root rather than at something inside one. A model can be argued into anything by
  * text in the command it is judging, and the cost of being wrong once here is the machine. So this stays typed,
  * applies before the judge is ever called, and no verdict can waive it (contract safety-policy.ts
- * HARD_RULE_CLASSES holds the set and argues for keeping it to one entry).
+ * hardRuleClasses holds the sets and argues for both).
+ *
+ * TWO THINGS NARROW IT, and neither is a threshold. WHERE the command runs, because a container rebuilt from an
+ * image recovers `/usr` and a laptop does not; and whether the fragment that fired would RUN, because the old
+ * rule fired on `echo "rm -rf /"` too and no policy line could ever have said otherwise. Both arrive as facts on
+ * the input rather than being re-derived here: the classifier is the only place that knows either.
  *
  * A "hold" means the real thing: the gate raises a permission card and the command waits. An unattended turn has
  * nobody to raise it to and gets a refusal instead; the gate words that, because whether anyone is watching is a
  * property of the turn and not of the rule. */
 export const commandRun = defineGuardedAction<CommandRunInput>({
     action: "command.run",
-    decide: ({ commandClass }) =>
-        HARD_RULE_CLASSES.has(commandClass)
+    decide: ({ commandClass, locus, live }) => {
+        // A mention is not an act. Checked before the set, because it is the cheaper question and because a
+        // reason of "it does not run it" is the one a reader of the log actually wants.
+        if (!live) {
+            return ALLOW(`this only mentions ${commandClass}, it does not do it`);
+        }
+        return hardRuleClasses(locus).has(commandClass)
             ? HOLD(`this command would ${COMMAND_CLASS_LABELS[commandClass]}, and nothing here undoes that`)
-            : ALLOW(`the hard rule does not cover ${commandClass}`),
+            : ALLOW(`the ${locus} hard rule does not cover ${commandClass}`);
+    },
 });
 
 export interface CredentialUseInput {

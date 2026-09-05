@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { classifyCommand, COMMAND_CLASS_LABELS, type CommandClass, type HostScopes } from "@intentic/sandbox-contract";
+import { COMMAND_CLASS_LABELS, type CommandClass, type HostScopes, matchCommand } from "@intentic/sandbox-contract";
 import { assertPath, assertScope, rootsOf, ScopeError } from "../policy.js";
 
 /* Running a command on somebody's device, the tool that does most of the work, and the one whose failure
@@ -78,10 +78,11 @@ export interface CommandResult {
     readonly timedOut: boolean;
 }
 
-/* The classes that need `destructive` on top of `shell`. Both spend something this machine cannot get back:
- * files that no worktree or checkpoint holds a copy of, and disks or volumes that hold everything else. The
- * rest of the catalog is deliberately absent, see the header. */
-const GATED_CLASSES: ReadonlySet<CommandClass> = new Set<CommandClass>(["files.destructive", "system.destructive"]);
+/* The classes that need `destructive` on top of `shell`. Each spends something this machine cannot get back:
+ * files that no worktree or checkpoint holds a copy of, disks that hold everything else, and a named container
+ * volume, which on somebody's own computer IS the database rather than a dev fixture. The rest of the catalog
+ * is deliberately absent, see the header. */
+const GATED_CLASSES: ReadonlySet<CommandClass> = new Set<CommandClass>(["files.destructive", "system.destructive", "container.state"]);
 
 // The refusal a destructive command earns, naming what the classifier saw so the user can judge the ask rather
 // than being told only that something was blocked.
@@ -90,9 +91,20 @@ const destructiveRefusal = (classes: readonly CommandClass[]): string =>
     `and "Run destructive commands" is switched off for it. Turn it on in its capability card to allow this, ` +
     `or run a command that does not delete.`;
 
-// Which gated classes this command falls in, empty when it is ordinary work.
+/* Which gated classes this command falls in, empty when it is ordinary work.
+ *
+ * READ AT THE `device` LOCUS, which is this file's whole situation: `~`, `C:` and `/Users` are roots here, and
+ * `/usr` is the operating system rather than a layer of an image. The same catalog read at `sandbox` answers
+ * differently on purpose (sandbox-contract command-classes.ts).
+ *
+ * AND ONLY WHERE THE FRAGMENT WOULD RUN. `match.live` is false when everything that fired sits in a heredoc, a
+ * comment or an echo's quotes, and a command that merely writes the word `rm -rf` into a file has no business
+ * demanding the destructive switch — a refusal there taught the user to turn the switch on permanently, which
+ * is the opposite of what it is for. */
 export const destructiveClasses = (command: string): CommandClass[] =>
-    classifyCommand(command).filter((commandClass) => GATED_CLASSES.has(commandClass));
+    matchCommand(command, { locus: "device" })
+        .filter((match) => match.live && GATED_CLASSES.has(match.commandClass))
+        .map((match) => match.commandClass);
 
 export const runCommand = async (
     input: { readonly command: string; readonly cwd?: string; readonly timeoutMs?: number },

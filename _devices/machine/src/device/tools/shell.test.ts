@@ -54,9 +54,9 @@ test("ordinary work is untouched by the switch", async () => {
     expect(result.stdout.trim()).toBe("hello");
 });
 
-/* Only the two classes that DESTROY something are gated here. Reading a dotenv, publishing a package and
- * reaching the network are the sandbox rulebook's to hold, with a card and a person to answer it; re-asking
- * them on the machine, where a refusal is the only available answer, would make a connected laptop useless. */
+/* Only the classes that DESTROY something are gated here. Reading a dotenv, publishing a package and reaching
+ * the network are the sandbox rulebook's to hold, with a card and a person to answer it; re-asking them on the
+ * machine, where a refusal is the only available answer, would make a connected laptop useless. */
 test("the other classes are the sandbox's to judge, not this machine's", () => {
     expect(destructiveClasses("cat .env")).toEqual([]);
     expect(destructiveClasses("npm publish")).toEqual([]);
@@ -64,10 +64,34 @@ test("the other classes are the sandbox's to judge, not this machine's", () => {
     expect(destructiveClasses("git push --force origin main")).toEqual([]);
 });
 
-test("both deletion classes are gated, and a root delete is in both", () => {
+test("every deletion class is gated, and a root delete is in two of them", () => {
     expect(destructiveClasses("rm -rf build")).toEqual(["files.destructive"]);
-    expect(destructiveClasses("docker volume rm app_data")).toEqual(["system.destructive"]);
     expect(destructiveClasses("rm -rf ~")).toEqual(["files.destructive", "system.destructive"]);
+});
+
+/* A CONTAINER VOLUME IS ITS OWN CLASS as of the locus split, and it stays gated HERE while the sandbox hands
+ * it to the judge — which is the split working rather than a hole. In this container the reachable volumes are
+ * the nested engine's, so they are dev databases the agent made; on somebody's own computer a named volume IS
+ * the database, and the scope switch is the thing that decides. */
+test("a container volume still needs the destructive switch on a real machine", () => {
+    expect(destructiveClasses("docker volume rm app_data")).toEqual(["container.state"]);
+    expect(destructiveClasses("docker compose down -v")).toEqual(["container.state"]);
+});
+
+/* READ AT THE `device` LOCUS, which is the other half of the split: `~` and `C:` are roots on somebody's
+ * computer and scratch in a container, and this file is only ever asked about the former. */
+test("a device's roots are the device's, not the sandbox's", () => {
+    for (const command of ["rm -rf /usr", "rm -rf /etc", "rm -rf C:\\", "rm -rf /Users"]) {
+        expect(destructiveClasses(command), command).toContain("system.destructive");
+    }
+});
+
+/* A COMMAND THAT ONLY MENTIONS A DELETE DOES NOT NEED THE SWITCH. It never did anything but refuse, and the
+ * refusal taught people to leave `destructive` on permanently — which is the opposite of what it is for. */
+test("a delete that is printed, searched for or commented is not gated", () => {
+    for (const command of [`echo "rm -rf ~" >> notes.md`, `grep -n "rm -rf" scripts/deploy.sh`, `ls # not rm -rf ~`]) {
+        expect(destructiveClasses(command), command).toEqual([]);
+    }
 });
 
 // `shell` still comes first: a machine that may not run commands at all is not asked what kind of command it is.

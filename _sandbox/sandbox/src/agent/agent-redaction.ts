@@ -133,7 +133,9 @@ const FIELD_MAX = 4096;
 const namesCredentialMaterial = (toolInput: unknown): boolean => {
     try {
         const asked = JSON.stringify(toolInput, (_key, value: unknown) => (typeof value === "string" && value.length > FIELD_MAX ? "" : value));
-        return asked !== undefined && classifyCommand(asked).includes("secrets.access");
+        // The locus is stated because the classifier requires one; it changes nothing here, since `secrets.access`
+        // is a question about a path and a `{{secret:}}` reference rather than about which machine is reading it.
+        return asked !== undefined && classifyCommand(asked, { locus: "sandbox" }).includes("secrets.access");
     } catch {
         // A tool input that will not serialize (a circular structure a runtime handed us) is one this cannot
         // read, and an unreadable input is not evidence of a credential.

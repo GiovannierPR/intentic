@@ -87,23 +87,55 @@ export type WakeSource = z.infer<typeof WakeSourceSchema>;
 // One admission verdict the owner can configure: let it run, hold it for approval, or refuse it outright.
 export const AdmissionRuleSchema = z.enum(["allow", "hold", "deny"]);
 export type AdmissionRule = z.infer<typeof AdmissionRuleSchema>;
+/* WHERE A COMMAND WOULD RUN, and it changes what half of these classes MEAN.
+ *
+ * The same string is two different acts depending on which machine reads it. `rm -rf /usr` inside this
+ * container deletes files that come back with the image; on somebody's laptop it ends the laptop. A named
+ * Docker volume here is a dev database the agent created three commands ago; there it is whatever they run.
+ * `/work` and `/history` are this product's own trees and mean nothing on a device; `/Users` and `C:` are a
+ * device's and never appear here.
+ *
+ * So the catalog is read with a locus (command-classes.ts CommandContext), and the classes below are the
+ * answer to "what would this DO", asked of a stated place. Callers do not get to omit it: a default would be
+ * one of these two answers applied silently to the other machine, which is the bug this type exists to end. */
+export const CommandLocusSchema = z.enum([
+    // This sandbox's own shell: a disposable container, /work a git worktree, /history every other agent's.
+    "sandbox",
+    // One of the owner's own computers, reached through the machine agent. Nothing here is disposable.
+    "device",
+]);
+export type CommandLocus = z.infer<typeof CommandLocusSchema>;
 /* WHAT KIND OF THING A SHELL COMMAND IS, the command gate's key space, the second layer under the admission
  * floor above. The floor decides whether a session may START; these decide whether one PARTICULAR command
  * inside a running session may go ahead, which is the only question left once the agent is already working.
  *
- * Five, chosen for one property: everything in them is hard or impossible to take back, so a person seeing it
- * once beats an audit trail read afterwards. Everything else an agent runs, builds, tests, greps, edits, is
- * recoverable in a container that is itself disposable, and gating it would be friction bought with nothing. */
+ * Six, chosen for one property: everything in them is hard or impossible to take back SOMEWHERE, so a person
+ * seeing it once beats an audit trail read afterwards. Everything else an agent runs, builds, tests, greps,
+ * edits, is recoverable in a container that is itself disposable, and gating it would be friction bought with
+ * nothing. "Somewhere" is the locus above: which class a command lands in is asked of a place. */
 export const CommandClassSchema = z.enum([
     // Rewrites or discards committed work: force-push, hard reset, force-delete a branch, clean -f, filter-branch.
     "git.destructive",
     // Recursive-force deletion (`rm -rf`), and its spelling in a script (`fs.rm(p, { recursive: true })`).
     "files.destructive",
-    /* State nothing here brings back: a formatted or overwritten disk, a deleted Docker volume, a recursive
-     * delete aimed at a root rather than at something inside one. The only class the daemon holds where the
-     * owner wrote no rule, which is why it is separate from files.destructive rather than a shade of it:
-     * `rm -rf build` is ordinary work in a disposable container and `rm -rf /` is the end of the machine. */
+    /* State nothing brings back AT THIS LOCUS: a formatted or overwritten disk, and a recursive delete aimed
+     * at a root rather than at something inside one. The class the daemon holds where the owner wrote no rule,
+     * which is why it is separate from files.destructive rather than a shade of it: `rm -rf build` is ordinary
+     * work in a disposable container and `rm -rf /` is the end of the machine.
+     *
+     * WHICH ROOTS COUNT IS THE LOCUS'S ANSWER, not a constant. In the sandbox it is `/` and `/history` — the
+     * filesystem itself, and the one tree holding work this turn cannot recreate because it is other
+     * conversations'. `/usr`, `/etc`, `/work` are NOT roots here: the container comes back from its image and
+     * the worktree's delta is uncommitted changes, both of which cost an afternoon rather than everything. On a
+     * device the full list applies, because nothing there is rebuilt from an image. */
     "system.destructive",
+    /* A CONTAINER VOLUME OR THE DATA IN IT: `docker volume rm`, `system prune`, `compose down -v`. Split out of
+     * system.destructive because the two loci disagree about it more sharply than about anything else in this
+     * enum. In the sandbox these reach the NESTED engine (the host's socket is never mounted, see
+     * capabilities/handlers/docker.ts), so the blast radius is dev databases the agent has been working
+     * against, and tearing down a smoke-test stack is ordinary work. Sent to somebody's own computer it is
+     * whatever they run on it, and their policy says never. */
+    "container.state",
     /* READS credential material: a `{{secret:NAME}}` reference (which becomes the value on the way into the
      * process), or a file that actually holds one — a dotenv, a private key, ~/.aws/credentials, an npmrc.
      * "Actually" is load-bearing and is checked rather than assumed where the caller can open the file: an

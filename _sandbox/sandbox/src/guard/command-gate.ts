@@ -5,6 +5,7 @@ import {
     type CommandClass,
     type CommandContext,
     type CommandJudgeMode,
+    type CommandLocus,
     type CommandMatch,
     type CommandSpan,
     matchCommand,
@@ -33,9 +34,12 @@ import type { TurnTaint } from "./turn-taint.js";
  * FOUR TIERS, AND ONLY THE LAST ONE INTERRUPTS ANYBODY. The contract's safety-policy.ts argues the design; this
  * is where tiers 1 to 3 actually happen, in `consult`, in this order:
  *
- *   1 TRIAGE      matchCommand, the regex catalog. Its verdict is no longer the card — it only decides that a
- *                 judge should look. Nothing matched ⇒ the command runs and nothing was spent.
- *   1½ HARD RULE  guard/actions.ts commandRun, applied BEFORE the judge and un-waivable by it. One class today.
+ *   1 TRIAGE      matchCommand, the regex catalog, read at the `sandbox` locus. Its verdict is no longer the
+ *                 card — it only decides that a judge should look. Nothing matched ⇒ the command runs and
+ *                 nothing was spent.
+ *   1½ HARD RULE  guard/actions.ts commandRun, applied BEFORE the judge and un-waivable by it. One class in this
+ *                 container, and only where the fragment that fired would actually RUN: a delete quoted inside
+ *                 an echo, buried in a heredoc or matched by a grep reaches the judge like anything else.
  *   2 JUDGE       a quick model reading the owner's written policy, the program as data, and the daemon's own
  *                 facts about the turn (agent/command-judge.ts). Answers allow, ask or refuse.
  *   3 PERSON      the card, raised only on `ask`, carrying the judge's sentence.
@@ -326,13 +330,26 @@ export const consultWith = async (
     return step.value;
 };
 
+/* EVERY COMMAND THIS FILE SEES RUNS IN THIS CONTAINER, which is what makes the locus a constant here rather
+ * than a parameter. The gate hooks the agent's own Bash and JS backends; a command headed for one of the
+ * owner's computers arrives as an MCP call and is judged next door (hosts/host-command-gate.ts) against the
+ * device half of the same catalog. Stated once, as a named constant, so the two files disagreeing about which
+ * machine they are talking about would be a visible edit rather than a missing argument. */
+const SANDBOX: CommandLocus = "sandbox";
+
 /* THE ONE CLASS THE HARD RULE COVERS, if the command is in it. Undefined ⇒ nothing here is un-waivable and the
  * judge decides.
  *
+ * TAKES MATCHES RATHER THAN CLASSES, which is the whole of the mention fix at this seam: `live` rides on the
+ * match, and a class whose every fragment sits in a heredoc, a comment or an echo's quotes is one the hard rule
+ * declines. Everything else about the command is unchanged — the class still holds, the judge still reads it,
+ * the card still marks the fragment. Only the tier that cannot be argued with steps back.
+ *
  * Still one consult per class rather than a decide handed a list, which is what keeps "most restrictive wins"
  * observable at the consult site rather than buried inside the action. */
-const hardRuled = (classes: readonly CommandClass[]): CommandClass | undefined =>
-    classes.find((commandClass) => guard(commandRun, { commandClass }).effect !== "allow");
+const hardRuled = (matches: readonly CommandMatch[]): CommandClass | undefined =>
+    matches.find((match) => guard(commandRun, { commandClass: match.commandClass, locus: SANDBOX, live: match.live }).effect !== "allow")
+        ?.commandClass;
 
 /* WHY A COMMAND CANNOT BE ASKED ABOUT, in the words the model reads back, or undefined when a card can be
  * raised. Both branches are properties of the TURN rather than of the policy, which is exactly why they are
@@ -411,7 +428,7 @@ export const createCommandGate = (options: CommandGateOptions): CommandGate => {
      * for what it will and will not answer, and the contract's CommandContext for why only a positive "no"
      * counts. Not cached across commands on purpose: a turn that writes a token into `.env` and then reads it
      * back must be judged on the file as it is at each consult, not as it was at the first. */
-    const context: CommandContext = { holdsSecret: createCredentialOracle(options.cwd) };
+    const context: CommandContext = { locus: SANDBOX, holdsSecret: createCredentialOracle(options.cwd) };
 
     const record = (entry: Omit<SafetyLogEntry, "at">, at: number): void => {
         options.log?.({ at, ...entry });
@@ -456,7 +473,7 @@ export const createCommandGate = (options: CommandGateOptions): CommandGate => {
              * one thing that may write the card's TITLE, because it is the one verdict here that is typed rather
              * than guessed: everything else the catalog matched is triage, and triage's opinion of what a command
              * would do has no business on a card as a statement of fact. */
-            const hard = hardRuled(classes);
+            const hard = hardRuled(matches);
             const facts: JudgeFacts = {
                 consequences: classes.map((commandClass) => COMMAND_CLASS_LABELS[commandClass]),
                 unattended: options.unattended,

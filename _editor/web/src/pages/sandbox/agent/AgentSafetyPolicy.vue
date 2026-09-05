@@ -58,8 +58,9 @@ const commit = (): void => {
                  above will read it. Without this the document looks like the whole of the policy, and an owner
                  could delete every line of it believing they had switched the gate off. -->
             <Notice tone="info" class="mt-2 text-2xs">
-                Whatever this says, wiping a block device or deleting anything under <code>/history</code> always asks. That rule is not written
-                here and cannot be edited away, because nothing brings either of them back.
+                Whatever this says, wiping a block device, deleting <code>/</code>, or deleting anything under <code>/history</code> always asks — and
+                on your own computers, so does any delete. Those rules are not written here and cannot be edited away, because nothing brings what
+                they take back. They are listed in full under “What gets stopped” above.
             </Notice>
 
             <Notice v-if="error !== undefined" tone="danger" class="mt-2 text-2xs">{{ error }}</Notice>
