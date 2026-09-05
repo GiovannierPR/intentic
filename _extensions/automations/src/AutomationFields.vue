@@ -8,7 +8,6 @@ import {
     Picker,
     type PickerOption,
     ProseField,
-    ResizeSeam,
     SegmentedControl,
     ToggleSwitch,
     vAction,
@@ -155,21 +154,6 @@ const nameInput = ref<HTMLInputElement>();
 const promptField = ref<InstanceType<typeof ProseField>>();
 const promptInput = computed(() => promptField.value?.field);
 defineExpose({ nameInput, promptInput });
-
-/* HOW TALL THE PROMPT IS: a floor, and a ceiling the seam under it drags.
- *
- * IT USED TO BE A MINIMUM THAT STRETCHED, which is how a two-line prompt came to be drawn in a 700-pixel black
- * rectangle: the box was made to reach the bottom of the trigger column standing beside it. Nothing stands
- * beside it now, so the box can do the obvious thing instead — grow with the words from a four-line floor, stop
- * at the ceiling, and scroll past it. A short prompt no longer leaves a void and a forty-line one can no longer
- * push Save below the fold, which are the two failures this control has had, one at a time, for its whole life.
- *
- * The seam therefore drags the CEILING rather than the height: on a short prompt nothing visibly moves until
- * the ceiling passes the words, which is exactly when a reader is dragging it for anything. Double-clicking
- * comes back to PROMPT_MAX. */
-const PROMPT_MIN = 96;
-const PROMPT_MAX = 208;
-const promptHeight = ref(PROMPT_MAX);
 
 /* THE FOUR THINGS THAT CAN WAKE AN AGENT, as the app's own segmented control rather than as four cards this
  * file draws itself. They were 2×2 tinted buttons at `px-3 py-2`, which is the geometry of a primary action:
@@ -664,51 +648,30 @@ const setProvider = (provider: string): void => {
                 <span class="text-2xs text-subtle">What it wakes with.</span>
                 <!-- The one field nothing validates, and the one that has to agree with the trigger above it: a
                      briefing about Discord messages on a CI trigger is a wake that reads a payload it was never
-                     told about. So the rail says whose starting point is in the box while it is still one. -->
+                     told about. So the rail says whose starting point the text is while it is still one. -->
                 <span v-if="recipeNote" class="mt-1 text-2xs text-subtle">Starter from {{ recipeNote }}.</span>
                 <span v-else-if="starterPrompt && form.prompt === starterPrompt" class="mt-1 text-2xs text-subtle">
                     {{ listenerSource.label }}'s starter, yours to rewrite.
                 </span>
             </div>
-            <label class="ui-field min-w-0 flex-1">
+            <label class="ui-field min-w-0 flex-1 cursor-text">
                 <!-- IT IS A WRITING SURFACE, not a form control. What goes in it is the longest text on this
                      page by an order of magnitude: a briefing with numbered steps, the thing the whole
-                     automation turns on, and it was typeset as a name field: `ui.input()`'s bordered box at the
-                     form's own leading, its content behind a native scrollbar, and a resize grip that did
-                     nothing because `flex-1` overrode every height a drag could set. So it is the same field
-                     the story and workflow-step editors write into (<ProseField>): prose leading, no chrome of
-                     its own, and now the full width of the form rather than half of it.
-                     THE BOX GROWS WITH THE WORDS between a floor and a ceiling, and scrolls past the ceiling:
-                     no dead rectangle under a one-line prompt, and no forty-line one turning this panel into a
-                     page nobody can reach Save on. See PROMPT_MIN / PROMPT_MAX. -->
-                <div class="flex min-h-0 flex-col">
-                    <!-- The SHELL is what scrolls and what carries the frame; the field inside it brings its own
-                         padding and no chrome, so the writing surface reaches the border on every side and the
-                         tint it takes when focused is the whole box lighting up rather than a second rectangle
-                         inside the first. -->
-                    <div
-                        class="ui-field-shell scrollbar-thin cursor-text overflow-y-auto"
-                        :class="touched.has('prompt') && promptError ? 'ui-field-error-box' : ''"
-                        :style="{ minHeight: `${PROMPT_MIN}px`, maxHeight: `${promptHeight}px` }"
-                    >
-                        <ProseField
-                            ref="promptField"
-                            v-model="form.prompt"
-                            placeholder="Check the inbox and summarize anything urgent."
-                            @blur="markTouched('prompt')"
-                        />
-                    </div>
-                    <!-- ON the bottom edge rather than under it: the seam lays out as 0px and hangs 3px over the
-                         border it sizes, so the affordance is the edge of the box itself, which is where a
-                         pointer looking for one goes. The click's DEFAULT ACTION is cancelled because the
-                         <label> around all of this has one: focus the field and put the caret at its very end.
-                         Left alone, every drag of this seam ended by scrolling a long prompt to its last line.
-                         `.prevent` rather than `.stop`: the label activates from the click's default action,
-                         which propagation stopped anywhere below it does not reach. -->
-                    <div @click.prevent>
-                        <ResizeSeam v-model="promptHeight" axis="y" pane="before" :min="PROMPT_MIN" :max="720" :reset="PROMPT_MAX" />
-                    </div>
-                </div>
+                     automation turns on. So it is the same field the story editor writes into (<ProseField>),
+                     bare the way the acceptance panel wears it: no box, no fill, no seam — the page under the
+                     words is what says "write here", and focus lights the line being written rather than a
+                     rectangle around it. It grew a shell once, and the shell was the defect: the field sizes
+                     itself to its own text, so the box's floor stood taller than the field inside it and the
+                     focus tint — which belongs to the field — painted the first line and stopped.
+                     `-mx-2` pulls the field's own padding out to the column edge so the words, not the padding,
+                     align with everything above and below. `min-h-24` keeps an empty prompt worth clicking on. -->
+                <ProseField
+                    ref="promptField"
+                    v-model="form.prompt"
+                    placeholder="Check the inbox and summarize anything urgent."
+                    class="-mx-2 min-h-24"
+                    @blur="markTouched('prompt')"
+                />
                 <span v-if="touched.has('prompt') && promptError" class="ui-field-error">
                     <Icon name="exclamation-triangle" class="text-2xs" />
                     {{ promptError }}

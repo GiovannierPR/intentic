@@ -128,8 +128,8 @@ test("the digest keeps the opening prompts, the last word and the last notice, e
     expect(recall.digest.lastSaid?.length).toBe(240);
     expect(recall.digest.lastNotice).toBe("Claude usage limit reached.");
     // The pointers the hunt was assembling by hand: where the branch is checked out, and where the record is.
-    expect(recall.worktree).toBe("/history/worktrees/fair-sage-ey2r");
-    expect(recall.record).toBe("/history/transcripts/fair-sage-ey2r.jsonl");
+    expect(recall.worktree).toBe(`${HISTORY_ROOT}/worktrees/fair-sage-ey2r`);
+    expect(recall.record).toBe(`${HISTORY_ROOT}/transcripts/fair-sage-ey2r.jsonl`);
     // `diff: false` is the registry-only answer: the landed fact is free, the git counts are not asked for.
     expect(recall.repoStates).toEqual([{ repo: "root", base: "a".repeat(40), landed: false }]);
 });
