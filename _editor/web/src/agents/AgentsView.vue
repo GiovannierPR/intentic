@@ -135,7 +135,7 @@ const {
     over,
     action,
     accepts,
-    busy,
+    pendingOn,
     ghostStyle,
     begin,
     consumeSuppressedOpen,
@@ -157,9 +157,11 @@ const resolveTarget = computed(() => (pendingResolve.value === undefined ? undef
 const pendingFor = (agent: FleetAgent): PendingAction | undefined => {
     /* MATCHED ON THE CARD, NOT ON THE ID. Agent ids are minted per daemon, so a workspace cloned onto a second
      * machine puts the same id on two cards, and an id-only test would dim both of them while one is landing.
-     * `busy` carries the box the action was fired at (useAgentDrag) for exactly this. */
-    if (busy.value?.id === agent.id && busy.value.at === agent.sandboxId) {
-        return busy.value.action;
+     * The drag store keys its in-flight actions by the pair (useAgentDrag) for exactly this, and keys them PER
+     * CARD so two presses in a row leave two cards spinning rather than one. */
+    const running = pendingOn(agent.id, agent.sandboxId);
+    if (running !== undefined) {
+        return running;
     }
     // The filing pair is the ACTIVE box's alone (archive and restore go through the fleet store), so a card
     // from anywhere else can never be in that set whatever its id says.

@@ -37,9 +37,26 @@ const draggedBox = ref<string | undefined>(undefined);
 const dragging = ref(false);
 const pointer = ref({ x: 0, y: 0 });
 const over = ref<DropTarget | undefined>(undefined);
-// The one action this board is running, and which card it is running against, the action and not just the id
-// because the card's own buttons report their progress in place (see PendingAction).
-const busy = ref<{ id: string; at?: string; action: PendingAction } | undefined>(undefined);
+/* WHAT EACH CARD IS WAITING ON: a map keyed by card, not the one action this board is running.
+ *
+ * A single slot was a bug the moment two presses could overlap, which on this board is constantly: the user
+ * clicks "Have the agent resolve it" on one card and, while that send is still out, on the next. The second
+ * press overwrote the slot, so the first card's button flicked back to its resting label as though the press
+ * had never taken, and whichever call returned first cleared the other card's spinner too. The archive pair
+ * had the same fault and the same fix (useAgents-archive's busyCounts): a press claims ITS OWN card and
+ * releases only what it claimed. No counter here, unlike there: re-entry on one card is refused below, so a
+ * key is claimed once or not at all.
+ *
+ * Keyed by the PAIR, never by the id: agent ids are minted per daemon, so the same id can sit on two cards
+ * from two boxes (see draggedBox), and a key naming only the id would spin both. JSON rather than a
+ * delimiter, because a sandbox id is a slug of someone's choosing and any literal separator is one unlucky
+ * name away from two cards sharing a key.
+ *
+ * The value is the ACTION and not a flag because the card's own buttons report their progress in place: see
+ * PendingAction. */
+const cardKey = (id: string, at?: string): string => JSON.stringify([at ?? null, id]);
+const inFlight = ref<ReadonlyMap<string, PendingAction>>(new Map());
+const pendingOn = (id: string, at?: string): PendingAction | undefined => inFlight.value.get(cardKey(id, at));
 const ghostWidth = ref(0);
 
 /* Resolved live against the roster rather than snapshotted at grab time: a turn that ends mid-drag must
@@ -98,9 +115,9 @@ const cancel = (): void => {
     over.value = undefined;
 };
 
-// One runner for both spans, because a re-land IS a land in every way the board cares about, same busy flag,
-// same refusal notice, same refresh. What differs is the rung it measures from, and that is one argument rather
-// than a parallel path free to drift on the other three.
+// One runner for both spans, because a re-land IS a land in every way the board cares about, same claim on the
+// card, same refusal notice, same refresh. What differs is the rung it measures from, and that is one argument
+// rather than a parallel path free to drift on the other three.
 const runLand = async (id: string, chosen: PendingAction, at?: string): Promise<void> => {
     const result = await landAgent(id, `check`, chosen === `reland` ? `cumulative` : `outstanding`, false, at);
     await invalidateAgentAction(id, at);
@@ -148,7 +165,14 @@ const runAction = async (id: string, chosen: PendingAction, at?: string): Promis
 // The card doesn't move lane here, the roster frame the action provokes does that. Until it arrives the card
 // shows as busy in place, so a slow daemon reads as "working", never as a card teleporting back.
 const perform = async (id: string, chosen: PendingAction, at?: string): Promise<void> => {
-    busy.value = { id, at, action: chosen };
+    const key = cardKey(id, at);
+    /* Re-entry on the SAME card is a no-op, like useAsyncAction's: a card mid-action is dimmed and
+     * pointer-inert, so a second press on it is a double-click rather than a second intention. A press on
+     * ANOTHER card is not re-entry at all, which is the whole reason this is a map. */
+    if (inFlight.value.has(key)) {
+        return;
+    }
+    inFlight.value = new Map(inFlight.value).set(key, chosen);
     notice.value = undefined;
     try {
         await runAction(id, chosen, at);
@@ -161,7 +185,9 @@ const perform = async (id: string, chosen: PendingAction, at?: string): Promise<
     } catch (caught) {
         notice.value = errorMessage(caught, `That didn't work.`);
     } finally {
-        busy.value = undefined;
+        const next = new Map(inFlight.value);
+        next.delete(key);
+        inFlight.value = next;
     }
 };
 
@@ -196,7 +222,7 @@ const cancelResolve = (): void => {
 /* THE SAME ASK, FROM THE CARD'S OWN BUTTON, and deliberately the same runner, not a second one.
  *
  * A conflicted card's press and a conflicted card's drop are one action on one board, so they share `perform`:
- * one busy flag (the card dims in place), one notice strip for a refusal, one refresh closing the gap on a
+ * one claim on the card (which dims in place), one notice strip for a refusal, one refresh closing the gap on a
  * quiet stream. A parallel implementation here would be free to drift on all three, and the first thing to
  * drift would be the report of a failure, the half nobody exercises by hand.
  *
@@ -208,8 +234,8 @@ const cancelResolve = (): void => {
  * people to click through dialogs. */
 const resolveNow = (id: string, at?: string): Promise<void> => perform(id, `resolve`, at);
 
-// The ready card's "Land now", the same runner for the same reasons resolveNow shares it (one busy flag, one
-// notice strip, one refresh). No dialog: landing is reversible in the git sense (the branch keeps everything)
+// The ready card's "Land now", the same runner for the same reasons resolveNow shares it (one claim on the
+// card, one notice strip, one refresh). No dialog: landing is reversible in the git sense (the branch keeps everything)
 // and the button states its own mechanics, exactly like the review panel's copy of it.
 const landNow = (id: string, at?: string): Promise<void> => perform(id, `land`, at);
 
@@ -220,7 +246,7 @@ const landNow = (id: string, at?: string): Promise<void> => perform(id, `land`, 
 const relandNow = (id: string, at?: string): Promise<void> => perform(id, `reland`, at);
 
 /* THE WAY OFF A WATCH, from the card's own readout, and the fourth press to share `perform` for the reasons
- * the three above give: one busy flag, one notice strip, one refresh, and a refusal reported the same way
+ * the three above give: one claim on the card, one notice strip, one refresh, and a refusal reported the same way
  * whichever gesture asked.
  *
  * It exists because the drop and the context menu were the whole of it, and both are gestures a user has to
@@ -308,7 +334,7 @@ export function useAgentDrag() {
         over,
         action,
         accepts,
-        busy,
+        pendingOn,
         ghostStyle,
         begin,
         consumeSuppressedOpen,
