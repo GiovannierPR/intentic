@@ -131,6 +131,7 @@ export function useEngines() {
     // A boolean rather than the ref, for the reason useEnvironment spells out: reaching through vue-query's
     // object in a template does not unwrap, so a refresh icon bound to it spins forever.
     const isFetching = computed<boolean>(() => query.isFetching.value);
+    const isLoading = computed<boolean>(() => query.isLoading.value);
 
     // Rows with something waiting. What the card's badge counts, and the reason it is derived here rather than
     // in the template: the shell's own banner asks the same question.
@@ -185,6 +186,7 @@ export function useEngines() {
         updatable,
         query,
         isFetching,
+        isLoading,
         isAnyBusy,
         updatingAll,
         actionNotice,

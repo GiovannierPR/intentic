@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { EngineRow } from "@intentic-app/api-contract";
-import { BrandMark, Button, Notice, Picker, type PickerOption, Row, RowGroup, StatusBadge, ui } from "@intentic/ui";
+import { BrandMark, Button, Notice, Picker, type PickerOption, Row, RowGroup, SkeletonRows, StatusBadge, ui } from "@intentic/ui";
 import { useEngines } from "../../composables/sandbox/useEngines";
+import { useSandboxOutline } from "../../composables/sandbox/useSandboxOutline";
 import { useRole } from "../../composables/sandbox/useRole";
 import { engineVisual } from "./engineVisual";
 
@@ -28,6 +29,7 @@ const {
     updatable,
     query,
     isFetching,
+    isLoading,
     isAnyBusy,
     updatingAll,
     actionNotice,
@@ -39,6 +41,8 @@ const {
     revert,
     updateAll,
 } = useEngines();
+
+const outline = useSandboxOutline(isLoading);
 
 const CHANNELS: readonly PickerOption<`blessed` | `latest` | `pinned` | `image`>[] = [
     {
@@ -82,7 +86,14 @@ const CHANNELS: readonly PickerOption<`blessed` | `latest` | `pinned` | `image`>
             </div>
         </template>
 
-        <Row v-for="engine in engines" :key="engine.id">
+        <div v-if="isLoading" role="status" aria-busy="true">
+            <template v-if="outline">
+                <span class="sr-only">Reading this sandbox's agent engines…</span>
+                <SkeletonRows :rows="5" description control />
+            </template>
+        </div>
+
+        <Row v-for="engine in engines" v-else :key="engine.id">
                 <template #lead="{ mark }">
                     <BrandMark :size="mark" :name="engine.label" :logo="engineVisual(engine.id).logo" :icon="engineVisual(engine.id).icon" />
                 </template>
