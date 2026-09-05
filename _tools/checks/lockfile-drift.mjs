@@ -26,12 +26,13 @@
  * graph knows which. */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { idOf, readCatalogs, readLockfile } from "./lib/lockfile.mjs";
+import { idOf, readCatalogs, readLockfile, readPackageManagerPin } from "./lib/lockfile.mjs";
 import { finish } from "./lib/report.mjs";
 import { packages, root } from "./lib/repo.mjs";
 
 const { recorded, installed, catalogued, edges } = readLockfile();
 const catalogs = readCatalogs();
+const rootManifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
 /* What a package.json declares, flattened to `name -> { specifier, required }`.
  *
@@ -109,6 +110,42 @@ for (const importer of recorded.keys()) {
     }
 }
 
+/* THE PNPM PIN IS ONE PACKAGE, AND IT IS THE ONE `packageManager` NAMES.
+ *
+ * pnpm records the version a workspace pins in `packageManagerDependencies:` and rewrites that block from EVERY
+ * command, not just the install family — so a block naming anything else is a lockfile every `pnpm lint`,
+ * `pnpm test` and `pnpm exec` in the repository silently corrects in the working tree. That is what this
+ * catches, and the shape it was written for is `@pnpm/exe` pinned beside `pnpm`: correct up to pnpm 11, where
+ * the unscoped package was a JS wrapper and the native binary shipped separately, and wrong from 12, where the
+ * unscoped package IS the native executable and `@pnpm/exe` is not published at all. A pnpm 11 that touched
+ * this tree put it back three times in one day (`fix: lock`, twice, then again), and each time the next pnpm
+ * command anywhere removed it — a tree that goes dirty by itself, which is how the manifest/lockfile lockstep
+ * at the push gate ends up refusing a push nobody made a lockfile change in.
+ *
+ * Nothing else here sees it: the pin lives in the lockfile's first YAML document, and readImporters scans both
+ * documents concatenated, so the real lockfile's `.` importer overwrites it (lib/lockfile.mjs). CI sees it in
+ * the first minute — a frozen install refuses a `packageManagerDependencies` block that does not match the
+ * manifest's pin (ERR_PNPM_FROZEN_LOCKFILE_WITH_OUTDATED_LOCKFILE) rather than resolving one. */
+{
+    const pin = /^(.+)@([^@]+)$/.exec(rootManifest.packageManager?.split("+")[0] ?? "");
+    if (pin === null) {
+        drift.push(`package.json has no readable "packageManager" pin, so the lockfile's recorded package manager cannot be checked`);
+    } else {
+        const [, manager, version] = pin;
+        const pinned = readPackageManagerPin();
+        for (const [name, recordedVersion] of pinned) {
+            if (name !== manager) {
+                drift.push(`pnpm-lock.yaml pins ${name}@${recordedVersion} as a package manager, but package.json names ${manager}@${version} and nothing else`);
+            } else if (recordedVersion !== version) {
+                drift.push(`pnpm-lock.yaml pins ${name}@${recordedVersion}, package.json pins ${manager}@${version}`);
+            }
+        }
+        if (!pinned.has(manager)) {
+            drift.push(`pnpm-lock.yaml records no ${manager} in "packageManagerDependencies:", the pin package.json declares`);
+        }
+    }
+}
+
 /* The catalogs, compared where both copies speak: an entry the lockfile snapshotted has to still say what
  * pnpm-workspace.yaml says, and has to still be in pnpm-workspace.yaml at all. Only where both speak, because
  * the two are not the same set: pnpm records an entry once some importer resolves through it, so a catalog may
@@ -178,8 +215,9 @@ finish(
         ],
     ],
     [
-        `lockfile: ${importers.length} importers record the specifiers their package.json declares, and ` +
-            `${catalogued.values().reduce((all, entries) => all + entries.size, 0)} catalogued versions are the ones pnpm-workspace.yaml names`,
+        `lockfile: ${importers.length} importers record the specifiers their package.json declares, ` +
+            `${catalogued.values().reduce((all, entries) => all + entries.size, 0)} catalogued versions are the ones pnpm-workspace.yaml names, ` +
+            `and the recorded package manager is ${rootManifest.packageManager} and nothing beside it`,
         `lockfile reachability: all ${edges.size} packages in the lockfile are depended on by something`,
     ],
 );

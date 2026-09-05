@@ -141,6 +141,38 @@ export const readLockfile = () => {
     return { ...readImporters(lines), catalogued: readCatalogued(lines), edges: readSnapshots(lines) };
 };
 
+/* `packageManagerDependencies:` as `package -> version`: WHICH PNPM THE LOCKFILE SAYS THIS WORKSPACE RUNS.
+ *
+ * Its own reader, and its own pass over the file, because it lives in the lockfile's FIRST YAML DOCUMENT —
+ * pnpm 12 writes the package-manager pin as a `---`-separated document ahead of the real lockfile, and both
+ * documents open with `importers:` and a `.:` importer. readImporters above scans the concatenation, so the
+ * second document's `.` replaces the first's and this block leaves no trace in `recorded`. That blind spot is
+ * why a lockfile pinning a package pnpm 12 will not resolve passed every check here while any pnpm command
+ * rewrote it in the working tree.
+ *
+ * The pin is read wherever it appears, and the caller compares it against the manifest's `packageManager`. */
+export const readPackageManagerPin = () => {
+    const pinned = new Map();
+    let inside = false;
+    let entry;
+    for (const line of readFileSync(join(root, "pnpm-lock.yaml"), "utf8").split("\n")) {
+        if (/^ {0,4}\S/.test(line)) {
+            inside = /^ {4}packageManagerDependencies:[ \t]*$/.test(line);
+            continue;
+        }
+        const named = /^ {6}(\S.*?):[ \t]*$/.exec(line);
+        if (inside && named) {
+            entry = unquote(named[1]);
+            continue;
+        }
+        const version = /^ {8}version:[ \t]*(.*?)[ \t]*$/.exec(line);
+        if (inside && version && entry !== undefined) {
+            pinned.set(entry, unquote(version[1]));
+        }
+    }
+    return pinned;
+};
+
 /* The catalogs pnpm-workspace.yaml declares, as `catalog name -> { dependency: version }`. Same flat shape,
  * same scanner: `catalog:` at column 0 is the default catalog's entries, `catalogs:` is a level of named ones
  * above them. */

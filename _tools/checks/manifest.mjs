@@ -15,7 +15,7 @@
  * alone by hand: `node _tools/checks/<file>`. */
 export const CHECKS = [
     { id: "control-chars", file: "control-chars.mjs", needs: "checkout", about: "no literal control bytes in tracked text" },
-    { id: "lockfile", file: "lockfile-drift.mjs", needs: "checkout", about: "pnpm-lock.yaml records the manifests and carries nothing unreachable" },
+    { id: "lockfile", file: "lockfile-drift.mjs", needs: "checkout", about: "pnpm-lock.yaml records the manifests, pins the pnpm package.json names, and carries nothing unreachable" },
     { id: "test-programs", file: "test-programs.mjs", needs: "checkout", about: "tests are type-checked, budgeted, mocked whole, and emitted in order" },
     { id: "workflows", file: "workflow-policy.mjs", needs: "checkout", about: "the fork boundary, permission ceilings, provenance runners, tag triggers" },
     { id: "release-notes", file: "release-headings.mjs", needs: "checkout", about: "the release body: headings spelled the same by writer and parsers, built from a non-empty range" },
