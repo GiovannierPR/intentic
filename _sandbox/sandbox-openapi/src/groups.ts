@@ -1,4 +1,4 @@
-/* THE 40 GROUPS OF THE DAEMON'S SURFACE, IN READING ORDER, each with the one line that says what it is FOR,
+/* THE 38 GROUPS OF THE DAEMON'S SURFACE, IN READING ORDER, each with the one line that says what it is FOR,
  * and the shelf it sits on.
  *
  * This is the only hand-written content in the generated document, and it is hand-written because it is the
@@ -17,7 +17,7 @@
  * COMPLETENESS IS GUARDED, NOT TRUSTED. The tests walk the contract and fail if a group here has no routes or
  * a group in the contract has no entry, so adding a contract file is a build error until it is described. That
  * is the repo's discovery-over-enumeration rule applied to the one enumerated list that has to exist: a list of
- * 40 prose paragraphs cannot be derived, but its AGREEMENT with the code can be.
+ * 38 prose paragraphs cannot be derived, but its AGREEMENT with the code can be.
  */
 
 /** The shelves the reference rail is built from, in reading order. */
@@ -274,28 +274,12 @@ export const SPEC_GROUPS: readonly SpecGroup[] = [
 
     // ── Models and accounts ───────────────────────────────────────────────────────────────────────────
     {
-        name: "claude",
+        name: "accounts",
         shelf: "models",
-        label: "Claude accounts",
-        summary: "Connecting an Anthropic subscription, and the accounts already connected",
+        label: "Accounts",
+        summary: "Subscriptions this sandbox holds itself, for any provider, with the provider in the address",
         description:
-            "Begin and finish a sign-in, list what is connected with how full each account's limits were, rename one, disconnect one. A sandbox can hold several side by side.",
-    },
-    {
-        name: "grok",
-        shelf: "models",
-        label: "Grok accounts",
-        summary: "Connecting an xAI subscription, and the account already connected",
-        description:
-            "Begin a sign-in with a code typed on another page, see what is connected, disconnect it. The sandbox waits for the sign-in to complete on its own, so nothing is pasted back.",
-    },
-    {
-        name: "cursor",
-        shelf: "models",
-        label: "Cursor accounts",
-        summary: "Connecting a Cursor subscription, and the accounts already connected",
-        description:
-            "Begin a sign-in, abandon one nobody finished, see what is connected, rename one, disconnect one. A sandbox can hold several side by side. Nothing is pasted back and there is no code to type: the page that opens is already addressed to the attempt, and the sandbox completes the exchange itself, so the way to learn it worked is to watch the account list.",
+            "One route family for every provider whose credential lives in this daemon's own auth tree — sign in, finish or abandon a sign-in, list what is connected with how full each account's limits were, rename one, disconnect one. The provider is a parameter rather than a group of its own because the operations are the same six for all of them; what differs is each provider's mechanism, which its own module declares. The translator group next door is the other shape of the same idea, for subscriptions a proxy holds and re-serves. No answer here can carry a credential: the account rows have no field one could ride in, and a sign-in's proof never leaves the sandbox.",
     },
     {
         name: "translator",
@@ -312,14 +296,6 @@ export const SPEC_GROUPS: readonly SpecGroup[] = [
         summary: "A model server you configured, and the free trial's allowance",
         description:
             "Every built-in provider's catalogue is one fixed route, because there is one of each. Endpoints are user-created and unbounded, so the id rides in the address and the answer is whatever the configured server says about itself. The trial belongs here because the trial is an endpoint — the one the daemon provisions rather than you.",
-    },
-    {
-        name: "keys",
-        shelf: "models",
-        label: "Minted-key providers",
-        summary: "Providers whose sign-in mints their own API key",
-        description:
-            "Some vendors publish an Anthropic Messages endpoint of their own, so a turn on them is an ordinary Claude Code turn pointed at a different host. Their sign-in token is not an inference credential, so the sandbox goes on to mint the vendor's own key from it and holds that. These routes run that sign-in, and name and remove what it produced; one provider can hold several plans side by side. The minted key never travels: every answer here is an account row, which has no field a credential could ride in.",
     },
     {
         name: "providers",
