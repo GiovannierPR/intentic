@@ -25,13 +25,19 @@ interface Props {
 
 const { book, pageId } = Astro.props;
 
-// Two MUTUALLY EXCLUSIVE class sets rather than a base plus an override. Tailwind resolves a conflict by
-// stylesheet order, not by the order classes appear on the element, and `border-transparent`/`text-muted`
-// are emitted after `border-primary-500`/`text-content`, so a base carrying them beat the active pair and
-// the current page rendered identically to every other row.
-const rowBase = "block border-l-2 py-1 text-sm transition-colors";
-const rowIdle = "border-transparent text-muted hover:border-line-strong hover:text-content";
-const rowActive = "border-primary-500 font-medium text-content";
+/* Two MUTUALLY EXCLUSIVE class sets rather than a base plus an override. Tailwind resolves a conflict by
+ * stylesheet order, not by the order classes appear on the element, and `border-transparent`/`text-muted`
+ * are emitted after `border-primary-500`/`text-primary-400`, so a base carrying them beat the active pair and
+ * the current page rendered identically to every other row.
+ *
+ * THE RAIL SPEAKS THE SAME TWO WORDS THE BAR'S MENU DOES: position is `.nav-wash` and the words brightening a
+ * step (global.css), state is ember plus the rule down the left edge. The hairline this used to move on hover
+ * is gone from the idle set, and that is the whole change — a rule appearing under the pointer said "you are
+ * here" in the site's own vocabulary for a row that was merely being pointed at, three inches under a menu
+ * where the rule means something else. */
+const rowBase = "nav-wash block border-l-2 py-1 text-sm transition-colors";
+const rowIdle = "border-transparent text-muted hover:text-content";
+const rowActive = "border-primary-500 font-medium text-primary-400";
 
 /** Child rows sit one step in from their parent, which is the whole point of having them. */
 const indent = (page: BookPage): string => (page.id.includes("/") ? "pl-6" : "pl-3");

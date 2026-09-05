@@ -24,30 +24,16 @@
  * The wordmark, the bar's labels and the panel's rows are all set in the brand face: a rounded geometric
  * with cut terminals and an angled `t`. See `--font-mark` in global.css.
  */
-import type { NavEntry } from "@intentic-dev/site-content/nav";
 import { navEntries } from "@intentic-dev/site-content/nav";
 import { APP_URL, discordUrl, githubUrl } from "@intentic-dev/site-content/site";
 import { GITHUB_MARK } from "../lib/marks";
+import { isCurrentRow, isCurrentSection } from "../lib/navCurrent";
 import { NAV_ICONS } from "../lib/navIcons";
 import DiscordIcon from "./DiscordIcon.astro";
 import Lotus from "./Lotus.astro";
 import MobileNav from "./MobileNav.astro";
 
 const currentPath = Astro.url.pathname;
-
-function isActive(entry: NavEntry): boolean {
-    if (entry.type === "link") {
-        return currentPath === entry.href || currentPath.startsWith(entry.prefix);
-    }
-    return currentPath.startsWith(entry.prefix);
-}
-
-/* A menu row points at ONE page, so it lights up only on that page. The trigger above matches a prefix
- * because a whole menu is "current"; a row must not: /docs/ is a prefix of every docs page, which made
- * "Overview" the current row everywhere under Docs. The trailing slash is "always" in a build and
- * "ignore" in dev, so it is not part of the comparison. */
-const bare = (path: string): string => path.replace(/\/+$/u, "");
-const isCurrentPage = (href: string): boolean => bare(href) === bare(currentPath);
 ---
 
 <header class="bar" id="site-bar">
@@ -61,14 +47,18 @@ const isCurrentPage = (href: string): boolean => bare(href) === bare(currentPath
             {
                 navEntries.map((entry, index) =>
                     entry.type === "link" ? (
-                        <a href={entry.href} class:list={["bar-link", { active: isActive(entry) }]}>
+                        <a
+                            href={entry.href}
+                            class:list={["bar-link", { active: isCurrentSection(entry, currentPath) }]}
+                            aria-current={isCurrentSection(entry, currentPath) ? "page" : undefined}
+                        >
                             {entry.label}
                         </a>
                     ) : (
                         <div class="menu" data-menu>
                             <button
                                 type="button"
-                                class:list={["bar-link", "menu-trigger", { active: isActive(entry) }]}
+                                class:list={["bar-link", "menu-trigger", { active: isCurrentSection(entry, currentPath) }]}
                                 aria-expanded="false"
                                 aria-controls={`bar-menu-${index}`}
                             >
@@ -93,7 +83,12 @@ const isCurrentPage = (href: string): boolean => bare(href) === bare(currentPath
                                                         <li>
                                                             <a
                                                                 href={item.href}
-                                                                class:list={["menu-item", { current: isCurrentPage(item.href), "menu-item--flat": !item.description }]}
+                                                                class:list={[
+                                                                    "menu-item",
+                                                                    "nav-wash",
+                                                                    { current: isCurrentRow(item, currentPath), "menu-item--flat": !item.description },
+                                                                ]}
+                                                                aria-current={isCurrentRow(item, currentPath) ? "page" : undefined}
                                                                 target={item.external ? "_blank" : undefined}
                                                                 rel={item.external ? "noopener" : undefined}
                                                             >
@@ -759,24 +754,40 @@ const isCurrentPage = (href: string): boolean => bare(href) === bare(currentPath
         padding: 0;
         list-style: none;
     }
-    /* ── A ROW IS AN ICON AND A LABEL, LIT TOGETHER ──────────────────────────────────────────────────
+    /* ── A ROW IS AN ICON AND A LABEL, AND IT HAS TWO STATES THAT MEAN DIFFERENT THINGS ──────────────
      *
      * Each row wears a line drawing at its left (see `navIcons`), a label in the brand face, and, on the
      * authored menus, a few words of scent under it. The reference menu carries no scent — it is looked up,
      * not browsed — so its rows are the icon and the label alone.
      *
-     * The ground under a hovered or current row is RAKING LIGHT, not a fill: a warm wash strongest at the
-     * left and gone by two thirds across, light falling on stone from the side, which is the one light this
-     * whole page is lit by. Icon and label warm to ember at once, so the row reads as a single lit object
-     * rather than a marker switching on beside static text — and the icon gives the smallest of springs, the
-     * bite-and-settle the old stamped lozenge had, without moving anything around it. */
+     * WHERE THE POINTER IS AND WHERE THE READER IS ARE NOT THE SAME FACT, and until this rewrite the panel
+     * said both with one voice: `:hover` and `.current` shared a declaration block, so they resolved to
+     * identical pixels — same wash, same ember label, same ember icon, same spring. Which meant the panel
+     * could not answer the question it is open to answer. Point anywhere in it and every row you touch looks
+     * exactly like the page you are on; point at the page you are on and nothing happens at all, which is
+     * the one row a reader is most likely to be pointing at.
+     *
+     * So the two states take SEPARATE CHANNELS, which is the rule the app's own lists already run on (see
+     * `ui-row-select` / `ui-row-select-on` in the editor's utilities.css: position is a neutral wash, choice
+     * is the accent plus a persistent mark). Written in this vocabulary rather than in the app's flat fill,
+     * because the material here is carved stone under raking light and a grey rounded box is not:
+     *
+     *   POSITION  `.nav-wash`, the site's one hover (global.css), and the gold warming a step. It spends no
+     *             ember, so it cannot be mistaken for state — and it is the same wash the phone overlay and
+     *             a book's rail answer the pointer with, so the gesture is learned once.
+     *   STATE     ember on the label and the icon, and a rule down the row's left edge. The rule is the mark
+     *             that survives the pointer: hover paints OVER a current row rather than replacing it, so the
+     *             two can be on screen together and stay legible. It is also the vocabulary the rail and the
+     *             phone overlay use, so "amber rule" means one thing everywhere on the site. */
     .menu-item {
         display: flex;
         align-items: flex-start;
         gap: 0.7rem;
-        padding: 0.5rem 0.6rem;
+        /* The rule's 2px comes out of the left padding rather than adding to it, so a row lighting up cannot
+           shift its own icon sideways, and rest and current sit on one vertical. */
+        border-left: 2px solid transparent;
+        padding: 0.5rem 0.6rem 0.5rem calc(0.6rem - 2px);
         text-decoration: none;
-        transition: background-color 0.24s ease;
     }
     /* Label-only rows (the reference menu) have one line to sit against, so the icon centres on it. The
        modifier is namespaced rather than a bare `flat`: Astro scopes this file's selectors with `:where()`,
@@ -785,10 +796,7 @@ const isCurrentPage = (href: string): boolean => bare(href) === bare(currentPath
     .menu-item--flat {
         align-items: center;
     }
-    .menu-item:hover,
-    .menu-item.current {
-        background: linear-gradient(90deg, rgba(224, 123, 39, 0.13) 0%, rgba(224, 123, 39, 0.05) 34%, transparent 72%);
-    }
+
     .menu-item-icon {
         flex: none;
         width: 1.15rem;
@@ -803,9 +811,13 @@ const isCurrentPage = (href: string): boolean => bare(href) === bare(currentPath
     .menu-item--flat .menu-item-icon {
         margin-top: 0;
     }
+    /* The hover's second signal, and the reason the label can stay put: it is already the brightest text on
+       the page, so there is no headroom to brighten it without reaching for ember — which is state's. The
+       gold has a step above it, and the spring is the bite-and-settle the old stamped lozenge had, without
+       moving anything around it. */
     .menu-item:hover .menu-item-icon,
-    .menu-item.current .menu-item-icon {
-        color: var(--color-primary-400);
+    .menu-item:focus-visible .menu-item-icon {
+        color: var(--color-gold-bright);
         transform: scale(1.08);
     }
     .menu-item-text {
@@ -819,16 +831,26 @@ const isCurrentPage = (href: string): boolean => bare(href) === bare(currentPath
         font-weight: 600;
         color: var(--color-content);
     }
-    .menu-item:hover .menu-item-label,
-    .menu-item.current .menu-item-label {
-        color: var(--color-primary-400);
-    }
     .menu-item-blurb {
         margin-top: 0.1rem;
         max-width: 30ch;
         font-size: 0.75rem;
         line-height: 1.45;
         color: var(--color-subtle);
+    }
+
+    /* STATE. Last, and stated for the hovered case as well, so the pointer resting on the current row cannot
+       take its mark away — the same ordering the app's `ui-row-select-on` uses, for the same reason. */
+    .menu-item.current {
+        border-left-color: var(--color-primary-500);
+    }
+    .menu-item.current .menu-item-icon,
+    .menu-item.current:hover .menu-item-icon,
+    .menu-item.current:focus-visible .menu-item-icon {
+        color: var(--color-primary-400);
+    }
+    .menu-item.current .menu-item-label {
+        color: var(--color-primary-400);
     }
 
     .menu-action {

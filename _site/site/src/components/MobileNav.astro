@@ -2,9 +2,12 @@
 import { navEntries } from "@intentic-dev/site-content/nav";
 import { APP_URL, discordUrl, githubUrl } from "@intentic-dev/site-content/site";
 import { GITHUB_MARK } from "../lib/marks";
+import { isCurrentRow, isCurrentSection } from "../lib/navCurrent";
 import { NAV_ICONS } from "../lib/navIcons";
 import DiscordIcon from "./DiscordIcon.astro";
 import ExternalIcon from "./ExternalIcon.astro";
+
+const currentPath = Astro.url.pathname;
 ---
 
 <div class="mobile-nav-overlay" id="mobile-nav-overlay">
@@ -13,9 +16,15 @@ import ExternalIcon from "./ExternalIcon.astro";
             {
                 navEntries.map((entry) => {
                     if (entry.type === "menu") {
+                        /* THE GROUP YOU ARE INSIDE OPENS WITH THE MENU. Every accordion starting shut is right
+                           for a reader arriving from the home page and wrong for one already three pages into
+                           Docs: the row marking where they are is the thing they opened the menu to see, and it
+                           is behind a tap they have to know to make. The script still collapses the others the
+                           moment any heading is pressed, so this only changes where the overlay STARTS. */
+                        const here = isCurrentSection(entry, currentPath);
                         return (
-                            <li class="mobile-nav-group">
-                                <button type="button" class="mobile-nav-heading" aria-expanded="false">
+                            <li class:list={["mobile-nav-group", { expanded: here }]}>
+                                <button type="button" class:list={["mobile-nav-heading", { active: here }]} aria-expanded={here ? "true" : "false"}>
                                     {entry.label}
                                     <svg
                                         class="mobile-chevron"
@@ -46,7 +55,8 @@ import ExternalIcon from "./ExternalIcon.astro";
                                                 <li>
                                                     <a
                                                         href={item.href}
-                                                        class="mobile-nav-link sub"
+                                                        class:list={["mobile-nav-link", "nav-wash", "sub", { current: isCurrentRow(item, currentPath) }]}
+                                                        aria-current={isCurrentRow(item, currentPath) ? "page" : undefined}
                                                         target={item.external ? "_blank" : undefined}
                                                         rel={item.external ? "noopener" : undefined}
                                                     >
@@ -74,7 +84,7 @@ import ExternalIcon from "./ExternalIcon.astro";
                                         <li>
                                             <a
                                                 href={entry.action.href}
-                                                class="mobile-nav-link sub action"
+                                                class="mobile-nav-link nav-wash sub action"
                                                 target={entry.action.external ? "_blank" : undefined}
                                                 rel={entry.action.external ? "noopener" : undefined}
                                             >
@@ -94,7 +104,8 @@ import ExternalIcon from "./ExternalIcon.astro";
                             <li>
                                 <a
                                     href={entry.href}
-                                    class="mobile-nav-link"
+                                    class:list={["mobile-nav-link", "nav-wash", { current: isCurrentSection(entry, currentPath) }]}
+                                    aria-current={isCurrentSection(entry, currentPath) ? "page" : undefined}
                                     target={entry.external ? "_blank" : undefined}
                                     rel={entry.external ? "noopener" : undefined}
                                 >
@@ -110,7 +121,7 @@ import ExternalIcon from "./ExternalIcon.astro";
             <li class="mobile-nav-divider"></li>
 
             <li>
-                <a href={githubUrl} target="_blank" rel="noopener" class="mobile-nav-link">
+                <a href={githubUrl} target="_blank" rel="noopener" class="mobile-nav-link nav-wash">
                     <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" aria-hidden="true"><path d={GITHUB_MARK} /></svg>
                     GitHub
                 </a>
@@ -119,7 +130,7 @@ import ExternalIcon from "./ExternalIcon.astro";
             {/* Named in full here, unlike the bar: a phone menu has the room, and "Discord community" says
                 what is on the other side where a bare glyph would only say which company hosts it. */}
             <li>
-                <a href={discordUrl} target="_blank" rel="noopener" class="mobile-nav-link">
+                <a href={discordUrl} target="_blank" rel="noopener" class="mobile-nav-link nav-wash">
                     <DiscordIcon />
                     Discord community
                 </a>
@@ -179,41 +190,43 @@ import ExternalIcon from "./ExternalIcon.astro";
     }
 
     /* ── Links ─────────────────────────────────────────── */
-    /* A row is a label, so it takes the brand face the bar's labels do, and lights ember rather than
-       filling with a grey block: this vocabulary marks a row with a rule down its left edge, the same way
-       the desktop panel does. */
+    /* A row is a label, so it takes the brand face the bar's labels do, and it splits its two states the way
+       the desktop panel does — POSITION is the raking wash and a step of gold, STATE is ember plus a rule
+       down the left edge (see the long note in Nav.astro; this is the same grammar at a phone's scale).
+       The rule used to be the HOVER mark here while the desktop panel had no rule at all, so one shape meant
+       two different things depending on how wide your screen was. It means "you are here", on both. */
     .mobile-nav-link {
         display: flex;
         align-items: center;
         gap: 10px;
-        padding: 14px 16px;
+        /* 2px of the left padding is spent on the rule, so a marked row keeps its words on the same vertical
+           as the rows above and below it. */
+        border-left: 2px solid transparent;
+        padding: 14px 16px 14px 14px;
         font-family: var(--font-mark);
         font-size: 1.0625rem;
         font-weight: 600;
         color: var(--color-muted);
-        border-left: 1px solid transparent;
         text-decoration: none;
-        transition:
-            color 0.15s,
-            background 0.15s,
-            border-color 0.15s;
+        /* Colour only. The rule is server-rendered — a row is the current page or it is not, and nothing
+           toggles that in the browser — so a transition on it would animate a change that never happens. */
+        transition: color 0.15s;
     }
 
-    /* The raking light the desktop panel's rows take, at a phone's scale: strongest where the row starts
-       and gone before it ends, so it reads as light falling across stone rather than as a grey block. */
-    .mobile-nav-link:hover {
-        color: var(--color-primary-400);
-        background: linear-gradient(90deg, rgba(224, 123, 39, 0.13) 0%, rgba(224, 123, 39, 0.05) 34%, transparent 72%);
-        border-left-color: var(--color-primary-500);
+    /* POSITION: the words brighten a step, over `.nav-wash` (global.css) — the same raking light the desktop
+       panel's rows take. It spends no ember, so it can never be read as the current page. */
+    .mobile-nav-link:hover,
+    .mobile-nav-link:focus-visible {
+        color: var(--color-content);
     }
 
     .mobile-nav-link.sub {
         font-size: 0.975rem;
-        padding: 12px 16px 12px 28px;
+        padding: 12px 16px 12px 26px;
         color: var(--color-subtle);
     }
 
-    /* The row's line drawing, warming to ember with the row the way the desktop panel's does. */
+    /* The row's line drawing, warming a step with the row the way the desktop panel's does. */
     .mobile-nav-icon {
         flex: none;
         width: 1.05rem;
@@ -221,12 +234,27 @@ import ExternalIcon from "./ExternalIcon.astro";
         color: var(--color-gold);
         transition: color 0.15s;
     }
-    .mobile-nav-link:hover .mobile-nav-icon {
-        color: var(--color-primary-400);
+    .mobile-nav-link:hover .mobile-nav-icon,
+    .mobile-nav-link:focus-visible .mobile-nav-icon {
+        color: var(--color-gold-bright);
     }
 
     .mobile-nav-link.sub.action {
         color: var(--color-gold-bright);
+    }
+
+    /* STATE, and after the wash for the reason the desktop panel states it last: a row that gives up its mark
+       the moment a finger rests on it is the one row you are most likely to be resting on. */
+    .mobile-nav-link.current,
+    .mobile-nav-link.current:hover,
+    .mobile-nav-link.current:focus-visible {
+        border-left-color: var(--color-primary-500);
+        color: var(--color-primary-400);
+    }
+    .mobile-nav-link.current .mobile-nav-icon,
+    .mobile-nav-link.current:hover .mobile-nav-icon,
+    .mobile-nav-link.current:focus-visible .mobile-nav-icon {
+        color: var(--color-primary-400);
     }
 
     .mobile-subnav-label {
@@ -255,7 +283,10 @@ import ExternalIcon from "./ExternalIcon.astro";
         transition: color 0.15s;
     }
 
-    .mobile-nav-heading:hover {
+    /* A heading is an accordion trigger, not a destination, so it takes no rule — the same split the bar
+       makes, where a trigger for the region you are in simply goes ember. */
+    .mobile-nav-heading:hover,
+    .mobile-nav-heading.active {
         color: var(--color-primary-400);
     }
 

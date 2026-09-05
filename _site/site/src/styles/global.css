@@ -1072,6 +1072,47 @@
         color: var(--color-content);
     }
 
+    /* ── THE NAVIGATION'S ONE HOVER ──────────────────────────────────────────────────────────────────
+     *
+     * Every row a reader can travel to — the bar's menu panel, the phone overlay, a book's rail — answers the
+     * pointer with this and only this: a warm wash strongest where the row begins and gone by two thirds
+     * across. Light falling on stone from the side, which is the light the whole site is lit by.
+     *
+     * IT SAYS "THE POINTER IS HERE" AND NOTHING ELSE, and that restraint is the point of having it. The three
+     * surfaces used to answer hover three ways — the panel spent full ember on the wash, the label AND the
+     * icon, the overlay added a rule down the left edge, the rail moved a hairline and brightened the words —
+     * and the panel's answer was character-for-character its answer for the CURRENT PAGE, so the one question
+     * the menu is open to answer had no way to be answered. Ember and the left rule now belong to state (see
+     * the note in Nav.astro); this belongs to position. A reader who has learned one row has learned all of
+     * them, which is the same bargain the app's `ui-row-select` makes on its side of the product.
+     *
+     * A PSEUDO-ELEMENT SO IT CAN ACTUALLY FADE. Both call sites had written `transition: background`
+     * over a `linear-gradient`, which animates nothing — a gradient is a background IMAGE, not a colour — so
+     * the site's most-used moving part snapped on and off while two stylesheets claimed an ease. Opacity on a
+     * layer underneath is the cheap way to get the ease that was already being promised, and it composites.
+     *
+     * `isolation` keeps that layer inside the row: at `z-index: -1` without its own stacking context it
+     * escapes to the nearest one — for the menu panel, the whole carved surface — and paints under it. */
+    .nav-wash {
+        position: relative;
+        isolation: isolate;
+    }
+    .nav-wash::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        background: linear-gradient(90deg, rgba(224, 123, 39, 0.13) 0%, rgba(224, 123, 39, 0.05) 34%, transparent 72%);
+        opacity: 0;
+        transition: opacity 0.18s ease;
+    }
+    /* Focus takes it too. A keyboard reading a menu panel or a rail is a pointer by another name, and these
+       are the surfaces where a reader can be furthest from where they started. */
+    .nav-wash:hover::before,
+    .nav-wash:focus-visible::before {
+        opacity: 1;
+    }
+
     /* ── Docs rail scroll edge ───────────────────────────── */
     /* The rail scrolls inside itself, and its 27 rows overflow a 1366×768 laptop by about 260px : the whole
        "Build on it" shelf. Nothing said so: no fade, no shadow, and an overlay scrollbar that appears only

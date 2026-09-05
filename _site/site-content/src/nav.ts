@@ -40,6 +40,12 @@ export interface MenuItem {
     description?: string;
     /** Icon key drawn to the left of the label, resolved by the site's `navIcons`. */
     icon?: string;
+    /**
+     * Every page this row stands for, so the surfaces that draw it can mark it while the reader is on any of
+     * them — not only on the one page its href happens to point at. Carried by the rows derived from a book,
+     * where a row is a SHELF (see `bookDestinations`); absent on rows that are simply one page.
+     */
+    covers?: string[];
     external?: boolean;
     /** Previewed in the panel's rail while this row is hovered. Product rows only. */
     shot?: ShotImage;

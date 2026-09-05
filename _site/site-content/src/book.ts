@@ -106,8 +106,18 @@ export function bookPlacement(book: Book, id: string): BookPlacement | undefined
  * row, and the menu cannot describe a shape the rail has stopped having, which is exactly how the two came to
  * disagree when this was nineteen hand-written rows. Each href is the shelf's own entry page, so no row is a
  * dead heading.
+ *
+ * `covers` IS WHAT MAKES THE ROW MARKABLE, and it exists because a row's href cannot answer the question the
+ * menu is being asked. The row STANDS FOR A SHELF and only POINTS AT that shelf's entry page, so matching the
+ * href marks the row on exactly one page of a shelf and leaves it dark on the other nineteen: on
+ * /docs/architecture/ the rail lit "Architecture" under an amber "UNDERSTAND" heading while the menu three
+ * inches above it marked nothing at all. Matching the book's own root instead is the opposite failure and the
+ * one that came first: /docs/ is a prefix of every docs page, so every row of the menu claimed to be current
+ * everywhere under Docs.
+ *
+ * The shelf's pages are the honest answer to both, and the book already knows them.
  */
-export function bookDestinations(book: Book): { label: string; href: string; description?: string; icon?: string }[] {
+export function bookDestinations(book: Book): { label: string; href: string; description?: string; icon?: string; covers: string[] }[] {
     return book.sections.map((section) => ({
         label: section.label,
         href: bookHref(book, section.entry),
@@ -115,6 +125,7 @@ export function bookDestinations(book: Book): { label: string; href: string; des
         // shows its shelves as labels alone.
         description: section.tagline,
         icon: section.icon,
+        covers: section.groups.flatMap((group) => group.items.flatMap(walk)).map((page) => bookHref(book, page.id)),
     }));
 }
 
