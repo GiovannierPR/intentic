@@ -171,7 +171,10 @@ const harnessChoosable = computed(() => step.value.agent === `codex` || step.val
  * cached label is a label that goes stale the day the provider renames a model. */
 const described = computed(() => {
     if (step.value.agent === undefined) {
-        return host().models.agentRun();
+        /* `loop-iteration`, and it is not a guess: a step IS a loop (workflow-runner.ts), so an unpinned step's
+         * turns are the ones the sandbox's loop-iteration list answers for. Naming any other job here would put
+         * a model on this chip that the run would not actually spend. */
+        return host().models.agentRun(`loop-iteration`);
     }
     return host().models.describe({
         provider: step.value.agent,

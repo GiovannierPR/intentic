@@ -269,6 +269,8 @@ export function useRuns() {
             // fans a whole session out PER STORY and the tier is therefore a per-run decision about
             // spend. An explicit model wins over the setting; an empty one lets it answer.
             unattended: true,
+            // Which of the owner's model lists pays for it (Sandbox ▸ Agent ▸ Models).
+            runRole: `acceptance-run`,
             agent: manifest.provider,
             ...(manifest.model === undefined ? {} : { model: manifest.model }),
             ...(manifest.effort === undefined ? {} : { effort: manifest.effort }),

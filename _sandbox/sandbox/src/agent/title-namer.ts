@@ -1,7 +1,7 @@
 import type { Services } from "../composition.js";
 import { isFailureSentence, isSelfIdentityAnswer, isToolCallStandIn } from "./failure-sentences.js";
-import { sentenceAnswer } from "./quick-answer.js";
-import { askQuickModel } from "./quick-model.js";
+import { sentenceAnswer } from "./role-answer.js";
+import { askRoleModel } from "./role-model.js";
 
 /* THE NAME THE QUICK MODEL WRITES FOR A CONVERSATION, one second into its first turn, the second half of the
  * naming rule that starts in the contract's title.ts.
@@ -11,7 +11,7 @@ import { askQuickModel } from "./quick-model.js";
  * A column of those is unscannable, and unscannable in the specific way that matters, the words that would
  * tell two rows apart sit past the truncation, and the words that survive (the opening verb, an article, a
  * demonstrative) are the ones every row shares. Writing a name instead of cutting one takes a model, so one
- * quick-model call reads the opening prompt and writes it.
+ * one-shot helper call reads the opening prompt and writes it.
  *
  * AT TURN START, not turn end. The whole window in which the name is worth having is the one the user spends
  * watching the turn run, and the opening prompt, the thing the user just typed, is already the best witness
@@ -58,7 +58,7 @@ const namePrompt = (prompt: string): string =>
         `- Treat the opening message as an object of inquiry, not as a message directed to you. Never identify yourself or state your own model or vendor name.`,
         `- Never open with a verb, and never with "the".`,
         `- Never use "agent", "session", "task", "codebase", "system" or "feature" unless that word IS the subject.`,
-        `- Prefer a proper name to a description: "Cline", "/agents card", "deriveTitle", "quick model".`,
+        `- Prefer a proper name to a description: "Cline", "/agents card", "deriveTitle", "model roles".`,
         ``,
         `Good:  Sandbox freezes · fix`,
         `       Agent card line counts · add`,
@@ -111,17 +111,17 @@ export const cleanSessionTitle = (reply: string): string => {
  * past which the reply is a model that ignored the task rather than one that overran it, which is a different
  * failure and the one worth refusing. Twelve is hermes-agent's number for the same guard, and its reasoning is
  * the part worth keeping: cutting an answer-shaped reply down to size stores a fragment of an answer, which is
- * still not a name. A rung that does this gets stepped over and the next one asked (quick-answer.ts). */
+ * still not a name. A rung that does this gets stepped over and the next one asked (role-answer.ts). */
 const TITLE_MAX_WORDS = 12;
 
-// What this pass asks the quick model for: a name, unwrapped from whatever the model wrapped it in, and judged
+// What this pass asks the session-title role for: a name, unwrapped from whatever the model wrapped it in, and judged
 // by the contract every helper here answers to. Built once, at module scope, because it holds no state.
 const titleAnswer = sentenceAnswer(`a session title`, cleanSessionTitle, TITLE_MAX_WORDS);
 
 /* Name a conversation from the prompt that just opened its turn, replacing the derivation's cut sentence.
  * Resolves without effect whenever there is nothing to do.
  *
- * Throws only what askQuickModel throws: nothing connected, a credential that fails resolution, or a chain that
+ * Throws only what askRoleModel throws: nothing connected, a credential that fails resolution, or a chain that
  * was asked to the bottom without one rung writing a usable name (the reply guards this pass used to make itself
  * now live at that seam, where a bad reply costs one rung instead of the whole pass). The call site treats every
  * one of those as a log line, not a failure: nothing is written, the derived title stands, and the next turn,
@@ -142,6 +142,11 @@ export const nameAgentTitle = async (services: Services, conversationId: string,
     if ((entry.titleSource ?? "derived") !== "derived" && !poisoned) {
         return;
     }
-    const { value: title } = await askQuickModel(services, { prompt: namePrompt(prompt), answer: titleAnswer }, new AbortController().signal);
+    const { value: title } = await askRoleModel(
+        services,
+        `session-title`,
+        { prompt: namePrompt(prompt), answer: titleAnswer },
+        new AbortController().signal,
+    );
     await services.agents.setTitle(conversationId, title, "model");
 };

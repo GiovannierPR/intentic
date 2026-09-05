@@ -111,7 +111,7 @@ const hostVerdict = async (
         {
             policy,
             program: input.command,
-            models: settings.commandJudgeModels,
+            pins: settings.modelRoles[`safety-judge`] ?? [],
             facts: {
                 consequences: input.consequences,
                 unattended: input.unattended,

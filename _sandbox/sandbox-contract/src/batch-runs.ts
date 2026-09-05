@@ -1,4 +1,5 @@
 import { STATE_DIR } from "@intentic/constants";
+import type { ModelRole } from "./model-roles.js";
 
 /* ONE BATCH RUN ENGINE, for every surface that fans an ISOLATED AGENT TURN out over a set of items and reads
  * the answers back off disk.
@@ -143,9 +144,9 @@ export const batchReportingClause = (params: {
 /* THE BODY OF THE `POST /agent` THAT STARTS ONE ITEM, so the flag combination that makes a run a run is decided
  * once. `isolated: true` with a conversationId is the shape (and the only shape) that registers a fleet entry,
  * which is why none of these packs owns session machinery; `unattended: true` is what the turn IS — started by
- * a row rather than by a person at a composer — and it is what makes the daemon answer with the owner's
- * `agentRunModels` unless the caller pinned a model on the row's caret, in which case the pick rides along and
- * the daemon's fill step leaves it alone.
+ * a row rather than by a person at a composer — and `runRole` is which of those rows, so the daemon answers
+ * with the owner's list FOR THAT JOB (model-roles.ts) unless the caller pinned a model on the row's caret, in
+ * which case the pick rides along and the daemon's fill step leaves it alone.
  *
  * PERMISSIONS AND ISOLATION ARE THE CALLER'S, deliberately. They are the two decisions that differ by kind and
  * both are about safety rather than plumbing: an acceptance test that parks on a permission card is a test that
@@ -162,6 +163,11 @@ export const batchTurnBody = (params: {
     readonly prompt: string;
     readonly title: string;
     readonly conversationId: string;
+    /* WHICH JOB THIS IS, and therefore which of the owner's model lists pays for it (model-roles.ts). Required
+     * rather than optional, because every pack that reaches this function is one of the named roles and a
+     * default here would silently hand a new one somebody else's budget — which is exactly how one "agent runs"
+     * tier came to cover a documentation sweep and a red production pipeline. */
+    readonly role: ModelRole;
     readonly pick?: BatchTurnPick | undefined;
     readonly extra?: Readonly<Record<string, unknown>> | undefined;
 }): Record<string, unknown> => ({
@@ -170,6 +176,7 @@ export const batchTurnBody = (params: {
     conversationId: params.conversationId,
     isolated: true,
     unattended: true,
+    runRole: params.role,
     ...(params.pick === undefined
         ? {}
         : {

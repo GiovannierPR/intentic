@@ -325,7 +325,7 @@ test("a custom window with no number falls back to the default rung, out loud", 
 });
 
 /* WHAT A WINDOW TOO SMALL FOR THE LOOP MUST SAY, at the moment the choice is still fresh rather than after the
- * download and a refused message. Not an error: the entry will serve, and as a quick model it is a fine trade.
+ * download and a refused message. Not an error: the entry will serve, and as a one-shot helper it is a fine trade.
  * Silence is the failure mode, because from the row alone a 16k entry and a 64k one look identical. */
 test("a window under the agent floor is served, and says what it is still good for", async () => {
     const root = await workspace();

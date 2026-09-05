@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
-import { type QuickAnswer, readQuickAnswer, sentenceAnswer, sentenceReason, UnusableAnswerError } from "./quick-answer.js";
+import { type RoleAnswer, readRoleAnswer, sentenceAnswer, sentenceReason, UnusableAnswerError } from "./role-answer.js";
 
-/* WHAT COUNTS AS AN ANSWER, for every helper that goes through the quick model. The four kinds of reply that are
- * not one all reached a durable field at some point, one file at a time (quick-answer.ts tells that story), so
+/* WHAT COUNTS AS AN ANSWER, for every helper that goes through the one-shot helper seam. The four kinds of reply that are
+ * not one all reached a durable field at some point, one file at a time (role-answer.ts tells that story), so
  * they are pinned HERE, once, at the seam they now share.
  *
  * The two throws are deliberately different types and the tests say which is which: an UnusableAnswerError is a
@@ -12,7 +12,7 @@ import { type QuickAnswer, readQuickAnswer, sentenceAnswer, sentenceReason, Unus
 // A stand-in for one caller's contract: the first line, and a ceiling a name reads well under.
 const title = sentenceAnswer(`a session title`, (reply) => reply.trim().split(`\n`)[0]?.trim() ?? ``, 12);
 
-const read = (reply: string): string => readQuickAnswer(title, reply);
+const read = (reply: string): string => readRoleAnswer(title, reply);
 
 test("an ordinary reply comes back read and unwrapped", () => {
     expect(read(`Sandbox freezes · fix`)).toBe(`Sandbox freezes · fix`);
@@ -53,7 +53,7 @@ test("an answer under a narrated tool call is still an answer", () => {
 // And an answer that TALKS about one lands untouched, which is what anchoring on the line start buys: this
 // repo's own commit subject for this change would otherwise be unwritable.
 test("an answer that mentions a stand-in mid-line is not one", () => {
-    expect(read(`fix(quick-model): refuse a [tool_call: …] reply as an answer`)).toBe(`fix(quick-model): refuse a [tool_call: …] reply as an answer`);
+    expect(read(`fix(role-model): refuse a [tool_call: …] reply as an answer`)).toBe(`fix(role-model): refuse a [tool_call: …] reply as an answer`);
 });
 
 /* A LASTING CONDITION WEARING AN ANSWER'S CLOTHES. Some providers hand a helper its spent allowance or dead
@@ -94,7 +94,7 @@ test("nothing at all is nothing, and says so", () => {
  * no answer at all. This is what the contract being a `read` into any value (rather than a string cleaner) is
  * for, and it is the shape t3code's schema-decoded helpers land on too. */
 test("carries a composite answer, judged on the field that matters", () => {
-    const message: QuickAnswer<{ subject: string; note: string }> = {
+    const message: RoleAnswer<{ subject: string; note: string }> = {
         what: `a commit subject`,
         read: (reply) => {
             const lines = reply.trim().split(`\n`);
@@ -103,12 +103,12 @@ test("carries a composite answer, judged on the field that matters", () => {
         unusable: ({ subject }) => sentenceReason(`a commit subject`, subject, 20),
     };
 
-    expect(readQuickAnswer(message, `fix: stop naming sessions after tool calls`)).toEqual({
+    expect(readRoleAnswer(message, `fix: stop naming sessions after tool calls`)).toEqual({
         subject: `fix: stop naming sessions after tool calls`,
         note: ``,
     });
-    expect(readQuickAnswer(message, `fix: stop naming sessions after tool calls\nRelease-Note: Sessions get real names again.`).note).toBe(
+    expect(readRoleAnswer(message, `fix: stop naming sessions after tool calls\nRelease-Note: Sessions get real names again.`).note).toBe(
         `Sessions get real names again.`,
     );
-    expect(() => readQuickAnswer(message, `[tool_call: bash for 'git log -1']`)).toThrow(UnusableAnswerError);
+    expect(() => readRoleAnswer(message, `[tool_call: bash for 'git log -1']`)).toThrow(UnusableAnswerError);
 });

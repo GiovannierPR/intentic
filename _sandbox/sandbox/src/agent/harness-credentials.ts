@@ -21,7 +21,7 @@ import type { TurnLimit } from "../usage/fleet-limit.js";
 
 /* WHAT AUTHENTICATES A CLAUDE CODE HARNESS TURN, per provider, the one question every caller of that harness
  * has to answer before it can spawn anything, and there is now more than one caller: the chat's own turn route
- * and the quick-model one-shot behind the messages written at land time. It lives here rather than inline in
+ * and the one-shot helper behind the messages written at land time. It lives here rather than inline in
  * agent.routes.ts because the alternative is two places deciding which providers ride the translator, and they
  * would drift silently, a helper that resolves credentials a different
  * way than the chat does is a helper that fails only for the users whose setup differs from the developer's.
@@ -124,7 +124,7 @@ const routedModelEnv = (model: string): Record<string, string> => ({
 /* The credential ENV a Claude Code harness process runs with, and the single place the withholding rule lives:
  * a custom endpoint gets its own bearer and the Anthropic subscription OAuth is DROPPED, so a subscription
  * token can never leave for a foreign endpoint. Read by the chat turn's options (agent.ts) and by the
- * quick-model one-shot, because a rule about where a credential may travel is the last one that should exist
+ * one-shot helper, because a rule about where a credential may travel is the last one that should exist
  * twice. `IS_SANDBOX` rides along for the same reason both need it: Claude Code refuses to run under root
  * unless the environment is marked already-sandboxed, which this container is.
  *

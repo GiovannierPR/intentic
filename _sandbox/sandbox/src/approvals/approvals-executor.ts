@@ -191,6 +191,7 @@ export const createApprovalsExecutor = (services: Services, wake: WakeFn = strea
                     prompt: publishTurnPrompt(wearing),
                     conversationId: conversationId(`post`),
                     unattended: true,
+                    runRole: `approval-queue`,
                     // The whole point of this pass: the turn wakes holding that persona's accounts.
                     actsAs,
                     title: wearing.length === 1 ? `Publish 1 post` : `Publish ${wearing.length} posts`,
@@ -201,6 +202,7 @@ export const createApprovalsExecutor = (services: Services, wake: WakeFn = strea
                     prompt: actionTurnPrompt(wearing),
                     conversationId: conversationId(`action`),
                     unattended: true,
+                    runRole: `approval-queue`,
                     ...(actsAs === `` ? {} : { actsAs }),
                     title: actionTitle(wearing),
                 });

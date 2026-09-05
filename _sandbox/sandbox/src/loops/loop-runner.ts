@@ -197,6 +197,7 @@ export const runLoop = async (services: Services, record: LoopRecord, fn: TurnFn
                  * which are scaffolding-blind, a loop's brief opens with "# Iteration 1 of at most 3", not
                  * with the step's actual ask. */
                 unattended: true,
+                runRole: `loop-iteration`,
                 ...(record.isolated ? { isolated: true } : {}),
                 ...(sessionId !== undefined ? { sessionId } : {}),
                 ...(record.agent !== undefined ? { agent: record.agent } : {}),

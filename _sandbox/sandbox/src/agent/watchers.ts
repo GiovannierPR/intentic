@@ -84,7 +84,16 @@ export interface WatcherTurnSeed {
     readonly effort?: string;
     readonly isolated?: boolean;
     readonly unattended?: boolean;
+    // Which of the owner's model lists paid for the turn that armed this watch, so the wake can spend the same
+    // one (see wakeRole).
+    readonly runRole?: AgentTurn["runRole"];
 }
+
+/* WHAT A WAKE RUNS ON when nobody named a model for it. It FOLLOWS THE TURN THAT ARMED THE WATCH wherever that
+ * turn said what it was — a wake continuing somebody's pipeline fix belongs on the list that fix runs on, not on
+ * a tier chosen for watches in general — and answers with the watch's own role only for a turn that named
+ * neither a model nor a job. */
+const wakeRole = (seed: WatcherTurnSeed): NonNullable<AgentTurn["runRole"]> => seed.runRole ?? "watch-wake";
 
 export interface WatcherSpec {
     readonly conversationId: string;
@@ -351,6 +360,7 @@ const deliver = async (live: WatcherRuntime, record: WatcherRecord, outcome: Wat
                 ...(seed.effort !== undefined ? { effort: seed.effort } : {}),
                 ...(seed.isolated === true ? { isolated: true } : {}),
                 ...(seed.unattended === true ? { unattended: true } : {}),
+                runRole: wakeRole(seed),
             });
             if (started) {
                 live.logger.info({ watch: record.id, conversationId, outcome }, "watch: wake turn started");
@@ -532,6 +542,7 @@ const seedOf = (turn: JournalledWatch["turn"]): WatcherTurnSeed => ({
     ...(turn.effort !== undefined ? { effort: turn.effort } : {}),
     ...(turn.isolated === true ? { isolated: true } : {}),
     ...(turn.unattended === true ? { unattended: true } : {}),
+    ...(turn.runRole !== undefined ? { runRole: turn.runRole } : {}),
 });
 
 const restoreOne = async (live: WatcherRuntime, entry: JournalledWatch, env: Record<string, string>): Promise<void> => {

@@ -4496,7 +4496,7 @@
           "what": ": the fact under secrets.access. Patterns are"
         },
         {
-          "path": "_sandbox/sandbox/src/agent/quick-answer.ts",
+          "path": "_sandbox/sandbox/src/agent/role-answer.ts",
           "what": ": what a one-shot reply has to BE before a helper may"
         },
         {

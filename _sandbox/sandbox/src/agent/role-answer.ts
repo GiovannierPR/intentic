@@ -1,7 +1,7 @@
 import { isDeclinedAnswer, isFailureSentence, isSelfIdentityAnswer, withoutToolCallStandIns } from "./failure-sentences.js";
 
 /* WHAT A ONE-SHOT REPLY HAS TO BE BEFORE IT COUNTS AS AN ANSWER, stated once, for every helper that goes through
- * the quick model.
+ * the one-shot helper seam.
  *
  * Each of those helpers takes a model's words and writes them into a durable field: a session title, a commit
  * subject, the sentence on a permission card, a loop's verdict. So each of them owned the same three lines of
@@ -12,7 +12,7 @@ import { isDeclinedAnswer, isFailureSentence, isSelfIdentityAnswer, withoutToolC
  * TOOL_CALL_STAND_IN, tells that story). Every round, the same fix, copied into one more file.
  *
  * SO THE CONTRACT MOVES TO THE SEAM. A caller no longer asks for TEXT and then decides whether it got an answer,
- * it asks for a VALUE and says what makes one usable; askQuickModel hands back that value or nothing at all.
+ * it asks for a VALUE and says what makes one usable; askRoleModel hands back that value or nothing at all.
  * There is no road left where an unchecked reply reaches a field, because there is no road left where a caller
  * receives an unchecked reply.
  *
@@ -34,7 +34,7 @@ import { isDeclinedAnswer, isFailureSentence, isSelfIdentityAnswer, withoutToolC
 /* A REPLY THAT IS NOT AN ANSWER, AS OPPOSED TO A RUNG THAT IS DOWN, and the distinction is worth a class because
  * the walk spends real money on it.
  *
- * A refusal is remembered for hours (quick-model.ts REFUSED_FOR_MS): a spent allowance, a revoked token and an
+ * A refusal is remembered for hours (role-model.ts REFUSED_FOR_MS): a spent allowance, a revoked token and an
  * outage all outlive the call that discovered them, so the next helper starts below that rung and saves the
  * wait. An unusable ANSWER is the opposite kind of fact. The rung was reachable, its credential was good, it
  * replied in a couple of seconds and the reply was the wrong shape, which is sampling rather than a condition:
@@ -54,28 +54,25 @@ export class UnusableAnswerError extends Error {}
  * `unusable` is the judgment: a SENTENCE saying what is wrong with the value, or undefined when nothing is. A
  * sentence rather than a boolean because it is shown to the user, both in the Changes panel's draft report
  * (landed-subject.ts renders every rung's reason) and in the message a fully spent chain throws. */
-export interface QuickAnswer<T> {
+export interface RoleAnswer<T> {
     // What this helper is asking for, as a noun phrase that reads inside a sentence: `a session title`.
     readonly what: string;
     readonly read: (reply: string) => T;
     readonly unusable: (value: T) => string | undefined;
 }
 
-// One prompt and the answer it expects, the pair askQuickModel takes. Together rather than as two parameters
-// because a prompt without its contract is exactly the call this file exists to make impossible.
-export interface QuickAsk<T> {
+/* One prompt and the answer it expects, the pair askRoleModel takes. Together rather than as two parameters
+ * because a prompt without its contract is exactly the call this file exists to make impossible.
+ *
+ * NO MODEL LIST HERE ANY MORE, and its absence is the point. This carried an optional `models` for exactly one
+ * caller — the safety judge, the single ask whose input is adversarial and whose wrong answer is a card raised
+ * or not raised rather than a sentence somebody edits. It was the shape of a bundled default admitting an
+ * exception: one shared "quick" chain, plus an escape hatch for the job that visibly could not live with it.
+ * Every ask now names its ROLE at the call (askRoleModel's second parameter) and the owner's list for that role
+ * answers, so the exception is the rule and there is nothing left for an ask to override. */
+export interface RoleAsk<T> {
     readonly prompt: string;
-    readonly answer: QuickAnswer<T>;
-    /* WHICH MODELS THIS ONE ASK MAY RUN ON, as `${provider}:${model}` keys in the order to try them, when it is
-     * not the sandbox's own quick chain. Absent (or empty) ⇒ `settings.quickModel`, which is every helper here
-     * except one.
-     *
-     * The exception is the safety judge, and the reason it earns a list of its own is that it is the only ask
-     * whose input is adversarial and whose wrong answer is a card raised (or not raised) rather than a sentence
-     * somebody edits. Carried on the ASK rather than as another parameter to askQuickModel, because it is a
-     * property of what is being asked and not of how this call is being made — `onProgress` is the latter, and
-     * the two would read identically as positional arguments. */
-    readonly models?: readonly string[];
+    readonly answer: RoleAnswer<T>;
 }
 
 /* THE VALUE ONE RUNG PRODUCED, or a throw naming what it did instead. Runs inside the walk's try, so both roads
@@ -86,7 +83,7 @@ export interface QuickAsk<T> {
  * dead credential to a helper as the reply text rather than as an error (claude/claude-one-shot.ts catches that on the Claude
  * road; the OpenCode road has no equivalent), and that is a lasting condition wearing an answer's clothes: it is
  * re-thrown as an ordinary refusal so the memo picks it up and the chain stops asking a rung that is out. */
-export const readQuickAnswer = <T>(answer: QuickAnswer<T>, reply: string): T => {
+export const readRoleAnswer = <T>(answer: RoleAnswer<T>, reply: string): T => {
     if (isFailureSentence(reply.trim())) {
         throw new Error(reply.trim());
     }
@@ -132,7 +129,7 @@ export const sentenceReason = (what: string, value: string, maxWords: number): s
 
 // The whole contract for a helper whose answer IS the string it asked for, which is most of them: its unwrapper
 // plus the ceiling it reads well under.
-export const sentenceAnswer = (what: string, read: (reply: string) => string, maxWords: number): QuickAnswer<string> => ({
+export const sentenceAnswer = (what: string, read: (reply: string) => string, maxWords: number): RoleAnswer<string> => ({
     what,
     read,
     unusable: (value) => sentenceReason(what, value, maxWords),

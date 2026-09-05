@@ -143,9 +143,9 @@ export const contextShortfall = async (
     const fix = onACard
         ? `Raise "Conversation window" on this model's card in Connections (each step up costs memory, the card ` +
           `prices it), pick a model with a larger window, or keep this one for the small jobs (titles, commit ` +
-          `messages) it can do as a quick model.`
+          `messages) it can do as a one-shot helper.`
         : `Raise the context size the server was started with, pick a model with a larger window, or keep this ` +
-          `one for the small jobs (titles, commit messages) it can do as a quick model.`;
+          `one for the small jobs (titles, commit messages) it can do as a one-shot helper.`;
     return {
         window,
         needed,

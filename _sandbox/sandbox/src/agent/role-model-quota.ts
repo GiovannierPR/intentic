@@ -1,4 +1,4 @@
-import { KeyedProviderSchema, type QuickModelChoice } from "@intentic/sandbox-contract";
+import { KeyedProviderSchema, type ModelChoice } from "@intentic/sandbox-contract";
 import type { Services } from "../composition.js";
 import { fleetLimit, type TurnLimit } from "../usage/fleet-limit.js";
 
@@ -67,7 +67,7 @@ const spentSentence = (subject: string, pool: string | undefined, reopensAt: num
  * keeps the rung askable: a fresh sandbox has measured nothing, and unmeasured is not spent, or the feature
  * would disable itself before it had ever run a turn. The translator's fleet is read the same way through its
  * own reader (turnLimit), which folds in the proxy's own bench of each credential. */
-export const rungLimit = async (services: Services, choice: QuickModelChoice): Promise<TurnLimit | undefined> => {
+export const rungLimit = async (services: Services, choice: ModelChoice): Promise<TurnLimit | undefined> => {
     try {
         if (choice.provider === `claude`) {
             const [connected, usage] = await Promise.all([services.claudeStore.list(), services.accountUsage.read()]);
@@ -95,7 +95,7 @@ export const rungLimit = async (services: Services, choice: QuickModelChoice): P
  *
  * `withHeadroom > 0` ⇒ some account can serve it, so the allowance is not the blocker. Both counts zero ⇒
  * nothing on file measures this pool, which is the unmeasured case and not a block. */
-export const spentRung = async (services: Services, choice: QuickModelChoice, now: number = Date.now()): Promise<SpentRung | undefined> => {
+export const spentRung = async (services: Services, choice: ModelChoice, now: number = Date.now()): Promise<SpentRung | undefined> => {
     const limit = await rungLimit(services, choice);
     if (limit === undefined || limit.withHeadroom > 0 || limit.spent === 0) {
         return undefined;

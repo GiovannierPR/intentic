@@ -58,7 +58,7 @@ export const PROVIDER_VENDOR: Record<NativeProvider, string> = Object.fromEntrie
  * the prefix is what keeps it a pure function of (provider, harness) instead of a lookup against the installed
  * manifest, which the contract cannot see and the browser would have to pass in everywhere.
  *
- * A SLASH, never a colon: `${provider}:${model}` is the picker's own key shape, and quick-model.ts's parsePinned
+ * A SLASH, never a colon: `${provider}:${model}` is the picker's own key shape, and model-pins.ts's parsePinned
  * splits a pinned selection on the FIRST colon. `endpoint:ollama:qwen3` would parse as provider "endpoint" with
  * model "ollama:qwen3", a pin that silently resolves to nothing. The capability id (entryId) excludes both
  * characters, so `endpoint/<id>` stays unambiguous in either direction. */

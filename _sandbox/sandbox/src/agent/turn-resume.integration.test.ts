@@ -178,6 +178,11 @@ const withProviders = (services: Services, connected: readonly string[]): Servic
     minted: testMintedSlices(),
 });
 
+/* THE JOB THESE TURNS ARE, and therefore which of the owner's lists fills their model in. `pipeline-fix`
+ * throughout: what is under test is the FILL, which is one rule for every role, so the role here only has to be
+ * a real one that the turn and the settings agree on — the disagreement is the failure worth catching. */
+const ROLE = "pipeline-fix" as const;
+
 const ranWith = async (
     settings: Partial<SandboxSettings>,
     turn: AgentTurn & { conversationId: string },
@@ -200,8 +205,8 @@ const ranWith = async (
 
 test("an unattended turn takes the agent-run model, provider and effort", async () => {
     const ran = await ranWith(
-        { agentRunModels: [{ provider: "codex", model: "gpt-5.6", effort: "high" }] },
-        { prompt: "fix CI", conversationId: "ar-fill", unattended: true },
+        { modelRoles: { [ROLE]: [{ provider: "codex", model: "gpt-5.6", effort: "high" }] } },
+        { prompt: "fix CI", conversationId: "ar-fill", unattended: true, runRole: ROLE },
     );
     // The provider rides along with the id and has to: a model id is only meaningful to the provider that vends
     // it, so honouring one without the other would send a Codex id to Claude.
@@ -212,8 +217,8 @@ test("every knob the pin carries rides onto the turn, and the ones it doesn't st
     // The point of the pins being objects: the entry that runs says how it runs. A field the user never pinned
     // must stay OFF the turn rather than becoming an invented default, so the provider's own answer stands.
     const ran = await ranWith(
-        { agentRunModels: [{ provider: "codex", model: "gpt-5.6", effort: "xhigh", thinking: true, harness: "claude-code" }] },
-        { prompt: "fix CI", conversationId: "ar-knobs", unattended: true },
+        { modelRoles: { [ROLE]: [{ provider: "codex", model: "gpt-5.6", effort: "xhigh", thinking: true, harness: "claude-code" }] } },
+        { prompt: "fix CI", conversationId: "ar-knobs", unattended: true, runRole: ROLE },
     );
     expect(ran).toMatchObject({ agent: "codex", model: "gpt-5.6", effort: "xhigh", thinking: true, harness: "claude-code" });
     expect(ran.fast).toBeUndefined();
@@ -224,8 +229,8 @@ test("a knob the turn already carries is not overwritten by the pin's", async ()
     // model it left to the setting (the push flow's proposed fix does exactly that), and that is a choice the
     // user made a second ago.
     const ran = await ranWith(
-        { agentRunModels: [{ provider: "codex", model: "gpt-5.6", effort: "low" }] },
-        { prompt: "fix CI", conversationId: "ar-knob-kept", unattended: true, effort: "max" },
+        { modelRoles: { [ROLE]: [{ provider: "codex", model: "gpt-5.6", effort: "low" }] } },
+        { prompt: "fix CI", conversationId: "ar-knob-kept", unattended: true, runRole: ROLE, effort: "max" },
     );
     expect(ran).toMatchObject({ agent: "codex", model: "gpt-5.6", effort: "max" });
 });
@@ -233,12 +238,14 @@ test("a knob the turn already carries is not overwritten by the pin's", async ()
 test("the head of the list wins while its account is connected", async () => {
     const ran = await ranWith(
         {
-            agentRunModels: [
-                { provider: "codex", model: "gpt-5.6" },
-                { provider: "claude", model: "claude-opus-4-5" },
-            ],
+            modelRoles: {
+                [ROLE]: [
+                    { provider: "codex", model: "gpt-5.6" },
+                    { provider: "claude", model: "claude-opus-4-5" },
+                ],
+            },
         },
-        { prompt: "fix CI", conversationId: "ar-head", unattended: true },
+        { prompt: "fix CI", conversationId: "ar-head", unattended: true, runRole: ROLE },
     );
     expect(ran).toMatchObject({ agent: "codex", model: "gpt-5.6" });
 });
@@ -249,12 +256,14 @@ test("a disconnected head is stepped over, and the entry that answers brings its
     // runs AT is its own entry's business: the head's effort is not a property of the list.
     const ran = await ranWith(
         {
-            agentRunModels: [
-                { provider: "codex", model: "gpt-5.6", effort: "low" },
-                { provider: "claude", model: "claude-opus-4-5", effort: "max" },
-            ],
+            modelRoles: {
+                [ROLE]: [
+                    { provider: "codex", model: "gpt-5.6", effort: "low" },
+                    { provider: "claude", model: "claude-opus-4-5", effort: "max" },
+                ],
+            },
         },
-        { prompt: "fix CI", conversationId: "ar-fallback", unattended: true },
+        { prompt: "fix CI", conversationId: "ar-fallback", unattended: true, runRole: ROLE },
         ["claude"],
     );
     expect(ran).toMatchObject({ agent: "claude", model: "claude-opus-4-5", effort: "max" });
@@ -264,8 +273,8 @@ test("a list with nothing reachable left leaves the turn unset: it does not reac
     // An agent run is billed in whole sessions, so a list that has stopped saying anything about this sandbox
     // hands the choice back to the composer's own pick rather than spending Gemini because it happens to be there.
     const ran = await ranWith(
-        { agentRunModels: [{ provider: "codex", model: "gpt-5.6" }] },
-        { prompt: "fix CI", conversationId: "ar-none", unattended: true },
+        { modelRoles: { [ROLE]: [{ provider: "codex", model: "gpt-5.6" }] } },
+        { prompt: "fix CI", conversationId: "ar-none", unattended: true, runRole: ROLE },
         ["claude", "gemini"],
     );
     expect(ran.model).toBeUndefined();
@@ -276,8 +285,8 @@ test("an unattended turn that names its own model keeps it", async () => {
     // The shared run button's caret, and Acceptance's per-run pick: a choice the user made a second ago
     // outranks the standing list.
     const ran = await ranWith(
-        { agentRunModels: [{ provider: "codex", model: "gpt-5.6" }] },
-        { prompt: "walk the story", conversationId: "ar-explicit", unattended: true, agent: "claude", model: "claude-opus-4-5" },
+        { modelRoles: { [ROLE]: [{ provider: "codex", model: "gpt-5.6" }] } },
+        { prompt: "walk the story", conversationId: "ar-explicit", unattended: true, runRole: ROLE, agent: "claude", model: "claude-opus-4-5" },
     );
     expect(ran).toMatchObject({ agent: "claude", model: "claude-opus-4-5" });
 });
@@ -286,13 +295,13 @@ test("a turn nobody flagged unattended is left alone", async () => {
     // The chat sends no model whenever its live catalog has not loaded yet. That must still resolve to the
     // PROVIDER's catalog default, not to the agent-run list: the two look identical on the wire without the
     // flag, which is exactly why the flag exists rather than being inferred from a missing model.
-    const ran = await ranWith({ agentRunModels: [{ provider: "codex", model: "gpt-5.6" }] }, { prompt: "hello", conversationId: "ar-chat" });
+    const ran = await ranWith({ modelRoles: { [ROLE]: [{ provider: "codex", model: "gpt-5.6" }] } }, { prompt: "hello", conversationId: "ar-chat" });
     expect(ran.model).toBeUndefined();
     expect(ran.agent).toBeUndefined();
 });
 
 test("an empty agent-run list leaves the turn unset rather than inventing one", async () => {
-    const ran = await ranWith({ agentRunModels: [] }, { prompt: "fix CI", conversationId: "ar-unpinned", unattended: true });
+    const ran = await ranWith({ modelRoles: { [ROLE]: [] } }, { prompt: "fix CI", conversationId: "ar-unpinned", unattended: true, runRole: ROLE });
     expect(ran.model).toBeUndefined();
 });
 

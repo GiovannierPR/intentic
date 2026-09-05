@@ -94,18 +94,21 @@ vi.mock(`../sandbox/useSandboxSettings`, async () => {
             enabled: true,
         },
     ];
-    // The pinned entry carries its own effort (AgentRunPinSchema), so the tier the proposal names comes off the
-    // entry being proposed rather than from a setting shared with every other one.
+    /* The pinned entry carries its own effort (ModelPinSchema), so the tier the proposal names comes off the
+     * entry being proposed rather than from a setting shared with every other one.
+     *
+     * Filed under `pre-push-fix`, which is this flow's own job: the model lists are per job now, so a pin
+     * written for a documentation sweep must not name the model this proposal spends. */
     return {
         useSandboxSettings: () => ({
-            settings: ref({ rules, agentRunModels: [{ provider: `claude`, model: `claude-sonnet-4-5`, effort: `high` }] }),
+            settings: ref({ rules, modelRoles: { "pre-push-fix": [{ provider: `claude`, model: `claude-sonnet-4-5`, effort: `high` }] } }),
         }),
     };
 });
 
-// The agent-run list resolves against what this sandbox can actually reach, so the flow's proposal names a
-// model that can be sent. Everything is connected here, which provider is ready is agentRunModel.test's
-// business, not this suite's.
+// The role's list resolves against what this sandbox can actually reach, so the flow's proposal names a model
+// that can be sent. Everything is connected here; which provider is ready is the resolver's own suite's
+// business, not this one's.
 vi.mock(`../chat/access`, () => ({ providerReady: () => true }));
 
 vi.mock(`../sandbox/useSandbox`, async () => {

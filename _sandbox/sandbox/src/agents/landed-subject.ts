@@ -1,7 +1,7 @@
 import { errorMessage } from "@intentic/base/errors";
 import type { LandedMessageDraft, LandedMessageStep } from "@intentic/sandbox-contract";
-import { type QuickAnswer, sentenceReason } from "../agent/quick-answer.js";
-import { askQuickModel, type QuickModelAttempt } from "../agent/quick-model.js";
+import { type RoleAnswer, sentenceReason } from "../agent/role-answer.js";
+import { askRoleModel, type RoleModelAttempt } from "../agent/role-model.js";
 import type { Services } from "../composition.js";
 import {
     cleanBreakingNote,
@@ -39,7 +39,7 @@ import { publishRuntimeChange } from "../system/runtime-watch.js";
  * makes a second land describe the WHOLE outstanding claim: the user commits what the chip shows, not what
  * one land contributed to it.
  *
- * BEST EFFORT, ALWAYS. No quick model connected, a provider that refuses, an empty reply, every one of them
+ * BEST EFFORT, ALWAYS. No helper model connected, a provider that refuses, an empty reply, every one of them
  * leaves the entry as it was, and the panel falls back to reading the title as a subject, which is where this
  * started. Nothing here may fail a land: the work is in the tree either way, and a sentence about it is not
  * worth a red card. */
@@ -69,7 +69,7 @@ const claimedDiff = async (services: Services, id: string, repo: string): Promis
 
 /* HOW LONG A SUBJECT MAY BE BEFORE IT IS EVIDENTLY NOT ONE. The prompt asks for one imperative line under 72
  * characters; this is the ceiling past which the reply is a model that answered something else at length rather
- * than one that overran. Refusing it hands the diff to the next model in the chain (quick-answer.ts) instead of
+ * than one that overran. Refusing it hands the diff to the next model in the chain (role-answer.ts) instead of
  * ending the landing with nothing, which is what the old post-hoc check did. */
 const SUBJECT_MAX_WORDS = 20;
 
@@ -88,7 +88,7 @@ interface DraftedMessage {
  *
  * The note is read only when one was asked for, exactly as before: a model that volunteers a trailer on a repo
  * that keeps no changelog has answered a question nobody put to it. */
-const messageAnswer = (wantsNote: boolean): QuickAnswer<DraftedMessage> => ({
+const messageAnswer = (wantsNote: boolean): RoleAnswer<DraftedMessage> => ({
     what: `a commit subject`,
     read: (reply) => ({
         subject: cleanCommitSubject(reply),
@@ -99,7 +99,7 @@ const messageAnswer = (wantsNote: boolean): QuickAnswer<DraftedMessage> => ({
 });
 
 // One rung of the walk, restated as the report's own step, the same fact, in the contract's shape.
-const step = (attempt: QuickModelAttempt): LandedMessageStep => ({
+const step = (attempt: RoleModelAttempt): LandedMessageStep => ({
     provider: attempt.choice.provider,
     model: attempt.choice.model,
     status: attempt.status,
@@ -168,11 +168,12 @@ export const describeLanding = async (services: Services, id: string): Promise<v
      * throw, or a chip keeps saying "writing…" about a call that ended minutes ago. */
     try {
         const { value } = await services.perf.track("landing.subject", { agent: id, repos: diffs.length }, () =>
-            askQuickModel(
+            askRoleModel(
                 services,
+                `commit-message`,
                 { prompt: commitMessagePrompt(diffs, wantsNote, removed), answer: messageAnswer(wantsNote) },
                 new AbortController().signal,
-                (attempts) => publish({ ...draft, steps: attempts.map(step) }),
+                { onProgress: (attempts) => publish({ ...draft, steps: attempts.map(step) }) },
             ),
         );
         // The `!` is enforced rather than trusted whenever the detector saw a shrink: the marker is what the

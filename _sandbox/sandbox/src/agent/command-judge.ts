@@ -1,7 +1,7 @@
-import type { SafetyDecision, SafetyVerdict } from "@intentic/sandbox-contract";
+import type { ModelPin, SafetyDecision, SafetyVerdict } from "@intentic/sandbox-contract";
 import type { Services } from "../composition.js";
-import type { QuickAnswer } from "./quick-answer.js";
-import { askQuickModel } from "./quick-model.js";
+import type { RoleAnswer } from "./role-answer.js";
+import { askRoleModel } from "./role-model.js";
 
 /* WHETHER THIS COMMAND SHOULD RUN, ASKED OF A MODEL THAT READ THE OWNER'S POLICY. The second tier of the safety
  * design (the contract's safety-policy.ts sets out all four), and the one that replaced a table of regex
@@ -162,9 +162,9 @@ const unquote = (text: string): string => (/^(["'`])(.*)\1$/u.exec(text)?.[2] ??
  * one rung and the next model down rules instead. */
 const SENTENCE_MAX_WORDS = 50;
 
-/* THE CONTRACT THE REPLY MUST MEET, and it matters more here than at any other quick-model seam, because an
+/* THE CONTRACT THE REPLY MUST MEET, and it matters more here than at any other one-shot helper seam, because an
  * off-shape reply is not a missing sentence — it is a MISSING VERDICT on a command about to run. Stated as the
- * ask's contract (quick-answer.ts) rather than checked softly at the call site, so a rung that answers a
+ * ask's contract (role-answer.ts) rather than checked softly at the call site, so a rung that answers a
  * paragraph of reasoning, a tool-call stand-in, or its own provider's refusal counts as a rung that DID NOT
  * ANSWER, and the next model in the chain rules instead. Nothing ruling at all is the gate's own fallback,
  * which is a posture decision rather than a parsing one (guard/command-gate.ts states both halves).
@@ -179,7 +179,7 @@ interface JudgedReply {
     readonly recognised: boolean;
 }
 
-export const judgeAnswer: QuickAnswer<JudgedReply> = {
+export const judgeAnswer: RoleAnswer<JudgedReply> = {
     what: `a DECISION and one sentence`,
     read: (reply: string): JudgedReply => {
         const clean = reply.trim().replace(FENCE, ``);
@@ -216,18 +216,20 @@ export const judgeAnswer: QuickAnswer<JudgedReply> = {
  * its own. */
 export const judgeCommand = async (
     services: Services,
-    input: { readonly policy: string; readonly program: string; readonly facts: JudgeFacts; readonly models: readonly string[] },
+    input: { readonly policy: string; readonly program: string; readonly facts: JudgeFacts; readonly pins: readonly ModelPin[] },
     signal: AbortSignal,
 ): Promise<SafetyVerdict> => {
-    const { value } = await askQuickModel(
+    const { value } = await askRoleModel(
         services,
-        /* `models` is the owner's own pin for THIS job (settings.commandJudgeModels), empty for "whatever the
-         * quick model is", which is what this did before the setting existed. Passed down rather than read here
-         * so the whole judgment — the policy and the model that reads it — is one snapshot taken when the turn
-         * was planned, and a turn cannot end up judged by two different models because somebody was editing the
-         * row while it ran. */
-        { prompt: judgePrompt(input.policy, input.program, input.facts), answer: judgeAnswer, models: input.models },
+        `safety-judge`,
+        { prompt: judgePrompt(input.policy, input.program, input.facts), answer: judgeAnswer },
         signal,
+        /* `pins` is the owner's own list for the `safety-judge` role, read when the turn was PLANNED rather than
+         * here, so the whole judgment — the policy and the model that reads it — is one snapshot: a turn cannot
+         * end up judged by two different models because somebody was editing the row while it ran. An empty
+         * snapshot means the role is unpinned and the walk falls to its Auto ladder, exactly as a fresh read
+         * would. */
+        { pins: input.pins },
     );
     return value.verdict;
 };

@@ -40,7 +40,7 @@ import type { TurnTaint } from "./turn-taint.js";
  *   1½ HARD RULE  guard/actions.ts commandRun, applied BEFORE the judge and un-waivable by it. One class in this
  *                 container, and only where the fragment that fired would actually RUN: a delete quoted inside
  *                 an echo, buried in a heredoc or matched by a grep reaches the judge like anything else.
- *   2 JUDGE       a quick model reading the owner's written policy, the program as data, and the daemon's own
+ *   2 JUDGE       a one-shot model reading the owner's written policy, the program as data, and the daemon's own
  *                 facts about the turn (agent/command-judge.ts). Answers allow, ask or refuse.
  *   3 PERSON      the card, raised only on `ask`, carrying the judge's sentence.
  *
@@ -140,7 +140,7 @@ export interface CommandGateOptions {
      *
      * A CALLBACK RATHER THAN `Services`, so this module keeps knowing nothing about accounts, provider chains
      * or quotas: the wiring that owns those (agent/turn-plan.ts) hands down a function, and the gate's own test
-     * suite can hand down a stub without standing up a quick model.
+     * suite can hand down a stub without standing up a one-shot helper.
      *
      * Explicitly `| undefined` rather than bare-optional so a caller can forward its own maybe-absent field in
      * one assignment: under exactOptionalPropertyTypes the bare form makes every call site spread a
@@ -384,7 +384,7 @@ const cannotAsk = (reason: string, options: CommandGateOptions): GateOutcome | u
  *
  * THE POSTURE: fall back to the hard rule, and allow everything else. That is deliberately the same answer the
  * old rulebook gave a workspace whose owner had never opened the settings, minus the false positives — a
- * sandbox whose quick-model chain is spent must not become a sandbox that refuses ordinary work, because the
+ * sandbox whose one-shot helper chain is spent must not become a sandbox that refuses ordinary work, because the
  * commands reaching this point are overwhelmingly triage false positives and the container is still the
  * boundary. The hard rule keeps applying because it never depended on a model in the first place.
  *

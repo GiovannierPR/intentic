@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AgentRunPin } from "@intentic/sandbox-contract";
+import type { ModelPin } from "@intentic/sandbox-contract";
 import { ResponsiveOverlay } from "@intentic/ui";
 import ModelPinPickerBody from "./ModelPinPickerBody.vue";
 
@@ -13,13 +13,13 @@ import ModelPinPickerBody from "./ModelPinPickerBody.vue";
  * (ResponsiveOverlay's own header says so). The BODY is what remounts per open, which is what gives the list a
  * fresh search box and freshly refreshed catalogs each time. */
 
-const emit = defineEmits<{ "update:open": [boolean]; pick: [AgentRunPin]; configure: [AgentRunPin] }>();
+const emit = defineEmits<{ "update:open": [boolean]; pick: [ModelPin]; configure: [ModelPin] }>();
 const { open, anchor, pin, knobs, taken } = defineProps<{
     open: boolean;
     // The trigger the panel hangs off: the row being edited, or the list's own Add button.
     anchor?: HTMLElement | undefined;
     // The entry being re-pointed, or undefined while ADDING one.
-    pin?: AgentRunPin | undefined;
+    pin?: ModelPin | undefined;
     // Whether this list's entries carry their own run settings. See ModelPinPickerBody.
     knobs?: boolean;
     // `${provider}:${model}` of every entry already in the list.

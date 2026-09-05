@@ -115,7 +115,7 @@ test("provider ids are unique", () => {
 
 /* An id may contain neither a slash nor a colon, and both exclusions are load-bearing rather than tidy.
  * `endpoint/<id>` uses the slash to namespace a capability-minted provider, and the picker's pinned selections
- * are `${provider}:${model}` split on the FIRST colon (quick-model.ts), so an id carrying either would parse as
+ * are `${provider}:${model}` split on the FIRST colon (model-pins.ts), so an id carrying either would parse as
  * something else entirely, silently. */
 test("no provider id can be mistaken for an endpoint or a pinned selection", () => {
     for (const spec of PROVIDER_SPECS) {

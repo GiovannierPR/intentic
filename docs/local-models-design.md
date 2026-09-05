@@ -40,7 +40,7 @@ each one removes a piece of scope:
 | Big-weights precedent | `packs/whisper.Dockerfile` | Binary baked (small), weights downloaded into the workspace volume on first use (~1.6 GB and nobody complains) |
 | Long-running process supervision | docker handler's panel session | A visible `panel-*` terminal, started by `apply`, restored on boot (`startDockerdIfEnabled`), status probed live |
 | Pre-rebuild add | endpoint + docker handlers | Adding a capability whose runtime isn't there yet stores the entry and lets the card report what is actually true, instead of punishing the order the user did things in |
-| Quick-model ladder | `sandbox-contract/src/quick-model.ts` | `endpoint/<id>` providers are already pinnable for utility jobs (commit messages, titles); a free local model is the natural pin |
+| Helper-role ladder | `sandbox-contract/src/model-pins.ts` | `endpoint/<id>` providers are already pinnable for utility jobs (commit messages, titles); a free local model is the natural pin |
 
 The design puts these seven things behind one card.
 
@@ -221,7 +221,7 @@ All five slices landed together. The map, for whoever touches this next:
 - **The join**: `_sandbox/sandbox/src/endpoints/local-model.ts`: the id-derived loopback port (FNV-1a into
   40100–40499), `endpointConfigOf` (THE reader of "which capabilities are endpoints"), and the model-source
   parse. Consumers: `endpoint-translator.ts`, `harness-credentials.ts`, `endpoints.routes.ts`,
-  `agent/quick-model.ts`, the capability routes' sync hooks, the web picker's capability load.
+  `agent/role-model.ts`, the capability routes' sync hooks, the web picker's capability load.
 - **The handler**: `_sandbox/sandbox/src/capabilities/handlers/localmodel.ts`: hub-download with staged
   rename and decile progress, `panel-model-<id>` session, `/health`-probed status, boot restore beside
   dockerd's (a live server is adopted across daemon restarts, not killed, since reloading a big model costs

@@ -5,9 +5,14 @@
 import { beforeEach, expect, test, vi } from "vitest";
 import { type App, createApp, defineComponent, h, nextTick, ref, watch } from "vue";
 
-/* WHAT THE RUN BUTTONS READ, AND FROM WHERE. `agentRunChoice` is the standing answer to "which model will this
- * click spend": pressed by both Fix buttons, Maintenance, Documentation, Acceptance and a failed pre-push
- * check, and handed to every extension as `api.models.agentRun()`.
+/* WHAT THE RUN BUTTONS READ, AND FROM WHERE. `agentRunChoice(role)` is the standing answer to "which model
+ * will this click spend": pressed by both Fix buttons, Maintenance, Documentation, Acceptance and a failed
+ * pre-push check, and handed to every extension as `api.models.agentRun(role)`.
+ *
+ * IT TAKES THE JOB, because the sandbox keeps one model list per job rather than one for unattended work as a
+ * class: a documentation sweep and a red production pipeline are the same component and not the same spend.
+ * `pipeline-fix` throughout here — which role is asked for is the caller's business, and what these tests are
+ * about is the reading itself.
  *
  * It is a READ, and these tests are about the places it is read from. Vue offers an injection context only
  * inside a setup, and none of the callers are one: `useAgentRunPick` reads it in a computed, the caret reads it
@@ -40,15 +45,17 @@ beforeEach(() => {
     vi.restoreAllMocks();
 });
 
+const ROLE = `pipeline-fix`;
+
 test(`the standing choice is readable with no component in scope`, () => {
-    expect(() => agentRunChoice()).not.toThrow();
+    expect(() => agentRunChoice(ROLE)).not.toThrow();
 });
 
 test(`a run button can re-read it from a click handler`, async () => {
     const clicked = ref(0);
     let failure: unknown;
     const app = mounted(() => {
-        const pick = useAgentRunPick(() => shellModelPicking());
+        const pick = useAgentRunPick(() => shellModelPicking(), ROLE);
         // A watcher callback is the same context a click handler runs in: no instance, no injection.
         watch(clicked, () => {
             try {
@@ -69,14 +76,14 @@ test(`a run button can re-read it from a click handler`, async () => {
 test(`re-reading it never adds a second reader of the settings`, async () => {
     const tick = ref(0);
     const app = mounted(() => {
-        const pick = useAgentRunPick(() => shellModelPicking());
+        const pick = useAgentRunPick(() => shellModelPicking(), ROLE);
         return () => h(`div`, `${tick.value}:${pick.model.value.label}`);
     });
     const afterFirst = settingsObservers();
     // A settings write is what the daemon's own answer does, and it is what invalidates the computed the
     // button reads, so this is five genuine re-evaluations, not five renders of a cached one.
     for (let round = 0; round < 5; round += 1) {
-        queryClient.setQueryData(SANDBOX_SETTINGS.of(), { agentRunModels: [], round });
+        queryClient.setQueryData(SANDBOX_SETTINGS.of(), { modelRoles: {}, round });
         tick.value += 1;
         await nextTick();
     }
@@ -102,13 +109,13 @@ const pinned = (pin: Record<string, unknown>): void => {
         ...providerModels.value,
         claude: [{ label: `Claude Sonnet 4.6`, value: `claude-sonnet-4-6`, efforts: [`low`, `medium`, `high`, `xhigh`, `max`] }],
     };
-    queryClient.setQueryData(SANDBOX_SETTINGS.of(), { agentRunModels: [pin] });
+    queryClient.setQueryData(SANDBOX_SETTINGS.of(), { modelRoles: { [ROLE]: [pin] } });
 };
 
 test(`the standing choice keeps the pinned top tier, and names it`, () => {
     pinned({ provider: `claude`, model: `claude-sonnet-4-6`, effort: `max`, thinking: true });
 
-    const choice = agentRunChoice();
+    const choice = agentRunChoice(ROLE);
 
     expect({ provider: choice.provider, model: choice.model, effort: choice.effort, effortLabel: choice.effortLabel }).toEqual({
         provider: `claude`,
@@ -121,7 +128,7 @@ test(`the standing choice keeps the pinned top tier, and names it`, () => {
 test(`the standing choice names the tier the run will actually use when the pin refuses its own`, () => {
     pinned({ provider: `claude`, model: `claude-sonnet-4-6`, effort: `max`, thinking: false });
 
-    const choice = agentRunChoice();
+    const choice = agentRunChoice(ROLE);
 
     expect({ effort: choice.effort, effortLabel: choice.effortLabel }).toEqual({ effort: `high`, effortLabel: `High` });
 });

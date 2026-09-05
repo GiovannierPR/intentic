@@ -1,14 +1,14 @@
 import { expect, test } from "vitest";
 import { judgeAnswer } from "./command-judge.js";
-import { readQuickAnswer, UnusableAnswerError } from "./quick-answer.js";
+import { readRoleAnswer, UnusableAnswerError } from "./role-answer.js";
 
 /* READING THE JUDGE'S REPLY, which is the one piece of this seam that is pure and the one where being wrong is
  * expensive: an off-shape reply is not a missing sentence, it is a MISSING VERDICT on a command about to run.
  *
- * Driven through `readQuickAnswer` rather than by calling `judgeAnswer.read` directly, because the contract is
+ * Driven through `readRoleAnswer` rather than by calling `judgeAnswer.read` directly, because the contract is
  * the pair: a value the unwrapper produced AND the usability check over it. Calling one half would test a
  * function; calling both tests what the chain actually does with a rung's answer. */
-const verdict = (reply: string) => readQuickAnswer(judgeAnswer, reply).verdict;
+const verdict = (reply: string) => readRoleAnswer(judgeAnswer, reply).verdict;
 
 test("reads the three decisions and the sentence", () => {
     expect(verdict(`DECISION: allow\nWHY: Runs the test suite.`)).toEqual({ decision: `allow`, sentence: `Runs the test suite.` });
@@ -59,7 +59,7 @@ test("a walkthrough where a sentence was asked for is unusable", () => {
 
 /* A PROVIDER'S OWN LIMIT SENTENCE MUST NEVER READ AS A VERDICT. It arrives as the reply text on some providers
  * rather than as an error, and on a safety card it would land in the exact spot a person looks to find out what
- * they are approving. The seam catches it ahead of this contract (quick-answer.ts), and this is the assertion
+ * they are approving. The seam catches it ahead of this contract (role-answer.ts), and this is the assertion
  * that says the judge inherits that rather than having to know about it. */
 test("a provider's refusal is a refusal, not a ruling", () => {
     expect(() => verdict(`You have exceeded your current quota.`)).toThrow();

@@ -25,7 +25,7 @@ import type { CapabilityCtx, CapabilityHandler } from "../capability.js";
  * workspace cache (the whisper precedent: re-downloadable by content, so under `.intentic/local/cache/`, which
  * exports skip and the janitor may clear) and serves them with the image's bundled llama-server on the entry's
  * derived loopback port (endpoints/local-model.ts). From there the entry IS an endpoint: the translator routes
- * turns at it, the picker lists its model, quick-model pins hold, all through the same seams a user-added
+ * turns at it, the picker lists its model, one-shot helper pins hold, all through the same seams a user-added
  * endpoint rides, and none of that code knows this kind exists.
  *
  * ONE OF THOSE SEAMS HAD TO LEARN A NEW MOMENT, and it is the only place this kind is not simply an endpoint.
@@ -532,7 +532,7 @@ const windowNote = (window: number): string => (fitsAgentTurn(window) ? "" : ", 
 const windowAdvice = (window: number): string =>
     fitsAgentTurn(window)
         ? ""
-        : " — enough for the quick-model jobs (titles, commit messages), not for a full agent turn, whose tools and instructions fill a window this size on their own. Raise it on the card to chat with this model.";
+        : " — enough for the one-shot helper jobs (titles, commit messages), not for a full agent turn, whose tools and instructions fill a window this size on their own. Raise it on the card to chat with this model.";
 
 // What the GPU option has to say, the docker card's sentences with the toolkit clause dropped (there is no
 // nested runtime here to configure): pending until the directive's rebuild, an error a rebuild can't fix when
@@ -651,7 +651,7 @@ export const localModelHandler: CapabilityHandler = {
         if (await serverHealthy(localModelPort(id))) {
             /* The server is the headline; the GPU caveat only matters on a card that would otherwise read clean.
              * The WINDOW joins the model name because it is the other half of what this entry is: two rows naming
-             * the same weights can be a working agent and a quick-model-only rung, and nothing else on the page
+             * the same weights can be a working agent and a helper-only rung, and nothing else on the page
              * says which one you are looking at. */
             const window = localModelWindow(model);
             return (

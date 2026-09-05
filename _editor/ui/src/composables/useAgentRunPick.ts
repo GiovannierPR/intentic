@@ -41,14 +41,19 @@ export interface AgentRunChoice {
 /* The two questions this asks of whichever world it is running in: what would run if nobody chose, and let them
  * choose.
  *
- * `agentRun()` is A READ, and the two halves of that word both matter for the implementer. Reactive:
- * it is called inside the computed below, so it has to answer freshly when its host's own state moves. And a
- * read only, it must not ENTER a composable, because a computed getter and a click handler are where this is
- * called from and neither of those is a setup. A host that reaches for vue-query on each call fails twice over:
- * the lookup throws where there is no injection context, and the calls that do land leave a query observer
- * apiece that nothing will dispose. Resolve that state once, where the host is set up, and read it here. */
+ * `agentRun(role)` is A READ, and the two halves of that word both matter for the implementer. Reactive: it is
+ * called inside the computed below, so it has to answer freshly when its host's own state moves. And a read
+ * only, it must not ENTER a composable, because a computed getter and a click handler are where this is called
+ * from and neither of those is a setup. A host that reaches for vue-query on each call fails twice over: the
+ * lookup throws where there is no injection context, and the calls that do land leave a query observer apiece
+ * that nothing will dispose. Resolve that state once, where the host is set up, and read it here.
+ *
+ * IT TAKES A ROLE because the sandbox keeps one model list per JOB rather than one for "agent runs" as a class
+ * (sandbox-contract model-roles.ts). A Fix button on a red pipeline and a Generate button on a documentation
+ * sweep are both this component and are not the same spend, so the button that is about to spend it says which
+ * one it is. */
 export interface ModelPicking {
-    agentRun(): AgentRunChoice;
+    agentRun(role: string): AgentRunChoice;
     pick(options: {
         readonly anchor: HTMLElement;
         readonly provider: string;
@@ -80,9 +85,13 @@ export interface AgentRunPicker {
     readonly clear: () => void;
 }
 
-export function useAgentRunPick(models: () => ModelPicking): AgentRunPicker {
+/* `role` names the job this button starts, which is what the sandbox keys its model lists by. A plain string
+ * rather than the contract's union, for the reason every other id crossing this boundary is one: the kit is
+ * loaded by extensions that cannot see the daemon's types, and an unknown role is answered by the host with the
+ * composer's own model — the same floor an unpinned one gets — rather than by a crash in somebody's panel. */
+export function useAgentRunPick(models: () => ModelPicking, role: string): AgentRunPicker {
     const picked = ref<AgentRunChoice | undefined>(undefined);
-    const model = computed<AgentRunChoice>(() => picked.value ?? models().agentRun());
+    const model = computed<AgentRunChoice>(() => picked.value ?? models().agentRun(role));
     return {
         model,
         overridden: computed(() => picked.value !== undefined),

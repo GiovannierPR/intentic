@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { type AgentRunPin, parsePinned, quickModelKey } from "@intentic/sandbox-contract";
-import { Row, RowGroup, SegmentedControl, Verdict } from "@intentic/ui";
+import { MODEL_ROLES, type ModelPin, type ModelRole, type ModelRoleSpec, modelPinKey, parsePinned } from "@intentic/sandbox-contract";
+import { type IconName, Row, RowGroup, SegmentedControl, Verdict } from "@intentic/ui";
+import { isIconName } from "@intentic/ui/icons";
 import { computed, shallowRef } from "vue";
-import { useAgentRunModel } from "../../../composables/chat/agentRunModel";
+import { RouterLink } from "vue-router";
 import { effortLabelOf } from "../../../composables/chat/effortScale";
 import { modelChoiceLabel } from "../../../composables/chat/modelPins";
-import { useQuickModel } from "../../../composables/chat/quickModel";
+import { useRoleModel } from "../../../composables/chat/roleModel";
 import { useSandboxSettings } from "../../../composables/sandbox/useSandboxSettings";
 import { useSavings } from "../../../composables/sandbox/useSavings";
 import AddModelButton from "./AddModelButton.vue";
-import { pinnedList } from "./modelPinList";
+import { type PinnedList, pinnedList } from "./modelPinList";
 import ModelPinList from "./ModelPinList.vue";
 import ModelPinPicker from "./ModelPinPicker.vue";
 
@@ -18,49 +19,40 @@ import ModelPinPicker from "./ModelPinPicker.vue";
  * can never name a provider this sandbox has no credential for, which is exactly the promise a cross-sandbox
  * preference in personal Settings could not make.
  *
- * The rows are split by what the model is asked to DO, not by which feature calls it, because that is the only
- * axis on which the right answer differs. The two one-shot jobs lead, then the two that touch real work:
+ * ONE ROW PER JOB, DRAWN FROM THE CONTRACT'S OWN CATALOG (model-roles.ts). The page used to hold four rows
+ * grouped by how hard the work was assumed to be — a "quick model" for the small automatic jobs, an "agent
+ * runs" tier for the big ones, plus two that already named a job. That grouping was a guess about work its
+ * owner knows better, and it was a guess there was no way to talk around: pinning Opus to get better commit
+ * subjects also pinned it to every session title and every loop verdict, and one "agent runs" tier covered a
+ * documentation sweep and a red production pipeline alike. Seventeen rows is more to read than four; it is also
+ * the first version of this page where the thing somebody wants to say can be said.
  *
- *   QUICK MODEL: no conversation, no tools, one string back (a commit message, a session title). An ORDERED
- *   LIST, walked top to bottom until one answers, because the failure this row actually has is a connected
- *   model that will not answer today: the account's allowance went on the chat, and one spent provider takes
- *   every one of those jobs down for hours while the others sit idle. Auto is the default and it is DERIVED,
- *   not stored: an empty list means "work it out from whatever is connected right now" (resolveQuickModels:
- *   cheapest tier first, free channel before a paid one, every connected provider in that order), so connecting
- *   an account tomorrow improves the answer by itself. Cheapest wins BECAUSE the job is small; being frontier
- *   here is not generosity, it is the wrong tool.
+ * SIMPLICITY IS A LATER PROBLEM, DELIBERATELY. A shorter face over this — presets, "cheap everywhere",
+ * "frontier everywhere" — is a thing that can be built on top of a true model and cannot be recovered from a
+ * lossy one, and the configuration and the picker were already per use-case underneath. What the grouping was
+ * saving was reading, and it was charging for it in choices nobody could make.
  *
- *   SAFETY JUDGE: the one-shot that reads a flagged command against your policy and decides whether it runs.
- *   Directly under the quick model because that chain is literally what answers while this list is empty — the
- *   fallback is legible from the row above rather than asserted. It used to live on the Safety tab beside the
- *   policy, on the argument that which model judges a command is a safety question. True, and it still cost
- *   more than it bought: a page whose subject is "which AI does which job" that quietly excludes one job
- *   teaches nobody where to look, and the Safety tab now names the model it is using in a line instead. This
- *   is the only row here that has an off switch somewhere else, so it says where.
+ * TWO BLOCKS, IN ORDER OF REACH. The one-shot helpers first: nobody picked a model for them, they run
+ * constantly, and they are the ones whose bill turns up without a click. Then the whole sessions a screen
+ * starts, and within those the ones somebody presses ahead of the ones that fire on their own, which are the
+ * runs an owner is least likely to be watching and most likely to want held to a budget. The chat's own model
+ * is not here at all: it lives in the composer, where it is chosen per turn and per conversation.
  *
- *   AGENT RUNS: a full isolated session with tools and a worktree, started by a surface rather than by a person
- *   typing: Fix with agent on a pipeline or a deployment, a Maintenance chore, a Documentation or Acceptance
- *   run, the fix a failed pre-push check proposes. ALSO AN ORDERED LIST, for the one reason the row above is:
- *   an account that has stopped answering takes every one of those surfaces down at once, and the next entry
- *   catches it. PINNED, never derived, and THAT is the deliberate opposite of the row above: nothing here can
- *   judge whether a job is worth the frontier tier, and a wrong guess is billed in whole sessions, so an empty
- *   list falls to the composer's own pick, which keeps following the user as they change it, rather than to a
- *   ladder this page worked out. Any of those surfaces can still override the list for a single run, from the
- *   caret on the button that starts it; this is what they open on when nobody touches it.
- *
- * The chat's own model is the third tier and has no row here: it lives in the composer, where it is chosen per
- * turn and per conversation.
+ * WHAT AN EMPTY ROW MEANS IS THE ROLE'S OWN ANSWER, and the two are genuinely different. A one-shot derives an
+ * Auto ladder from whatever is connected — cheapest rung of each provider, best first — so it improves by
+ * itself when an account is added and can never name a provider this sandbox has no credential for. A whole
+ * session falls to the composer's own pick, because nothing can judge what a session is worth and a wrong guess
+ * is billed whole. Each row says which of the two it is, in full rather than as the word "Auto": a user who has
+ * never opened this page can still see which account their commit messages come from and which one catches it.
  *
  * EVERY ENTRY IS EDITED IN THE APP'S OWN MODEL PICKER (ModelPinPicker → the composer's ModelPicker), which is
  * what replaced the 14rem dropdown these rows used to offer and the single effort control that used to sit
  * beside the agent-run list. That control asked ONE question of a list whose entries are chosen precisely
  * because they differ — a frontier head, a cheap account under it — and a reasoning scale is a property of the
  * model, so any answer to it was off-scale for half the list. Effort, thinking, speed and the harness now
- * belong to the entry that will actually run. */
+ * belong to the entry that will actually run, on every row. */
 
 const { settings, patch } = useSandboxSettings();
-const quickModel = useQuickModel();
-const agentRun = useAgentRunModel();
 
 /* THE TIER JUDGE'S OWN RECORD, the numbers the Measure state exists to produce, drawn where the switch is so
  * "switch to On once the spend history says so" points at something on the same screen instead of at a promise.
@@ -73,10 +65,7 @@ const tierReport = computed(() => savings.value?.tier);
 const pct = (part: number, whole: number): string => `${Math.round((part / whole) * 100)}%`;
 
 /* THE REPORT AS A <Verdict>, which is the shape every other measured answer in the app is drawn in: the figure,
- * what it is a figure of, and the evidence under it. It used to be a `rounded-lg bg-canvas px-3 py-2.5` well
- * hand-drawn in this row's `#below` — the same well the iq search teaching had, in a padding no tier contains,
- * so the settings pages carried a copy of one idea each and none of them matched the savings cards reporting
- * the same ledger on the Usage tab.
+ * what it is a figure of, and the evidence under it.
  *
  * THE SENTENCES ARE ASSEMBLED HERE rather than in the template, because written inline each needs a
  * `<template v-if>` mid-sentence and the whitespace gymnastics that go with it (`}}<template …></template\n>·`)
@@ -109,12 +98,12 @@ const tierEvidence = computed<string>(() => {
  * stored `max` on a model whose scale stops at `high`, or on one whose thinking the same pin switched off,
  * would otherwise name a rung this run cannot use. The user's own pick stays stored either way, for the day the
  * longer-scaled model leads again. */
-const effortLabel = (pin: AgentRunPin): string | undefined => effortLabelOf(pin.effort, pin.provider, pin.model, pin.thinking);
+const effortLabel = (pin: ModelPin): string | undefined => effortLabelOf(pin.effort, pin.provider, pin.model, pin.thinking);
 
 /* WHAT AN ENTRY SAYS ABOUT HOW IT RUNS, in one line beside its name. Only the fields actually pinned are named,
  * so an entry left at the provider's own defaults reads as just a model: the point of the line is that a
  * deliberate choice is legible from the list without opening anything, not that every field has a value. */
-const knobSummary = (pin: AgentRunPin): string | undefined =>
+const knobSummary = (pin: ModelPin): string | undefined =>
     [
         ...(effortLabel(pin) === undefined ? [] : [effortLabel(pin)!]),
         ...(pin.thinking === undefined ? [] : [pin.thinking ? `thinking` : `no thinking`]),
@@ -122,92 +111,97 @@ const knobSummary = (pin: AgentRunPin): string | undefined =>
         ...(pin.harness === `claude-code` ? [`Claude Code`] : []),
     ].join(` · `) || undefined;
 
-const quick = pinnedList({
-    read: () => quickModel.pinned.value,
-    write: (keys) => patch({ quickModel: [...keys] }),
-    decode: (key) => parsePinned(key),
-    encode: (pin) => quickModelKey(pin),
-});
-
-/* WHAT AN AGENT RUN OPENS ON. Pointedly not cheapest-first like the quick model's list above, because these are
- * opposite jobs: that one exists to keep a one-click helper off the frontier tier, while this one has to read a
- * failing suite, or a container log, and repair the thing.
+/* ONE EDITOR PER ROLE, BUILT FROM THE CATALOG rather than written out. Every row stores the same thing — an
+ * ordered list of pins under settings.modelRoles[role] — so the only per-row facts left are the ones the
+ * catalog already holds, and a role added there gets a working row here by existing.
  *
- * A LIST here for the same reason it is one above, and for no other: one connected account whose allowance went
- * on the chat this morning takes every Fix with agent, chore and documentation run in the sandbox down with it.
- * What the empty list means is where the two part company: Auto up there, and down here the composer's own
- * pick, because nothing can judge which tier a whole session is worth.
- *
- * THE ONLY LIST WHOSE ENTRIES CARRY KNOBS, and the reason is what each list's job can actually honour: the
- * quick helpers are one-shot calls the daemon deliberately runs with thinking disabled and no effort at all
- * (claude/claude-one-shot.ts), and the cheaper-tier list names a substitution the judge makes, which never touches an
- * unattended run. A reasoning control on either would be a switch with nothing behind it. */
-const runs = pinnedList({
-    read: () => agentRun.pinned.value,
-    write: (pins) => patch({ agentRunModels: [...pins] }),
-    decode: (pin) => pin,
-    encode: (pin) => pin,
-    detail: knobSummary,
-    knobs: true,
-});
+ * `patch` writes the WHOLE record back, because the settings patch merges at the TOP level only: sending one
+ * role's key alone would drop every other role's list with it. */
+const editorFor = (role: ModelRole): PinnedList =>
+    pinnedList({
+        read: () => settings.value?.modelRoles[role] ?? [],
+        write: (pins) => patch({ modelRoles: { ...settings.value?.modelRoles, [role]: [...pins] } }),
+        decode: (pin) => pin,
+        encode: (pin) => pin,
+        detail: knobSummary,
+        knobs: true,
+    });
 
-/* THE MODEL THAT READS YOUR SAFETY POLICY, stored in its own key and edited by the same four gestures as the
- * quick list above. Its floor is that list, which is why it sits under it.
- *
- * No knobs, for the same reason the quick row has none: a verdict is a one-shot the daemon runs with thinking
- * disabled and no effort at all (claude/claude-one-shot.ts), so a reasoning control here would be a switch with nothing
- * behind it. */
-const judge = pinnedList({
-    read: () => settings.value?.commandJudgeModels ?? [],
-    write: (keys) => patch({ commandJudgeModels: [...keys] }),
-    decode: (key) => parsePinned(key),
-    encode: (pin) => quickModelKey(pin),
-});
+/* One row's whole state: what it is (the catalog's own words), the editor over its list, and the RESOLVED chain
+ * the daemon would walk, which is what the empty state names. Built once for the page rather than per render,
+ * because each `useRoleModel` enters a query composable and that has to happen in setup. */
+/* The catalog's glyph, narrowed. It crosses the wire as an OPEN string, like every other icon this app takes
+ * from a declaration (a manifest's, an Activation's), so it is checked rather than asserted and a name this
+ * build's icon set does not carry falls back rather than rendering nothing. */
+const iconOf = (role: ModelRoleSpec): IconName => (isIconName(role.icon) ? role.icon : `sparkles`);
 
-// Whether anything reads this list at all. The switch is on the Safety tab, so a row that went inert with no
-// explanation would read as broken rather than as unused.
+const rows = MODEL_ROLES.map((role) => ({
+    role: role as ModelRoleSpec,
+    icon: iconOf(role),
+    list: editorFor(role.id),
+    resolved: useRoleModel(role.id),
+}));
+const helperRows = rows.filter((row) => row.role.kind === `helper`);
+const runRows = rows.filter((row) => row.role.kind === `run`);
+
+/* WHAT AUTO WOULD DO FOR THIS ROW, spelled out: the same ladder the daemon would walk, named in order. It is
+ * the row's whole discoverability story — a user who has never opened this page still sees which account their
+ * commit messages come from and which one catches it when it runs out, and the difference between "Auto" and a
+ * list they wrote themselves becomes a thing they can compare rather than a thing they have to imagine. */
+const autoOrder = (row: (typeof rows)[number]): readonly string[] => row.resolved.chain.value.map(modelChoiceLabel);
+
+/* THE ONE ROW WHOSE FEATURE CAN BE OFF FROM SOMEWHERE ELSE, and the two sentences it owes because of it.
+ *
+ * A special case in a page otherwise drawn entirely from a table, and it earns that: the judge is the only job
+ * here with a switch of its own (settings.commandJudge, on the Safety tab), so its row can go inert while every
+ * neighbour stays live. A disabled control with no explanation is the thing a settings page owes an answer for,
+ * and a row may not ask for a press it has just refused — so while the judge is off the row says so and points
+ * at the switch instead of inviting a pin.
+ *
+ * The second sentence is about the CHOICE rather than the switch, and it belongs here rather than only on
+ * Safety because this is where the choice is made: of every job on this page, the judge is the one whose input
+ * may have been written by whoever the agent was reading. */
+const JUDGE = `safety-judge`;
 const judgeOff = computed(() => settings.value?.commandJudge === `off`);
 
-/* THE LAST ROW IS ABOUT THE CHAT, which the three above deliberately are not, and it is the only one that can
- * change what a model the user picked themselves actually runs. So it says so, and its default says nothing at
- * all: "Measure" judges every turn, records the verdict beside what the turn really cost, and moves nothing. */
+/* THE CHEAPER-TIER LIST, the one model setting here that is NOT a role and should not become one. It names a
+ * substitution automatic tier selection makes on a turn the user started themselves, so it is a property of
+ * that feature rather than a job of its own — and it stores `${provider}:${model}` keys, without knobs, because
+ * the turn it substitutes into already carries its own effort. */
 const fast = pinnedList({
     read: () => settings.value?.autoFastModels ?? [],
     write: (keys) => patch({ autoFastModels: [...keys] }),
     decode: (key) => parsePinned(key),
-    encode: (pin) => quickModelKey(pin),
+    encode: (pin) => modelPinKey(pin),
 });
 
 /* ONE PICKER FOR THE PAGE, over whichever entry raised it, which is the shape the shell's own picker already
  * has (hostModelPicker.ts) and for the same reason: a second ask supersedes the first, because a panel still
  * open belongs to a trigger the user has already moved away from. `index` absent means ADDING, and an add draws
  * no knobs — there is nothing to configure until the entry exists, and the row it lands on opens this same
- * panel with them in it. */
-const LISTS = { quick, judge, runs, fast };
-const editing = shallowRef<{ id: keyof typeof LISTS; index: number | undefined; anchor: HTMLElement } | undefined>(undefined);
-const openPicker = (id: keyof typeof LISTS, index: number | undefined, anchor: HTMLElement): void => {
-    editing.value = { id, index, anchor };
+ * panel with them in it.
+ *
+ * The open editor is held DIRECTLY rather than by a key into a table of lists: there are eighteen of them now,
+ * they are built from a catalog rather than written out, and a second lookup keyed by role id would be a
+ * parallel table to keep in step for no gain. */
+const editing = shallowRef<{ list: PinnedList; index: number | undefined; anchor: HTMLElement } | undefined>(undefined);
+const openPicker = (list: PinnedList, index: number | undefined, anchor: HTMLElement): void => {
+    editing.value = { list, index, anchor };
 };
-const active = computed(() => (editing.value === undefined ? undefined : LISTS[editing.value.id]));
-const editingPin = computed<AgentRunPin | undefined>(() => {
+const active = computed(() => editing.value?.list);
+const editingPin = computed<ModelPin | undefined>(() => {
     const open = editing.value;
-    return open?.index === undefined ? undefined : active.value?.entries.value[open.index]?.pin;
+    return open?.index === undefined ? undefined : open.list.entries.value[open.index]?.pin;
 });
 
 // A model row answers the panel's question, so it closes behind the pick (the picker's own doing); a knob row
 // writes through and stays open, because those are settings of the entry rather than the answer.
-const pick = (pin: AgentRunPin): void => active.value?.apply(editing.value?.index, pin);
-const configure = (pin: AgentRunPin): void => {
+const pick = (pin: ModelPin): void => active.value?.apply(editing.value?.index, pin);
+const configure = (pin: ModelPin): void => {
     if (editing.value?.index !== undefined) {
         active.value?.apply(editing.value.index, pin);
     }
 };
-
-/* WHAT AUTO WOULD DO, spelled out: the same ladder the daemon would walk, named in order. It is the row's
- * whole discoverability story: a user who has never opened this page still sees which account their commit
- * messages come from and which one catches them when it runs out, and the difference between "Auto" and a list
- * they wrote themselves becomes a thing they can compare rather than a thing they have to imagine. */
-const autoOrder = computed(() => quickModel.chain.value.map(modelChoiceLabel));
 
 /* Three states, in the order they escalate, and the middle one is the point of the control rather than a
  * halfway house: nobody can name a sensible cutoff for "easy enough" before there is traffic to fit it against,
@@ -235,97 +229,72 @@ const eagernessOptions = [
          only route out of automatic tier selection that reaches beyond one conversation, and a link that lands
          on the top of a long settings page has not answered the question that was asked. -->
     <RowGroup id="models" label="Models">
-        <!-- The order is drawn IN FULL below the row, because the useful thing to know here is not that a
-             default exists but which model a click is about to bill, and, the day that one is spent, which
-             one catches it. A trigger 14rem wide can say one of those; the full-width area under the row can
-             say all of them, numbered, in the order they will actually be tried. -->
-        <!-- THE SPINE FOLLOWS THE CONTENT, and on these three rows the content changes: a pinned LIST is a block
-             belonging to this row and hangs off its name; the Auto fallback is one sentence continuing the
-             description, and every other explanatory `#below` in the app is flush. Drawn beside a single line the
-             rule is a 14px stub that reads as a tick mark rather than as a spine, which is worse than no rule at
-             all — so the condition is which of the two this row is currently showing. <Row>'s `spine` says the
-             same thing in general terms. -->
-        <Row :spine="quick.entries.value.length > 0" icon="sparkles" title="Quick model" description="Fast models for automatic background tasks.">
-            <template #control>
-                <AddModelButton
-                    label="Add a quick model"
-                    :disabled="settings === undefined"
-                    @open="(anchor: HTMLElement) => openPicker(`quick`, undefined, anchor)"
-                />
-            </template>
-            <!-- Four states, in the order they matter: the list the user wrote, the list the app would use,
-                 nothing to use one with, and settings still loading, which draws nothing rather than an
-                 "Auto: ." with an empty ladder behind it. -->
-            <template #below>
-                <ModelPinList
-                    v-if="quick.entries.value.length > 0"
-                    :entries="quick.entries.value"
-                    warn-thinking
-                    @promote="quick.promote"
-                    @remove="quick.remove"
-                    @edit="(index: number, anchor: HTMLElement) => openPicker(`quick`, index, anchor)"
-                />
-                <!-- AUTO, SPELLED OUT. Naming the ladder rather than the word is what makes this row readable
-                     without opening anything: you can see which account your commit messages come from and
-                     which one catches it, and decide whether that order is the one you wanted. -->
-                <p v-else-if="autoOrder.length > 0" class="text-2xs text-muted">
-                    <span class="text-content">Auto</span>: {{ autoOrder.join(`, then `) }}. Add a model to choose the order yourself.
-                </p>
-                <!-- Nothing connected: the helpers are inert, which on its own reads as a broken control
-                     rather than a missing account. -->
-                <p v-else-if="settings !== undefined" class="text-2xs text-muted">Connect an AI account above to enable the one-click helpers.</p>
-            </template>
-        </Row>
+        <!-- THE ONE-SHOT JOBS. No conversation, no tools, one string back, and nobody picked a model for any of
+             them, which is why they lead: they run constantly and their bill turns up without a click.
 
-        <!-- THE OTHER ONE-SHOT, and the reason it is here rather than on Safety: this page is where a model is
-             chosen, without exceptions, or it is not a place anybody learns to look. Directly under the quick
-             row because that row is its floor, spelled out below in the same words. -->
-        <Row :spine="judge.entries.value.length > 0" icon="shield" title="Safety judge" description="Which model reads your safety policy.">
+             THE SPINE FOLLOWS THE CONTENT: a pinned LIST is a block belonging to this row and hangs off its
+             name; a one-line fallback is prose continuing the description, and every other explanatory `#below`
+             in the app is flush. Drawn beside a single line the rule is a 14px stub that reads as a tick mark
+             rather than as a spine, which is worse than no rule at all. <Row>'s `spine` says the same thing in
+             general terms. -->
+        <Row
+            v-for="row in helperRows"
+            :key="row.role.id"
+            :spine="row.list.entries.value.length > 0"
+            :icon="row.icon"
+            :title="row.role.label"
+            :description="row.role.blurb"
+        >
             <template #control>
                 <AddModelButton
-                    label="Add a model for the safety judge"
-                    :disabled="settings === undefined || judgeOff"
-                    @open="(anchor: HTMLElement) => openPicker(`judge`, undefined, anchor)"
+                    :label="`Add a model for ${row.role.label.toLowerCase()}`"
+                    :disabled="settings === undefined || (row.role.id === JUDGE && judgeOff)"
+                    @open="(anchor: HTMLElement) => openPicker(row.list, undefined, anchor)"
                 />
             </template>
+            <!-- Three states, in the order they matter: the list the user wrote, the ladder the app would walk
+                 instead, and nothing to walk one with. Settings still loading draws nothing rather than an
+                 "Auto: ." with an empty chain behind it. -->
             <template #below>
                 <div class="flex flex-col gap-2">
                     <ModelPinList
-                        v-if="judge.entries.value.length > 0"
-                        :entries="judge.entries.value"
-                        @promote="judge.promote"
-                        @remove="judge.remove"
-                        @edit="(index: number, anchor: HTMLElement) => openPicker(`judge`, index, anchor)"
+                        v-if="row.list.entries.value.length > 0"
+                        :entries="row.list.entries.value"
+                        note-thinking
+                        @promote="row.list.promote"
+                        @remove="row.list.remove"
+                        @edit="(index: number, anchor: HTMLElement) => openPicker(row.list, index, anchor)"
                     />
-                    <!-- The floor, named in full rather than as the word "Auto": these verdicts are billed to
-                         one of your accounts, and which one is the fact this row exists to make readable. The
-                         invitation to change it is dropped while the judge is off, because the control that
-                         would do it is disabled an inch away and a row may not ask for a press it just
-                         refused. -->
-                    <p v-else-if="autoOrder.length > 0" class="text-2xs text-muted">
-                        <span class="text-content">Your quick model</span>: {{ autoOrder.join(`, then `) }}.<template v-if="!judgeOff">
-                            Add a model to judge commands on a different one.</template
+                    <!-- AUTO, SPELLED OUT. Naming the ladder rather than the word is what makes the row readable
+                         without opening anything: you can see which account this job is billed to and which one
+                         catches it, and decide whether that order is the one you wanted. The invitation to
+                         change it is dropped while the judge is off, because the control that would do it is
+                         disabled an inch away and a row may not ask for a press it just refused. -->
+                    <p v-else-if="autoOrder(row).length > 0" class="text-2xs text-muted">
+                        <span class="text-content">Auto</span>: {{ autoOrder(row).join(`, then `) }}.<template
+                            v-if="row.role.id !== JUDGE || !judgeOff"
+                        >
+                            Add a model to choose the order yourself.</template
                         >
                     </p>
-                    <p v-else-if="settings !== undefined" class="text-2xs text-muted">
-                        Connect an AI account above to give the judge something to run on. Until then every flagged command falls back to the
-                        standing rule alone.
-                    </p>
+                    <!-- Nothing connected: the job is inert, which on its own reads as a broken control rather
+                         than as a missing account. -->
+                    <p v-else-if="settings !== undefined" class="text-2xs text-muted">Connect an AI account above to enable this.</p>
 
                     <!-- Where the switch is. This is the only row on the page whose feature can be off from
-                         somewhere else, and a disabled control with no explanation is the thing a settings
-                         page owes an answer for. -->
-                    <p v-if="judgeOff" class="text-2xs text-subtle">
+                         somewhere else, and a disabled control with no explanation is the thing a settings page
+                         owes an answer for. -->
+                    <p v-if="row.role.id === JUDGE && judgeOff" class="text-2xs text-subtle">
                         Nothing is judging commands at the moment, so this is not in use.
                         <RouterLink :to="{ name: `sandbox`, params: { tab: `agent` }, query: { section: `safety` } }" class="text-link hover:underline"
                             >Turn the judge on</RouterLink
                         >
                         under Safety.
                     </p>
-                    <!-- The one thing worth saying about the choice, and it is not "pick a cheap one": this is
-                         the only automatic job whose input may have been written by whoever the agent was
-                         reading. -->
-                    <p v-else class="text-2xs text-subtle">
+                    <!-- The one thing worth saying about this choice, and it is not "pick a cheap one": of every
+                         job on this page, the judge is the only one whose input may have been written by
+                         whoever the agent was reading. -->
+                    <p v-else-if="row.role.id === JUDGE" class="text-2xs text-subtle">
                         Worth a better model than the rest of the automatic jobs: it reads the command as data, and on a turn that has taken in
                         something from outside, that text may be arguing for its own approval.
                     </p>
@@ -333,44 +302,47 @@ const eagernessOptions = [
             </template>
         </Row>
 
-        <!-- The tier above it: a real session, started for you. The surfaces it answers for are named, "agent
-             runs" means nothing until you can see that the Fix button you press on a red pipeline is one of
-             them, but BELOW rather than in the description, because the description column is 14rem wide and
-             a five-item list read there as six lines of prose beside a one-line dropdown. The same names on
-             the full-width row underneath are one line, and read as the list they are. -->
-        <Row :spine="runs.entries.value.length > 0" icon="bolt" title="Agent runs" description="Model tier for runs started in a worktree.">
+        <!-- THE WHOLE SESSIONS, each with tools and a worktree, started by a screen rather than by a person at a
+             composer. Ordered so the ones somebody presses come before the ones that fire on their own. -->
+        <Row
+            v-for="row in runRows"
+            :key="row.role.id"
+            :spine="row.list.entries.value.length > 0"
+            :icon="row.icon"
+            :title="row.role.label"
+            :description="row.role.blurb"
+        >
             <template #control>
                 <AddModelButton
-                    label="Add a model for agent runs"
+                    :label="`Add a model for ${row.role.label.toLowerCase()}`"
                     :disabled="settings === undefined"
-                    @open="(anchor: HTMLElement) => openPicker(`runs`, undefined, anchor)"
+                    @open="(anchor: HTMLElement) => openPicker(row.list, undefined, anchor)"
                 />
             </template>
             <template #below>
-                <!-- Each entry names the tier it will run at beside the model, because that is now a property
-                     of the entry: press the row to change either half. -->
+                <!-- Each entry names the tier it will run at beside the model, because that is a property of the
+                     entry: press the row to change either half. -->
                 <ModelPinList
-                    v-if="runs.entries.value.length > 0"
-                    :entries="runs.entries.value"
-                    @promote="runs.promote"
-                    @remove="runs.remove"
-                    @edit="(index: number, anchor: HTMLElement) => openPicker(`runs`, index, anchor)"
+                    v-if="row.list.entries.value.length > 0"
+                    :entries="row.list.entries.value"
+                    @promote="row.list.promote"
+                    @remove="row.list.remove"
+                    @edit="(index: number, anchor: HTMLElement) => openPicker(row.list, index, anchor)"
                 />
-                <!-- The floor, named. Unlike the row above there is no ladder to spell out: deliberately,
-                     since nothing here can judge which tier a whole session is worth, so what this has to
-                     say is simply which model answers while the list is empty, and that it follows the
-                     composer. -->
+                <!-- The floor, named. Unlike a one-shot row there is no ladder to spell out, and deliberately so:
+                     nothing here can judge what a whole session is worth, so what this has to say is simply
+                     which model answers while the list is empty, and that it follows the composer. -->
                 <p v-else-if="settings !== undefined" class="text-2xs text-muted">
                     <span class="text-content">Composer default</span>: whatever your chat is set to, which keeps following it as you change it. Add a
-                    model to pin these runs to a tier of their own.
+                    model to pin this job to a tier of its own.
                 </p>
             </template>
         </Row>
 
-        <!-- THE CHAT'S OWN TURNS, which the two rows above never touch. It is last because it is the only one
-             that can override a choice the user made a second ago, and a settings page owes that ordering:
-             read down and the reach grows, from jobs nobody picked a model for, to runs somebody started, to
-             the conversation in front of you. -->
+        <!-- THE CHAT'S OWN TURNS, which no row above ever touches. It is last because it is the only one that
+             can override a choice the user made a second ago, and a settings page owes that ordering: read down
+             and the reach grows, from jobs nobody picked a model for, to runs somebody started, to the
+             conversation in front of you. -->
         <Row spine icon="credit-card" title="Automatic tier" description="Run simple turns on a cheaper model from the same provider.">
             <template #control>
                 <SegmentedControl
@@ -415,7 +387,7 @@ const eagernessOptions = [
                                 <AddModelButton
                                     label="Add a model for automatic tier selection"
                                     :disabled="settings === undefined"
-                                    @open="(anchor: HTMLElement) => openPicker(`fast`, undefined, anchor)"
+                                    @open="(anchor: HTMLElement) => openPicker(fast, undefined, anchor)"
                                 />
                             </div>
                         </div>
@@ -424,7 +396,7 @@ const eagernessOptions = [
                             :entries="fast.entries.value"
                             @promote="fast.promote"
                             @remove="fast.remove"
-                            @edit="(index: number, anchor: HTMLElement) => openPicker(`fast`, index, anchor)"
+                            @edit="(index: number, anchor: HTMLElement) => openPicker(fast, index, anchor)"
                         />
                         <p v-else-if="settings !== undefined" class="text-2xs text-muted">
                             <span class="text-content">Auto</span>: cheapest from the chat's provider.

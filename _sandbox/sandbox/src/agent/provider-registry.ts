@@ -57,7 +57,7 @@ export const sharedProviderReads = (services: Services): SharedProviderReads => 
     return { translatorAccounts: () => (translator ??= services.cliProxy.accounts()) };
 };
 
-/* The Record<NativeProvider, ProviderCatalog> every picker route, quick-model comparison and routed-turn
+/* The Record<NativeProvider, ProviderCatalog> every picker route, helper-model comparison and routed-turn
  * validation reads (services.providerCatalogs). Takes the services LATE-BOUND, because the record is itself a
  * member of the object it reads from: the thunks only run once a request arrives, long after composition has
  * finished (the extensionBackend holder is the precedent, composition.ts). */

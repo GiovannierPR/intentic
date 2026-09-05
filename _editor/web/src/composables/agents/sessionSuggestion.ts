@@ -31,7 +31,7 @@ import { revealConversation } from "./agentActions";
 export interface SessionDraft {
     // The composed first turn. Lands in the draft's composer, editable to the last character.
     readonly prompt: string;
-    // `${provider}:${model}` (quickModelKey) and the effort beside it, both normally from settings. Empty or
+    // `${provider}:${model}` (modelPinKey) and the effort beside it, both normally from settings. Empty or
     // absent ⇒ the draft keeps whatever the composer's own defaults are, which is the right floor: it is the
     // model the user already chose to work with.
     readonly model?: string;

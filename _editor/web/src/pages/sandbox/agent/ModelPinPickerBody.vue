@@ -3,7 +3,7 @@ import { computed } from "vue";
 import {
     type AgentHarness,
     type AgentProvider,
-    type AgentRunPin,
+    type ModelPin,
     capabilitiesOf,
     fastAllowed,
     harnessChoosable as contractHarnessChoosable,
@@ -40,12 +40,17 @@ import { useChat } from "../../../composables/chat/useChat";
  * half the list. Effort, extended thinking, speed and the harness now belong to the entry that will actually
  * run, and turn-resume.ts composes the turn from exactly these.
  *
- * A KNOB IS DRAWN ONLY WHERE IT WOULD BE HONOURED. The quick-model and cheaper-tier lists get the list and no
- * footer at all: their jobs are one-shot calls the daemon deliberately runs with thinking disabled and no
- * effort (claude/claude-one-shot.ts), and automatic tier selection never touches an unattended run, so a control there
- * would be a switch with nothing behind it. */
+ * A KNOB IS DRAWN ONLY WHERE IT WOULD BE HONOURED, and that is now nearly everywhere. The one-shot jobs used to
+ * get the list and no footer, on the argument that the daemon runs them with thinking disabled and no effort —
+ * which was true of the machinery and had become the reason for itself: an owner who pinned a reasoning model to
+ * their commit subjects paid its price and was handed a cheaper model's behaviour. The one-shot path carries the
+ * knobs now (claude/claude-one-shot.ts), so those rows draw them too.
+ *
+ * The cheaper-tier list is the remaining exception, and it is a real one: automatic tier selection substitutes a
+ * model on a turn that already has its own effort and never touches an unattended run, so a control there would
+ * be a switch with nothing behind it. */
 
-const emit = defineEmits<{ pick: [AgentRunPin]; configure: [AgentRunPin]; close: [] }>();
+const emit = defineEmits<{ pick: [ModelPin]; configure: [ModelPin]; close: [] }>();
 const {
     pin,
     knobs = false,
@@ -53,7 +58,7 @@ const {
 } = defineProps<{
     // The entry being re-pointed, or undefined while ADDING one. Adding draws no footer: there is nothing to
     // configure until the entry exists, and the row it lands on opens this same panel with the knobs in it.
-    pin?: AgentRunPin | undefined;
+    pin?: ModelPin | undefined;
     // Whether this list's entries carry their own run settings. See the header.
     knobs?: boolean;
     // `${provider}:${model}` of every entry already in the list. Offered but unpickable, the same treatment the
@@ -136,10 +141,10 @@ const footerVisible = computed(
 
 // A pin with the fields nobody set left OFF it rather than present-and-undefined: the daemon reads an absent
 // field as "the provider's own default", and a stored `null` would be a third state nothing means.
-const pruned = (next: AgentRunPin): AgentRunPin =>
-    Object.fromEntries(Object.entries(next).filter(([, value]) => value !== undefined && value !== ``)) as unknown as AgentRunPin;
+const pruned = (next: ModelPin): ModelPin =>
+    Object.fromEntries(Object.entries(next).filter(([, value]) => value !== undefined && value !== ``)) as unknown as ModelPin;
 
-const configure = (patch: Partial<AgentRunPin>): void => {
+const configure = (patch: Partial<ModelPin>): void => {
     if (pin !== undefined) {
         emit(`configure`, pruned({ ...pin, ...patch }));
     }

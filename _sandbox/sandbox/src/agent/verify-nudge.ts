@@ -157,6 +157,12 @@ export const nudgeUnverifiedWork = async (nudge: VerifyNudge): Promise<string | 
     return message;
 };
 
+/* WHAT THE FOLLOW-UP RUNS ON when the turn it is nudging named no model. It FOLLOWS THAT TURN wherever it said
+ * what it was, which is this module's standing rule (see VerifyNudge.seed): a follow-up on a different model is
+ * asking a different agent about somebody else's edits. Its own role answers only the silence — a turn that named
+ * neither a model nor a job. */
+const nudgeRole = (seed: AgentTurn): NonNullable<AgentTurn["runRole"]> => seed.runRole ?? "verify-nudge";
+
 const deliver = async (live: VerifyNudgeRuntime, nudge: VerifyNudge, message: string): Promise<void> => {
     const { conversationId, seed } = nudge;
     for (let attempt = 0; attempt < ATTEMPTS; attempt += 1) {
@@ -173,6 +179,7 @@ const deliver = async (live: VerifyNudgeRuntime, nudge: VerifyNudge, message: st
                 ...(seed.effort !== undefined ? { effort: seed.effort } : {}),
                 ...(seed.isolated === true ? { isolated: true } : {}),
                 ...(seed.unattended === true ? { unattended: true } : {}),
+                runRole: nudgeRole(seed),
             });
             if (started) {
                 live.logger.info({ conversationId }, "verify nudge: follow-up turn started on unverified work");

@@ -1,26 +1,35 @@
 import { errorMessage } from "@intentic/base/errors";
 import {
     endpointProvider,
+    type ModelChoice,
+    type ModelPin,
+    modelPinKey,
+    type ModelRole,
+    type ModelSource,
     NATIVE_PROVIDERS,
     type NativeProvider,
-    type QuickModelChoice,
-    quickModelKey,
-    type QuickModelSource,
-    resolveQuickModels,
+    resolveRoleModels,
 } from "@intentic/sandbox-contract";
 import type { Services } from "../composition.js";
 import { endpointConfigOf } from "../endpoints/local-model.js";
 import { mentionsSpentAllowance } from "./failure-sentences.js";
 import { adapterFor } from "./adapter-registry.js";
 import { harnessReadyProviders } from "./harness-credentials.js";
-import { type QuickAsk, readQuickAnswer, UnusableAnswerError } from "./quick-answer.js";
-import { rungLimit, spentRung } from "./quick-model-quota.js";
+import { type RoleAsk, readRoleAnswer, UnusableAnswerError } from "./role-answer.js";
+import { rungLimit, spentRung } from "./role-model-quota.js";
 
-/* THE SANDBOX'S QUICK MODEL, resolved against what it actually has connected, the daemon half of the rule in
- * the contract's quick-model.ts. The contract owns the ORDER (which of the available models to try, and in
- * which sequence) because the browser has to reach the same answer to name it in a tooltip; this file owns the
- * FACTS that order runs on, which only the daemon holds: the account stores, the translator's subscriptions,
- * and each provider's live catalog, and the WALK, because only the daemon has run the call and seen it fail.
+/* WHAT A ONE-SHOT HELPER ROLE ACTUALLY RUNS ON, resolved against what this sandbox has connected, the daemon
+ * half of the rule in the contract's model-pins.ts. The contract owns the ORDER (which of the available models
+ * to try, and in which sequence) because the browser has to reach the same answer to draw it in the settings
+ * row; this file owns the FACTS that order runs on, which only the daemon holds — the account stores, the
+ * translator's subscriptions, each provider's live catalog — and the WALK, because only the daemon has run the
+ * call and seen it fail.
+ *
+ * EVERY ASK NAMES ITS ROLE, and that is the shape of this seam. There used to be one "quick model" chain behind
+ * every helper here, so a commit message, a session title and a safety verdict were the same setting wearing
+ * three hats; the one job that visibly needed its own model (the judge) got a second setting bolted on beside
+ * it, which is what a bundled default looks like on its way to becoming a per-job one. Now the caller says
+ * which job it is and the owner's list for THAT job answers (contract model-roles.ts).
  *
  * Every catalog here is a cached read (discovery → persisted → seed floor, never empty), so asking all five is
  * cheap after the first turn, and asking all five is required, since the whole point is to compare them. */
@@ -34,11 +43,11 @@ const catalogOf = async (services: Services, provider: NativeProvider): Promise<
 };
 
 // Every configured model endpoint, as a source, the sandbox-run local models among them (endpointConfigOf) —
-// a free, always-installed rung is exactly what a quick-model pin wants. Ready by being installed, its
+// a free, always-installed rung is exactly what a helper role's pin wants. Ready by being installed, its
 // credential (if any) was configured with it, so there is no separate connection to check, and its catalog is
 // the same probe the picker and the card read. An endpoint that has published nothing contributes an empty
 // list and simply never wins.
-const endpointSources = async (services: Services): Promise<QuickModelSource[]> => {
+const endpointSources = async (services: Services): Promise<ModelSource[]> => {
     const endpoints = (await services.capabilities.list()).flatMap((capability) => {
         const config = endpointConfigOf(capability);
         return config === undefined ? [] : [{ id: capability.id, config }];
@@ -57,7 +66,7 @@ const endpointSources = async (services: Services): Promise<QuickModelSource[]> 
 
 // What the contract's resolver decides over: every native provider plus every configured endpoint, whether each
 // can run, and what it publishes. Catalogs load concurrently, independent cached reads with no reason to queue.
-const quickModelSources = async (services: Services): Promise<QuickModelSource[]> => {
+const modelSources = async (services: Services): Promise<ModelSource[]> => {
     const ready = await harnessReadyProviders(services);
     const [native, endpoints] = await Promise.all([
         Promise.all(
@@ -76,27 +85,27 @@ const quickModelSources = async (services: Services): Promise<QuickModelSource[]
 // A model that was asked and did not answer, with the sentence it refused in. Carried out of here rather than
 // logged and dropped: a helper that quietly ran on the user's second-choice account owes them the reason, and
 // the whole chain being spent is a message only this walk can write.
-export interface QuickModelRefusal {
-    readonly choice: QuickModelChoice;
+export interface RoleModelRefusal {
+    readonly choice: ModelChoice;
     readonly reason: string;
 }
 
-export interface QuickModelAnswer<T> {
+export interface RoleModelAnswer<T> {
     /* THE VALUE THE CALLER ASKED FOR, never the raw reply, and that is the seam's whole promise: what comes back
-     * here has already been unwrapped and judged usable by the ask's own contract (quick-answer.ts). A caller
+     * here has already been unwrapped and judged usable by the ask's own contract (role-answer.ts). A caller
      * that receives one of these has nothing left to check. */
     readonly value: T;
-    readonly choice: QuickModelChoice;
+    readonly choice: ModelChoice;
     // Everything ahead of `choice` in the chain that refused, in the order it was tried. Empty on the ordinary
     // path, which is what lets a surface stay silent unless something actually happened.
-    readonly skipped: readonly QuickModelRefusal[];
+    readonly skipped: readonly RoleModelRefusal[];
 }
 
 /* ONE RUNG'S TURN, AS IT IS BEING SPENT, what a caller that wants to SHOW the walk receives, live, where
- * QuickModelAnswer only says how it ended. `asking` is a rung in flight; the other three are settled, with the
+ * RoleModelAnswer only says how it ended. `asking` is a rung in flight; the other three are settled, with the
  * time each cost and (for a refusal, or a rung skipped on its own recent refusal) the sentence it gave. */
-export interface QuickModelAttempt {
-    readonly choice: QuickModelChoice;
+export interface RoleModelAttempt {
+    readonly choice: ModelChoice;
     readonly status: "asking" | "answered" | "refused" | "skipped";
     // When this rung started being asked, what a consumer's ticking "12s…" is measured from. Absent for
     // `skipped`, which cost nothing.
@@ -110,7 +119,7 @@ export interface QuickModelAttempt {
  * callers only want the answer; the one that is drawing a progress report wants every beat.
  *
  * A listener's throw must not kill the walk it is only watching. */
-export type QuickModelProgress = (attempts: readonly QuickModelAttempt[]) => void;
+export type RoleModelProgress = (attempts: readonly RoleModelAttempt[]) => void;
 
 // What went wrong, as a sentence rather than an object. Every throw this walks over already carries a
 // user-facing message (the Claude Code helper turns a spent allowance and a dead credential into prose deliberately), so
@@ -175,23 +184,43 @@ const remember = (key: string, reason: string, now: number): void => {
 
 // What this rung last refused with, while that memo still stands. Undefined once the window has run out, and
 // for a rung that has never refused, both of which mean "ask it".
-const cooling = (choice: QuickModelChoice, now: number): Memo | undefined => {
-    const held = refusals.get(quickModelKey(choice));
+const cooling = (choice: ModelChoice, now: number): Memo | undefined => {
+    const held = refusals.get(modelPinKey(choice));
     return held !== undefined && held.until > now ? held : undefined;
 };
 
 /* WHICH LOOP RUNS THIS RUNG, asked of the contract, never decided here. `adapterFor` reads the record where a
  * provider's runtime is settled for the whole product (the adapter that serves a chat turn is the same one),
- * so a helper that named a provider of its own would be a second opinion on a question that already has one,
+ * so a helper that named a runtime of its own would be a second opinion on a question that already has one,
  * and the day the two disagreed, a turn and its commit message would run on different loops. Each runtime's
  * one-shot is its adapter's (agent/adapter.ts oneShot); a runtime with none is a refusal like any other, and
- * the walk steps over it. */
-const askRung = async (services: Services, choice: QuickModelChoice, prompt: string, signal: AbortSignal): Promise<string> => {
-    const adapter = adapterFor(choice.provider, `claude-code`);
+ * the walk steps over it.
+ *
+ * THE PIN MAY NAME THE HARNESS, and `claude-code` is only the fallback. It is the right fallback — it is the
+ * loop that can carry reasoning knobs for every provider that accepts it — but it was hardcoded, and a pin that
+ * says "run this one on its native loop" is now a thing an owner can write, so it is a thing this has to read.
+ * The contract still gets the last word: `capabilitiesOf` maps the pair to a runtime, so a provider that
+ * refuses the Claude Code harness (Google does) lands on its own regardless of what the pin asked for.
+ *
+ * AND THE REST OF THE PIN RIDES ALONG. Effort, thinking and speed are forwarded to the one-shot rather than
+ * suppressed, which is the whole point of a helper role holding full pins: a reasoning model pinned to commit
+ * subjects is somebody's decision, not a mistake to correct on their behalf (adapter.ts OneShotAsk). Absent
+ * fields stay absent and the fast, thinking-off path stands. */
+const askRung = async (services: Services, pin: ModelPin, prompt: string, signal: AbortSignal): Promise<string> => {
+    const adapter = adapterFor(pin.provider, pin.harness ?? `claude-code`);
     if (adapter.oneShot === undefined) {
         throw new Error(`${adapter.runtime} runs no helper, so there is nothing to ask it one line with.`);
     }
-    return adapter.oneShot(services, { provider: choice.provider, prompt, cwd: services.workspace.root, model: choice.model, signal });
+    return adapter.oneShot(services, {
+        provider: pin.provider,
+        prompt,
+        cwd: services.workspace.root,
+        model: pin.model,
+        ...(pin.effort === undefined ? {} : { effort: pin.effort }),
+        ...(pin.thinking === undefined ? {} : { thinking: pin.thinking }),
+        ...(pin.fast === undefined ? {} : { fast: pin.fast }),
+        signal,
+    });
 };
 
 /* RUN ONE PROMPT ON THE SANDBOX'S QUICK MODEL, WALKING DOWN THE CHAIN UNTIL ONE ANSWERS. The single seam every
@@ -205,7 +234,7 @@ const askRung = async (services: Services, choice: QuickModelChoice, prompt: str
  * get the answer wrong, and the cost of over-stepping is one extra one-shot on a cheap rung.
  *
  * A REPLY OF THE WRONG SHAPE IS ONE OF THEM, and that is why the ask carries its own answer contract
- * (quick-answer.ts) rather than the caller checking afterwards. A rung that writes a tool call where a name was
+ * (role-answer.ts) rather than the caller checking afterwards. A rung that writes a tool call where a name was
  * asked for, answers the asker instead of the ask, or spends fifty words on a five-word job has not answered:
  * this walk treats that exactly as it treats a refusal, hands the question to the next model down, and gives the
  * caller a VALUE it does not have to inspect. What it does not do is remember it, see the catch below.
@@ -218,26 +247,46 @@ const askRung = async (services: Services, choice: QuickModelChoice, prompt: str
  * caller already has one place to record a failure. Nothing connected is a message about the sandbox; a chain
  * that is spent to the bottom names every model it asked and what each one said, because "couldn't draft a
  * message" without that is indistinguishable from a helper that is simply broken. */
-export const askQuickModel = async <T>(
+export interface RoleModelOptions {
+    /* THIS ROLE'S LIST, READ BY THE CALLER RATHER THAN HERE, for a caller that must not change models underneath
+     * itself. Only one asks for it: the safety judge is bound at the moment a turn is PLANNED, alongside the
+     * policy document it will read (turn-plan.ts judgeFor), so a turn that runs for an hour is judged by one
+     * document and one model however long that takes, rather than by whatever the settings file said at the
+     * instant each command happened to fire.
+     *
+     * It is the SAME role's list, never another's — this is a freshness control, not the escape hatch it
+     * replaced, where an ask could name an entirely different setting to run on (see RoleAsk). Absent is the
+     * ordinary case and means "read it now". */
+    readonly pins?: readonly ModelPin[] | undefined;
+    readonly onProgress?: RoleModelProgress | undefined;
+}
+
+export const askRoleModel = async <T>(
     services: Services,
-    ask: QuickAsk<T>,
+    role: ModelRole,
+    ask: RoleAsk<T>,
     signal: AbortSignal,
-    onProgress?: QuickModelProgress,
-): Promise<QuickModelAnswer<T>> => {
-    /* The ask's own list wins where it has one, and falls back to the sandbox's quick chain where it does not —
-     * an EMPTY list is the fallback rather than "no models", because that is the shape every pin setting here
-     * ships in and the row that edits one has to be emptiable back to its floor (QuickAsk.models says which ask
-     * carries one and why). Both roads then go through resolveQuickModels, so a pinned provider that has been
-     * disconnected degrades to Auto exactly as it does everywhere else instead of failing on a dead credential. */
-    const pinned = (await services.sandboxSettings.get()).quickModel;
-    const chain = resolveQuickModels(await quickModelSources(services), ask.models?.length ? ask.models : pinned);
+    options: RoleModelOptions = {},
+): Promise<RoleModelAnswer<T>> => {
+    const onProgress = options.onProgress;
+    /* THE ROLE IS A PARAMETER, NOT A PROPERTY OF THE ASK, and the two nearly-identical things are worth keeping
+     * apart. `ask` is WHAT is being asked — the prompt and the contract its reply has to meet — and it is built
+     * once at module scope by most callers because it holds no state. The role is WHOSE budget answers it, which
+     * is the caller's own identity and is read from settings per call.
+     *
+     * An empty or absent list is the role's floor rather than "no models", because that is the shape a list
+     * ships in and the row that edits one has to be emptiable back to it. resolveRoleModels applies the floor a
+     * `helper` role declares (the Auto ladder), so a pinned provider that has been disconnected degrades to Auto
+     * exactly as it does everywhere else instead of failing on a dead credential. */
+    const pinned = options.pins ?? (await services.sandboxSettings.get()).modelRoles[role] ?? [];
+    const chain = resolveRoleModels(await modelSources(services), pinned, role);
     if (chain.length === 0) {
         throw new Error(`No AI account is connected to this sandbox: connect one in Sandbox ▸ Agent first.`);
     }
     /* The walk as it stands, re-told whole after every beat. Wrapped so a listener that throws is the
      * listener's problem: this function's job is the answer, and the report may never cost the user the
      * sentence it is reporting on. */
-    const attempts: QuickModelAttempt[] = [];
+    const attempts: RoleModelAttempt[] = [];
     const tell = (): void => {
         try {
             onProgress?.([...attempts]);
@@ -246,11 +295,11 @@ export const askQuickModel = async <T>(
         }
     };
     const now = Date.now();
-    const skipped: QuickModelRefusal[] = [];
+    const skipped: RoleModelRefusal[] = [];
     /* WHY THIS RUNG IS NOT WORTH ASKING, in the words the user will read, or undefined, which means ask it.
      *
      * Two sources. The MEMO is what this rung said last time it was asked. The READING is what every account of
-     * that provider has left and when it renews (quick-model-quota.ts), consulted only for the rungs the walk
+     * that provider has left and when it renews (role-model-quota.ts), consulted only for the rungs the walk
      * actually reaches, never for the ones below the one that answers.
      *
      * THE READING OUTRANKS A SPENT-ALLOWANCE MEMO. A memo says the plan said no at some instant; a reading with
@@ -258,7 +307,7 @@ export const askQuickModel = async <T>(
      * word where the memo is ours. Without this a pin refused at the start of a window stayed skipped for the
      * full memo while its ring on the Agent tab showed the room that had come back. Only a `limit` memo can be
      * answered this way: a reading says nothing about a revoked token or an outage. */
-    const stepOverReason = async (choice: QuickModelChoice): Promise<string | undefined> => {
+    const stepOverReason = async (choice: ModelChoice): Promise<string | undefined> => {
         const held = cooling(choice, now);
         if (held?.kind === `other`) {
             return held.reason;
@@ -268,7 +317,7 @@ export const askQuickModel = async <T>(
         }
         const limit = await rungLimit(services, choice);
         if (limit !== undefined && limit.withHeadroom > 0 && (limit.roomMeasuredAt ?? 0) > held.at) {
-            refusals.delete(quickModelKey(choice));
+            refusals.delete(modelPinKey(choice));
             return undefined;
         }
         return held.reason;
@@ -278,7 +327,7 @@ export const askQuickModel = async <T>(
      * `asked` is the fact the caller needs and the answer cannot carry: a walk that skipped every rung and a
      * walk that asked every rung and was refused by all of them both end with no text, and they call for
      * opposite things next. */
-    const walk = async (honourSkips: boolean): Promise<{ answer?: QuickModelAnswer<T>; asked: boolean }> => {
+    const walk = async (honourSkips: boolean): Promise<{ answer?: RoleModelAnswer<T>; asked: boolean }> => {
         // The timeline is rebuilt, not appended to: a second pass is a RETRACTION of the first's skips, and
         // showing both would report every rung twice, once stepped over, once asked, for one walk.
         attempts.length = 0;
@@ -303,13 +352,13 @@ export const askQuickModel = async <T>(
              * memo's effect legible too, a rung that stops appearing is one the walk has stopped paying for. */
             const from = Date.now();
             const spent = (): number => Date.now() - from;
-            const key = quickModelKey(choice);
+            const key = modelPinKey(choice);
             // In flight, said before the wait rather than after: "asking X" during the seconds X is taking is the
             // one line of this report that answers a user staring at it right now.
             attempts.push({ choice, status: `asking`, at: from });
             tell();
             // The in-flight entry settles in place, the walk's list is a timeline, and one rung is one entry.
-            const settle = (attempt: QuickModelAttempt): void => {
+            const settle = (attempt: RoleModelAttempt): void => {
                 attempts[attempts.length - 1] = attempt;
                 tell();
             };
@@ -319,14 +368,14 @@ export const askQuickModel = async <T>(
                 // dead end as one that fails on the way out, and the next model in the chain answers both.
                 const text = await askRung(services, choice, ask.prompt, signal);
                 /* AND THE REPLY IS READ HERE, not by the caller, which is what makes a rung that answers with
-                 * something unusable a rung the walk steps over (quick-answer.ts says why that belongs inside
+                 * something unusable a rung the walk steps over (role-answer.ts says why that belongs inside
                  * the loop rather than after it). Inside the try for the same reason the call above is: the two
                  * ways a rung can fail to produce an answer lead to the same place. */
-                const value = readQuickAnswer(ask.answer, text);
+                const value = readRoleAnswer(ask.answer, text);
                 // It answered, so whatever it last refused for is over, a memo outliving the condition it
                 // describes would keep steering work off an account that is plainly working again.
                 refusals.delete(key);
-                services.perf.record("quick.model", spent(), { provider: choice.provider, model: choice.model });
+                services.perf.record("role.model", spent(), { role, provider: choice.provider, model: choice.model });
                 settle({ choice, status: `answered`, at: from, ms: spent() });
                 return { answer: { value, choice, skipped }, asked };
             } catch (error) {
@@ -335,7 +384,7 @@ export const askQuickModel = async <T>(
                     // ask this rung as if nothing had happened, because nothing about it did.
                     throw error;
                 }
-                services.perf.record("quick.model", spent(), { provider: choice.provider, model: choice.model }, true);
+                services.perf.record("role.model", spent(), { role, provider: choice.provider, model: choice.model }, true);
                 /* A REPLY OF THE WRONG SHAPE EARNS NO MEMO, and it is the one refusal here that doesn't. The memo
                  * exists for conditions that outlive the call (a spent allowance, a revoked token, an outage), and
                  * this rung has just demonstrated the opposite: it is reachable, credentialed and fast. Writing it
@@ -344,7 +393,7 @@ export const askQuickModel = async <T>(
                 if (!(error instanceof UnusableAnswerError)) {
                     remember(key, refusalText(error), Date.now());
                 }
-                services.logger.debug({ err: error, model: choice.model }, "quick model: refused, trying the next in the chain");
+                services.logger.debug({ err: error, model: choice.model }, "role model: refused, trying the next in the chain");
                 skipped.push({ choice, reason: refusalText(error) });
                 settle({ choice, status: `refused`, at: from, ms: spent(), reason: refusalText(error) });
             }

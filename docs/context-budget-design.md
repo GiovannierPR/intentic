@@ -164,7 +164,7 @@ Shedding notes buys 3–4k tokens. Against a 16k window with a 45k floor, the an
   twice: absent on the first turn, and on a translated endpoint it describes the proxy's assumed model rather
   than the GGUF answering.
 - **Hide small models from the picker.** Honest, and it throws away the case the local-model card exists for.
-  A 3B model is a fine quick-model rung (titles, commit messages) — jobs whose prompts are small by
+  A 3B model is a fine one-shot helper rung (titles, commit messages) — jobs whose prompts are small by
   construction. Gate the profile, not the model.
 - **Raise `--ctx-size` and call it fixed.** Buys this one model and re-arms the same failure for the next one,
   because the cause is that nothing counts, not that 16k is small.

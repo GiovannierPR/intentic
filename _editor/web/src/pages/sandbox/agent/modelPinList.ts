@@ -1,4 +1,4 @@
-import { type AgentRunPin, quickModelKey } from "@intentic/sandbox-contract";
+import { type ModelPin, modelPinKey } from "@intentic/sandbox-contract";
 import { computed, type ComputedRef } from "vue";
 import { type DescribedPin, describePin } from "../../../composables/chat/modelPins";
 
@@ -8,7 +8,7 @@ import { type DescribedPin, describePin } from "../../../composables/chat/modelP
  *
  * What actually differs between the lists is how an entry is WRITTEN DOWN: the quick, cheaper-tier and safety
  * lists keep `${provider}:${model}` keys, while an agent-run entry is a pin carrying its own run settings
- * (AgentRunPinSchema). So the rows and the picker work in PINS, and each list says how one is stored.
+ * (ModelPinSchema). So the rows and the picker work in PINS, and each list says how one is stored.
  *
  * `read`/`write` rather than a settings key, because two of the lists are read through their own composables:
  * each resolves its own chain, and the row has to draw THE LIST AS THE USER WROTE IT either way. A pin whose
@@ -27,7 +27,7 @@ import { type DescribedPin, describePin } from "../../../composables/chat/modelP
 export type PinnedEntry = DescribedPin & {
     readonly key: string;
     readonly index: number;
-    readonly pin: AgentRunPin | undefined;
+    readonly pin: ModelPin | undefined;
     readonly detail?: string | undefined;
 };
 
@@ -39,7 +39,7 @@ export interface PinnedList {
     // Everything already written down, so the picker can offer those rows without letting one be pinned twice: a
     // model that vanished from the list as you used it would make you hunt for a row that was there a moment ago.
     readonly taken: ComputedRef<readonly string[]>;
-    readonly apply: (index: number | undefined, pin: AgentRunPin) => void;
+    readonly apply: (index: number | undefined, pin: ModelPin) => void;
     readonly remove: (index: number) => void;
     readonly promote: (index: number) => void;
 }
@@ -47,12 +47,12 @@ export interface PinnedList {
 export function pinnedList<T>(list: {
     readonly read: () => readonly T[];
     readonly write: (entries: readonly T[]) => void;
-    readonly decode: (entry: T) => AgentRunPin | undefined;
-    readonly encode: (pin: AgentRunPin) => T;
+    readonly decode: (entry: T) => ModelPin | undefined;
+    readonly encode: (pin: ModelPin) => T;
     // What this entry says about HOW it runs, beside its name. Only a list whose pins carry run settings has
     // anything to say here, and only the fields actually set are named, so a pin left at the provider's own
     // defaults reads as just a model.
-    readonly detail?: (pin: AgentRunPin) => string | undefined;
+    readonly detail?: (pin: ModelPin) => string | undefined;
     readonly knobs?: boolean;
 }): PinnedList {
     const entries = computed<readonly PinnedEntry[]>(() =>
@@ -71,7 +71,7 @@ export function pinnedList<T>(list: {
     return {
         knobs: list.knobs === true,
         entries,
-        taken: computed(() => entries.value.flatMap((entry) => (entry.choice === undefined ? [] : [quickModelKey(entry.choice)]))),
+        taken: computed(() => entries.value.flatMap((entry) => (entry.choice === undefined ? [] : [modelPinKey(entry.choice)]))),
         // Adding appends; re-pointing an entry replaces it where it stands, because its position in the order is
         // the other half of what the user said.
         apply: (index, pin) => {

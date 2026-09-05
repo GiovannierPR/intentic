@@ -487,9 +487,17 @@ export interface IntenticApi {
      * and could not offer a model endpoint or an ACP agent at all, and a model row eleven chips wide that grew
      * with every release. Partial coverage does not buy partial reuse; it buys none. */
     readonly models: {
-        // What a run opens on when nobody has chosen: the sandbox's Agent-runs model (Sandbox ▸ Agent ▸ Models),
-        // falling back to whatever the owner's own chat is set to. Reactive when read inside a computed.
-        agentRun(): PickedModel;
+        /* What a run of this KIND opens on when nobody has chosen: the sandbox's model list for that job
+         * (Sandbox ▸ Agent ▸ Models), falling back to whatever the owner's own chat is set to. Reactive when
+         * read inside a computed.
+         *
+         * `role` is the job, as the sandbox names it — "pipeline-fix", "maintenance-chore", "documentation-run",
+         * "acceptance-run", "deployment-fix" and the rest. There is a list per job rather than one for
+         * unattended work as a class, because a documentation sweep and a red production pipeline are not the
+         * same spend and the owner is the one who gets to say so. Pass the role your surface's turns send as
+         * `runRole`, or the two will disagree about which model a click costs. An unknown role is not an error:
+         * it answers with the owner's own chat model, the same floor an unpinned job gets. */
+        agentRun(role: string): PickedModel;
         /* NAME A SELECTION THE EXTENSION ALREADY HOLDS, a pin read back from disk, which arrives as bare ids and
          * has to be rendered before anyone opens the picker. This is what keeps `label` honest for the surfaces
          * that SAVE a choice rather than spend it immediately: without it every one of them would keep a catalog

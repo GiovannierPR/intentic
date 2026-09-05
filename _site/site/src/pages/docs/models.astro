@@ -40,7 +40,7 @@ const providers = [
 const others = [
     {
         name: `A local model`,
-        detail: `The sandbox downloads the weights and serves them itself: pick a model on the Local model card and it appears in the picker. Nothing to install, nothing leaves the machine; an NVIDIA GPU is one switch and one rebuild away. Small models shine as the quick model (free commit messages) and for work that must stay local.`,
+        detail: `The sandbox downloads the weights and serves them itself: pick a model on the Local model card and it appears in the picker. Nothing to install, nothing leaves the machine; an NVIDIA GPU is one switch and one rebuild away. Small models shine on the one-shot jobs (free commit messages, free session titles) and on work that must stay local.`,
     },
     { name: `A model endpoint`, detail: `Point the sandbox at any OpenAI-compatible API you already run: Ollama on this machine, vLLM on the GPU box, a gateway. Its catalog is read from the server itself, so the picker offers what that server actually serves.` },
     { name: `An ACP agent`, detail: `Any agent speaking the Agent Client Protocol, added as a capability. Adding one needs no update to intentic.` },
@@ -132,15 +132,24 @@ const others = [
     </p>
 
     <h2>Models for work you didn't start</h2>
-    <p>Two settings on <strong>Sandbox → Agent</strong> decide what runs when nobody picked:</p>
+    <p>
+        <strong>Sandbox → Agent → Models</strong> holds one ordered list <em>per job</em>: commit messages, session titles, the safety
+        judge, loop verdicts, pipeline fixes, deployment fixes, maintenance chores, documentation runs, acceptance runs, pre-push fixes,
+        automation wakes and the rest. Each list is tried top to bottom, so one spent account doesn't take a job down, and each entry
+        carries how its model runs — effort, thinking, speed, harness — as well as which model it is.
+    </p>
+    <p>A row you haven't touched falls back to its own default, and the two defaults are genuinely different:</p>
     <ul>
         <li>
-            <strong>Agent runs.</strong> The model for unattended work: an automation's wake, a chore, an acceptance run, the fix a failed pre-push check proposes. Pinned rather than derived, because that work has to read a failing suite or a container log and repair something, and a wrong guess is billed in whole sessions.
+            <strong>One-shot helpers</strong> — a commit message, a session title, a verdict — default to <strong>Auto</strong>: the
+            cheapest rung of every connected provider, best first, resolved at the moment it's read. So it can never name a provider you
+            have no credential for, and it improves by itself when you connect one. Nothing stops you pinning a frontier model to your
+            commit subjects instead; that's a preference, and it's yours to have.
         </li>
         <li>
-            <strong>Quick helpers.</strong> The model behind one-click helpers that aren't a conversation, like autofilling a commit message.
-            Defaults to <strong>Auto</strong>, which resolves from whatever accounts are connected at the moment it's read. So it can never
-            name a provider you have no credential for, and it improves by itself when you connect one.
+            <strong>Whole sessions</strong> — an automation's wake, a chore, an acceptance run, the fix a failed pre-push check proposes —
+            fall back to whatever your own chat is set to. Nothing can judge what a session is worth, and a wrong guess is billed in whole
+            sessions, so the honest default is a model you already chose.
         </li>
     </ul>
 

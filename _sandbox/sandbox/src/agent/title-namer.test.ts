@@ -4,9 +4,9 @@ import { unstubbed } from "@intentic/testing";
 import { cleanSessionTitle, nameAgentTitle } from "./title-namer.js";
 
 const ask = vi.fn<() => Promise<{ value: string }>>();
-vi.mock("./quick-model.js", () => ({ askQuickModel: () => ask() }));
+vi.mock("./role-model.js", () => ({ askRoleModel: () => ask() }));
 
-/* The quick model's name for a session, unwrapped from the packaging models reach for even when told not to.
+/* The session-title role's name for a session, unwrapped from the packaging models reach for even when told not to.
  * Same instinct as cleanCommitSubject: the name is right and only its wrapper is wrong, and a pass that
  * refuses a good name over a pair of backticks leaves the fleet board wearing the derived guess for nothing. */
 
@@ -53,12 +53,12 @@ test("returns empty for a reply with nothing in it", () => {
 });
 
 /* The pass itself, over a fake registry: only the entry read and the title write matter to these rules, and
- * the quick model is the mock above: what it answers (or that it was never asked) IS each test's subject. */
+ * the helper model is the mock above: what it answers (or that it was never asked) IS each test's subject. */
 
 /* THE STRINGS THAT ARE NOT NAMES, EVERY ONE THAT HAS ACTUALLY TAKEN A SESSION'S NAME IN THIS FLEET, and the list
  * is the point: the pass guarded the session-limit sentence alone, the auth sentence walked in and took four
  * cards, both were guarded, and a Gemini rung's tool-call stand-in walked in and took four more. Whether a REPLY
- * may become a name is settled at the ask now (quick-answer.ts); what stays this pass's business is whether a
+ * may become a name is settled at the ask now (role-answer.ts); what stays this pass's business is whether a
  * STORED one counts as a name at all, which is what lets the cards already wearing these heal. */
 const STOLEN_TITLES = [
     "You've hit your session limit · resets 11:50pm (UTC)",

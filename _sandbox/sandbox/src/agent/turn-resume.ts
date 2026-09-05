@@ -1,7 +1,7 @@
 import {
     type AgentEvent,
     type AgentReply,
-    type AgentRunPin,
+    type ModelPin,
     type AgentTurn,
     type ParkedCard,
     RESUME_NOTES,
@@ -17,7 +17,7 @@ import { openingRows, openTurnTranscript, recordInterruptedTurn, recordTurnTrans
 import { grantRestoredPermission, POST_PLAN_MODE } from "./agent.js";
 import { formatAnswers } from "./question-answers.js";
 import { restoreRequest } from "./agent-requests.js";
-import { agentRunModel } from "./agent-run-model.js";
+import { runRoleModel } from "./run-role-model.js";
 import { registerTurn } from "./agent-steering.js";
 import { outageRetryDue, outageRetryFired } from "./provider-health.js";
 import type { JournalEntry, JournalledTurn } from "./turn-journal.js";
@@ -399,20 +399,31 @@ const resumedTurn = (
     };
 };
 
-/* WHAT AN UNATTENDED TURN RUNS ON. A turn a surface started names no model, because nobody touched the caret
- * on the button that started it (see AgentTurn.unattended), so the owner's `agentRunModels` answers for it —
- * the whole pin, not just its model: how hard that one thinks, on which loop, and at whose speed.
+/* WHAT AN UNATTENDED TURN RUNS ON. A turn a surface started names no model, because nobody touched the caret on
+ * the button that started it (see AgentTurn.unattended), so the owner's list FOR THAT JOB answers for it — the
+ * whole pin, not just its model: how hard that one thinks, on which loop, and at whose speed.
  *
- * Resolved HERE, at the one boundary every detached turn passes through, rather than at each of the five
- * surfaces that start one. Two things follow from that placement and neither is incidental: a surface added
- * tomorrow inherits the setting by declaring what it is, and the model lands on the turn BEFORE the journal
- * records it, so a run resumed after a daemon death comes back on the model it was started on rather than
- * re-resolving against a setting the user has since changed.
+ * WHICH JOB IS THE TURN'S OWN ANSWER (AgentTurn.runRole), and that is the part this used to get wrong. There
+ * was one list behind every unattended turn, so `unattended` was doing two jobs at once: saying nobody is
+ * watching, and standing in for what the work is. Those are different facts, and conflating them meant a
+ * documentation sweep and a red production pipeline were billed at one tier because neither had ever been asked
+ * what it was. A turn now says, and the owner answers per role (contract model-roles.ts).
  *
- * THE SETTING IS A LIST and agentRunModel() walks it, stopping at the first entry this sandbox can actually
- * start (agent/agent-run-model.ts has the why, and why the walk is narrower than the quick chain's). Walked
+ * Resolved HERE, at the one boundary every detached turn passes through, rather than at each of the dozen
+ * surfaces that start one. Two things follow from that placement and neither is incidental: a surface gets the
+ * whole mechanism by naming its role, and the model lands on the turn BEFORE the journal records it, so a run
+ * resumed after a daemon death comes back on the model it was started on rather than re-resolving against a
+ * setting the user has since changed.
+ *
+ * THE SETTING IS A LIST and runRoleModel() walks it, stopping at the first entry this sandbox can actually
+ * start (agent/run-role-model.ts has the why, and why the walk is narrower than the helper chain's). Walked
  * once, here, for the same reason the resolution happens here at all: what the journal records has to be the
  * model the run is on, not a list it might re-read differently tomorrow.
+ *
+ * A TURN WITH NO ROLE GETS NO PIN, and that is deliberate rather than a gap. Every starter in this repo names
+ * one; what arrives without a role is an unattended turn whose origin this build does not model, and guessing a
+ * tier for it is exactly the thing the role split exists to stop. It falls to the same floor an unpinned role
+ * does: the composer's own model, which is one the owner chose.
  *
  * Fills only what is absent, which is what keeps the flag from overriding a real choice: every one of those
  * surfaces can name a model for a single run through the shared button's caret, Acceptance names one per run
@@ -434,26 +445,29 @@ const resumedTurn = (
  * place, and it is the same list the settings row draws its footer from. */
 const PIN_KNOBS = ["effort", "thinking", "fast", "harness"] as const;
 
-const pinnedKnobs = (turn: AgentTurn, pin: AgentRunPin): Partial<AgentTurn> =>
+const pinnedKnobs = (turn: AgentTurn, pin: ModelPin): Partial<AgentTurn> =>
     Object.fromEntries(
         PIN_KNOBS.filter((knob) => turn[knob] === undefined && pin[knob] !== undefined && pin[knob] !== "").map((knob) => [knob, pin[knob]]),
     );
 
-const withAgentRunModel = async <T extends AgentTurn>(services: Services, turn: T): Promise<T> => {
+const withRoleModel = async <T extends AgentTurn>(services: Services, turn: T): Promise<T> => {
     /* A TURN THAT NAMES ITS PROVIDER KEEPS IT, and the `agent` half of this guard matters as much as the
      * `model` half. The pin below carries a provider WITH its model, so filling a turn that already chose one
      * does not top it up, it moves the turn to a different provider entirely. A workflow step pinned to
      * `claude` with no model (the ordinary case: pinning a model id would go stale) would silently run on
-     * whatever the sandbox's agent-run pin names, which for the one design where the provider IS the point
+     * whatever the sandbox's pin for that role names, which for the one design where the provider IS the point
      *, two models racing the same request, quietly makes both arms the same model.
      *
      * Absent a model AND absent an agent is the case this is for: a surface that chose neither, which is what
      * "nobody picked a model for this turn" means. Naming an agent and no model falls to that provider's own
-     * catalog default, exactly as it did before the flag existed. */
-    if (turn.unattended !== true || turn.model !== undefined || turn.agent !== undefined) {
+     * catalog default, exactly as it did before the flag existed.
+     *
+     * NO ROLE, NO PIN, for the reason the header gives: a role is how a turn says what it is, and a turn that
+     * has not said runs on the owner's own composer pick rather than on a tier this file chose for it. */
+    if (turn.unattended !== true || turn.runRole === undefined || turn.model !== undefined || turn.agent !== undefined) {
         return turn;
     }
-    const pinned = await agentRunModel(services);
+    const pinned = await runRoleModel(services, turn.runRole);
     if (pinned === undefined) {
         return turn;
     }
@@ -479,7 +493,7 @@ export const startConversationTurn = async (
     started: AgentTurn & { conversationId: string },
     attempts = 0,
 ): Promise<TurnRun | undefined> => {
-    const turn = await withAgentRunModel(services, started);
+    const turn = await withRoleModel(services, started);
     const { conversationId, prompt } = turn;
     // A fork's record is copied now, and the pump waits for it before invoking the provider.
     const transcriptOpen = openTurnTranscript(services, turn);

@@ -4,6 +4,7 @@ import { extensionApiVersion, satisfiesEngines } from "@intentic/extension-api/p
 import { diffPowers, extensionIdOf, type PowersDiff } from "@intentic/extension-manifest";
 import { isShaPinned, OFFICIAL_REGISTRY_URL, type RegistryEntry } from "@intentic/registry";
 import {
+    type AgentTurn,
     type ExtensionAdvisory,
     ExtensionAdvisorySchema,
     type ExtensionConfig,
@@ -451,10 +452,13 @@ const prepareAgentReview = (services: Services, target: InstalledTarget, update:
         toRef: update.ref,
         path: update.path ?? target.config.path ?? "",
     });
-    const turn = {
+    const turn: AgentTurn = {
         prompt,
         conversationId,
         unattended: true,
+        // Which of the owner's model lists pays for this read (contract model-roles.ts): nobody is at a composer,
+        // and reviewing a diff of somebody else's extension is not the same job as fixing a red pipeline.
+        runRole: `extension-review`,
         isolated: true,
         title: `Update review: ${target.identity} ${target.version} → ${update.version ?? update.ref.slice(0, 7)}`.slice(0, 80),
     };

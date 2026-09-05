@@ -88,7 +88,7 @@ test("plan mode is a request to think, so it is never answered by the model that
 });
 
 test("a surface-started run is never downgraded, because nobody is watching it fail", () => {
-    // Same call agentRunModels already makes in the other direction: a run billed whole, with a worktree in
+    // Same call a `run` role already makes in the other direction: a run billed whole, with a worktree in
     // it, is not the place to spend a guess.
     expect(tierOf(`what is a closure?`, { unattended: true })).toBe(`standard`);
 });

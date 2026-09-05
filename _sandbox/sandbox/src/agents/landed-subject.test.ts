@@ -5,7 +5,7 @@ import type { Services } from "../composition.js";
 import { describeLanding } from "./landed-subject.js";
 
 const ask = vi.fn<() => Promise<{ value: { subject: string; note: string; breaking: string } }>>();
-vi.mock("../agent/quick-model.js", () => ({ askQuickModel: () => ask() }));
+vi.mock("../agent/role-model.js", () => ({ askRoleModel: () => ask() }));
 vi.mock("../git/contract-shrink.js", () => ({ claimedContractShrink: async () => [] }));
 
 /* WHAT A USER IS TOLD WHILE THE SENTENCE IS BEING WRITTEN, AND IN WHAT ORDER: the only part of a landing
@@ -69,9 +69,9 @@ test("opens the report at the land, writes the sentence, and only then says the 
  * All of them arrive as a throw now: nothing connected, a chain spent to the bottom, and a chain that answered
  * but never with a subject (a tool-call stand-in, a question back, its provider's own refusal as prose). That
  * last one used to be checked here, after the walk was over, which meant one misbehaving rung ended the landing
- * while working accounts below it went unasked. The ask decides it now (quick-answer.ts). */
+ * while working accounts below it went unasked. The ask decides it now (role-answer.ts). */
 test.each([
-    ["nothing connected", "no quick model connected"],
+    ["nothing connected", "no helper model connected"],
     ["a rung that wrote a tool call", "gemini-3.5-flash: wrote a tool call instead of a commit subject"],
 ])("%s ends the report as failed, with nothing written", async (_case, message) => {
     ask.mockRejectedValue(new Error(message));

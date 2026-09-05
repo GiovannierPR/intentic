@@ -218,6 +218,8 @@ export const activateServer = (api: ExtensionServerApi, _context: ExtensionServe
                         conversationId,
                         isolated: true,
                         unattended: true,
+                        // Which of the owner's model lists pays for it (Sandbox ▸ Agent ▸ Models).
+                        runRole: `deployment-fix`,
                         ...(input.pick !== undefined
                             ? {
                                   agent: input.pick.agent,

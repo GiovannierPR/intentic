@@ -1,7 +1,8 @@
 // settings: per-sandbox agent settings (.intentic/config/settings.json)
 import { z } from "zod";
 import { CommandJudgeModeSchema } from "../safety-policy.js";
-import { AdmissionPolicySchema, AdmissionRuleSchema, AgentRunPinSchema } from "./agent.js";
+import { ModelRoleSchema } from "../model-roles.js";
+import { AdmissionPolicySchema, AdmissionRuleSchema, ModelPinSchema } from "./agent.js";
 // Which prompt the agent is, before this turn composes anything on top. Two built-in bases and an escape
 // hatch: Intentic's own (the default), Claude Code's preset, or the owner's text. Declared out here rather
 // than inline in the settings object because both sides of the wire branch on it, the daemon to build the
@@ -458,26 +459,39 @@ export const SandboxSettingsSchema = z.object({
         .max(1)
         .default(0)
         .describe("What share of commands to leave untrimmed, so the saving can be measured against a real comparison rather than estimated."),
-    /* The models behind the small automatic jobs that are not a conversation, today the commit message
-     * written when an agent's work lands. An ORDERED list of `${provider}:${modelId}`, tried top to bottom, or
-     * EMPTY for Auto.
+    /* WHICH MODEL DOES WHICH JOB, one ordered list per ROLE (model-roles.ts declares them all).
      *
-     * A LIST rather than a pick, because the single interesting failure of this feature is a model that is
-     * connected and simply will not answer today: the account's allowance went on the chat, and one spent
-     * provider then takes the job down for hours while the others sit idle. Written in order, the daemon steps
-     * over the spent one and the message still gets written (agent/quick-model.ts walks it).
+     * ONE KEY RATHER THAN SEVENTEEN, and the record is keyed by the role catalog rather than by free strings: a
+     * job that starts choosing a model tomorrow becomes configurable by adding a row to that table, and the
+     * settings page, the resolver and the daemon's lookup all follow without a schema change. Seventeen named
+     * fields here would be the same table written a fourth time, in the one place where getting it out of step
+     * spends somebody's money.
      *
-     * Empty is the default and still the interesting case: Auto is resolved from whatever accounts are
-     * connected at the moment it is read (resolveQuickModels), so it can never name a provider this sandbox has
-     * no credential for, it improves by itself when one is added, and it is a ladder too, the cheapest rung of
-     * every connected provider, best first. Storing resolved ids here instead would go stale exactly like a
-     * pinned model does. */
-    quickModel: z
-        .array(z.string())
-        .max(10)
-        .default([])
+     * IT REPLACED THREE BUNDLED KEYS — `quickModel`, `agentRunModels` and `commandJudgeModels` — and the reason
+     * is worth keeping: the first two were grouped by assumed INTENSITY, not by job. "Quick" covered commit
+     * messages, session titles and loop verdicts at once, so an owner who wanted better commit subjects could
+     * not ask for them without also moving every session title onto the same model; "agent runs" covered a
+     * production incident and a documentation sweep with one tier. An intensity is a guess about work its owner
+     * knows better, and neither the configuration nor the UI was actually saving anyone anything by making it.
+     *
+     * EACH LIST IS AN ORDERED LADDER of pins, tried top to bottom, because the interesting failure is a model
+     * that is connected and will not answer today: the account's allowance went on the chat, and one spent
+     * provider takes that job down for hours while the others sit idle.
+     *
+     * AN ABSENT OR EMPTY LIST IS THE INTERESTING CASE and means the role's declared floor (resolveRoleModels): a
+     * one-shot helper derives an Auto ladder from whatever is connected right now — so it can never name a
+     * provider this sandbox has no credential for, and it improves by itself as accounts are added — while a
+     * whole session falls to the model the owner picked for their own chat, because nothing here can judge what
+     * a session is worth and a wrong guess is billed whole. Storing resolved ids instead would go stale exactly
+     * as a pinned model does. */
+    // `partialRecord`, not `record`: an exhaustive one would make every role a required key, so a settings file
+    // that has never been touched would have to spell out seventeen empty arrays to be valid, and adding a role
+    // would invalidate every settings file in existence. An absent key IS the answer "this role has no list".
+    modelRoles: z
+        .partialRecord(ModelRoleSchema, z.array(ModelPinSchema).max(10))
+        .default({})
         .describe(
-            "Which models do the small automatic jobs that are not a conversation, such as writing a commit message. A list rather than one pick, tried in order, because the interesting failure is a model that is connected and simply will not answer today. Empty means work it out from whatever is connected, which improves by itself as accounts are added.",
+            "Which models do which job, one ordered list per job: commit messages, session titles, the safety judge, pipeline fixes, and every other place this sandbox picks a model for you. Tried in order, so one spent account does not take a job down. A job with no list falls back to its own default: cheapest connected for the one-shot helpers, your own chat model for whole sessions.",
         ),
     /* WHICH REPOS KEEP A CHANGELOG, the repos whose commits carry a `Release-Note:` trailer, written by the
      * same quick model that drafts the subject (git/commit-message.ts) and harvested at release time.
@@ -498,40 +512,6 @@ export const SandboxSettingsSchema = z.object({
         .default([])
         .describe(
             "Which repositories keep a changelog, and so get a user-facing note written alongside each merge. A list rather than a switch, and empty by default, because the commit writer's standing rule is to copy the house style rather than impose one, and a repository that has never written such a note gives it nothing to copy.",
-        ),
-    /* WHAT AN AGENT RUN OPENS ON, the tier above quickModel, and the answer for every turn a SURFACE starts
-     * rather than a person at a composer: Fix with agent on a pipeline or a deployment, a Maintenance chore, a
-     * Documentation or Acceptance run, the fix a failed pre-push check proposes. An ORDERED list of PINS, each
-     * naming a provider and model AND how that one is to be run (AgentRunPinSchema); EMPTY ⇒ whatever the chat
-     * composer would have started with, which is the honest floor because it is the model the user already
-     * chose to work with.
-     *
-     * EACH ENTRY CARRIES ITS OWN REASONING AND COST KNOBS, which is why these are objects rather than the
-     * `${provider}:${model}` keys the two lists around them still hold. The effort used to be one field beside
-     * the list, answering for every model in it, and the entries of this list are the least interchangeable
-     * things on the page: the head is the tier the owner wants the work done at and what follows it is the
-     * account that catches it when the first is spent. AgentRunPinSchema has the rest of the argument.
-     *
-     * A LIST, for the reason quickModel is one: the account at the head runs out, and every surface-started run
-     * in the sandbox then fails on a credential the user cannot see from the row they pressed. Written in order,
-     * the next one down catches it (turn-resume.ts walks it).
-     *
-     * PINNED, NOT DERIVED, the deliberate difference from quickModel one line above, and the reason these are
-     * two settings rather than one. A quick helper exists to stay OFF the frontier tier, so cheapest-connected
-     * is the right automatic answer and an empty list resolves to Auto. An agent run has to read a failing
-     * suite, or a container log, or a story, and repair the thing: the tier is a judgement about how much the
-     * job is worth, nothing here can make it, and a wrong guess is billed in whole sessions rather than in
-     * tokens. So an empty list here resolves to NOTHING and the composer's own pick answers instead.
-     *
-     * The daemon applies this to any turn flagged `unattended` that names no model of its own, one rule, so a
-     * surface added tomorrow inherits it by saying what it is instead of re-deriving where models come from. A
-     * surface MAY still name one (the shared run button's caret, Acceptance's per-run pick), and that wins. */
-    agentRunModels: z
-        .array(AgentRunPinSchema)
-        .max(10)
-        .default([])
-        .describe(
-            "Which models run the work a screen starts rather than a person: fixing a red pipeline, a maintenance chore, an acceptance run. Tried in order, so one spent account does not take every such run down, and each entry says how hard that model should think as well as which one it is. Empty falls back to whatever the chat would have used, which is the honest floor because it is the model you already chose to work with.",
         ),
     /* AUTOMATIC TIER SELECTION: may the daemon run an easy-looking turn on a cheaper rung of the provider the
      * user is already on, instead of on the model they picked?
@@ -575,9 +555,9 @@ export const SandboxSettingsSchema = z.object({
             "How readily a turn counts as simple enough for the cheaper model. It moves only the cutoff: at every setting a turn still has to say something positively easy, so nothing here can downgrade a short vague request.",
         ),
     /* WHICH CHEAP MODEL A DOWNGRADED TURN LANDS ON, an ordered list of `${provider}:${model}` keys
-     * (quickModelKey), or EMPTY for Auto.
+     * (modelPinKey), or EMPTY for Auto.
      *
-     * Empty is the default and the interesting case, exactly as quickModel's is: Auto is the cheapest row the
+     * Empty is the default and the interesting case, exactly as a one-shot role's is: Auto is the cheapest row the
      * turn's own provider publishes, read through the same cheap-end order (compareCheapestFirst), so the two
      * features can never disagree about which rung is the cheap one, and connecting an account tomorrow
      * improves the answer by itself.
@@ -741,35 +721,13 @@ export const SandboxSettingsSchema = z.object({
      * entitled to say so, and before this they could not: the old rulebook could be set to allow everything, and
      * the redesign quietly made itself the one part of the sandbox you could only opt further into.
      *
-     * Judged commands are also the one automatic job whose model choice genuinely differs from the rest of
-     * `quickModel`'s work, which is why the list below exists rather than a line in the comment above it: a
-     * commit message written by a model that misread the diff is a sentence somebody edits, and a verdict
-     * written by a model that misread a command is a card that should not have been raised or, worse, one that
-     * should have been. */
+     * WHICH MODEL judges is not answered here: it is the `safety-judge` role in `modelRoles`, like every other
+     * job in this sandbox that picks one. It used to need its own key, on the argument that a verdict is worth a
+     * different model than a commit message — true, and the fact that it had to be argued for one job at a time
+     * is exactly what the role catalog replaced. */
     commandJudge: CommandJudgeModeSchema.default("on").describe(
         "Whether a model reads your safety policy before a flagged command runs. Off judges nothing and asks about nothing; Watch judges everything and records it without ever interrupting you, which is how you find out what your policy actually does before you let it stop anything; On lets the verdict decide. Wiping a disk or deleting under /history asks at every setting — that rule is typed rather than judged, and cannot be turned off.",
     ),
-    /* WHICH MODEL READS THE POLICY, an ordered list of `${provider}:${modelId}` keys (quickModelKey) walked top
-     * to bottom, or EMPTY for whatever the quick model would be.
-     *
-     * A LIST, for the reason every other model setting here is one: the head runs out and the whole feature goes
-     * with it. Falling back to the quick chain rather than to Auto is deliberate — it is what this did before the
-     * setting existed, so an owner who never opens the row keeps exactly the behaviour they had, and one who
-     * writes an entry is saying that command verdicts are worth a different model than commit messages.
-     *
-     * THE ARGUMENT FOR SETTING IT AT ALL, since the cheapest connected rung is the default: this prompt is the
-     * one quick job that is genuinely adversarial. Its input includes text the agent is about to run, which may
-     * have arrived from a stranger's web page, and a small model can be talked round by it (command-judge.ts is
-     * candid about that). It is also the job where being WRONG is expensive in both directions — a needless card
-     * teaches the owner to click through the next one. Neither is a reason for us to spend somebody's frontier
-     * allowance by default; both are reasons for them to be able to. */
-    commandJudgeModels: z
-        .array(z.string())
-        .max(10)
-        .default([])
-        .describe(
-            "Which models decide whether a flagged command should run, tried in order so one spent account does not take the gate down. Empty uses whatever the quick model is, which is what this did before the setting existed.",
-        ),
     /* HOW MUCH AN AGENT MAY DELEGATE, the three ceilings the Claude Code harness enforces on its own Agent
      * tool, surfaced here because their defaults are tuned for a laptop and this is a container the owner sized.
      *

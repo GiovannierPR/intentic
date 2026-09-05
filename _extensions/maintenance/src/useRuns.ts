@@ -149,11 +149,13 @@ export function useRuns() {
                     conversationId: manifest.conversationId,
                     isolated: true,
                     /* A chore is started by a row rather than by a person at a composer, so the daemon answers
-                     * with the owner's `agentRunModels` (Sandbox ▸ Agent ▸ Models), unless they used the caret
+                     * with the owner's list for this job (Sandbox ▸ Agent ▸ Models), unless they used the caret
                      * on that row's button, in which case the pair and the tier it was picked at ride on here
                      * and the daemon's fill step leaves them alone. The flag stays either way: it is what the
                      * turn IS. */
                     unattended: true,
+                    // Which of the owner's model lists pays for it (Sandbox ▸ Agent ▸ Models).
+                    runRole: `maintenance-chore`,
                     ...(pick !== undefined
                         ? { agent: pick.provider, model: pick.model, ...(pick.effort === undefined ? {} : { effort: pick.effort }) }
                         : {}),

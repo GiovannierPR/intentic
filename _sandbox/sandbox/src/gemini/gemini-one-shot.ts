@@ -13,7 +13,7 @@ import { OPENCODE_GEMINI_PROVIDER } from "../grok/opencode.js";
  *
  * So the helper stops speaking Claude Code to Google. The chat already made this move. Gemini turns run on the
  * OpenCode loop for exactly this reason (grok/opencode.ts says so where the provider is declared), and the
- * quick model was simply never taught the same thing: it knew one way to run a model, took it to a provider that
+ * one-shot helper was simply never taught the same thing: it knew one way to run a model, took it to a provider that
  * refuses it, and spent every landing rediscovering that. This is that fix, one layer down.
  *
  * The credential is the translator's, exactly as it is for a routed turn: OpenCode reaches Google through the
@@ -83,6 +83,12 @@ export const geminiOneShot = async (services: Pick<Services, "openCode">, ask: O
         const answered = await client.session.prompt({
             path: { id },
             query: { directory: ask.cwd },
+            /* THE PIN'S KNOBS DO NOT TRAVEL THIS ROAD, and that is the runtime's shape rather than a decision
+             * here: OpenCode's prompt body names a (provider, model) and nothing about reasoning, so there is
+             * nowhere to put an effort. Said out loud because the settings row CAN carry one — the picker draws
+             * the knobs a model's own catalog row publishes, and Google's rows publish no effort scale, so the
+             * control an owner would set is not offered in the first place. If that changes, this is where it
+             * lands. */
             body: {
                 model: { providerID: OPENCODE_GEMINI_PROVIDER, modelID: ask.model },
                 system: SYSTEM,

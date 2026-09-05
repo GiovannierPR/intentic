@@ -156,7 +156,7 @@ export const isSelfIdentityAnswer = (text: string): boolean => {
  * MATCHED AT THE START OF A LINE, AND THE LINE GOES WHOLE. The idiom occupies its own line in every runtime that
  * produces one, and what follows a stand-in is the model continuing its imagined transcript (`[tool_call: grep
  * for pattern '…'] Bluntly search th…`, one of the four), not an answer that happens to trail it. Anchoring on
- * the line start is also what lets a real answer TALK about one: a commit subject reading `fix(quick-model):
+ * the line start is also what lets a real answer TALK about one: a commit subject reading `fix(role-model):
  * refuse a [tool_call: …] reply` opens with its own type, keeps its line, and lands. */
 const TOOL_NAMES = "tool_call|tool_calls|tool_code|tool_use|function_call|invoke";
 

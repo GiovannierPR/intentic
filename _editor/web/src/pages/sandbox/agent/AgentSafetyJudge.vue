@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { parsePinned } from "@intentic/sandbox-contract";
 import { Button, Notice, Row, RowGroup, RowNote, SegmentedControl } from "@intentic/ui";
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
-import { describePin, modelChoiceLabel } from "../../../composables/chat/modelPins";
-import { useQuickModel } from "../../../composables/chat/quickModel";
+import { modelChoiceLabel } from "../../../composables/chat/modelPins";
+import { useRoleModel } from "../../../composables/chat/roleModel";
 import { useSandboxSettings } from "../../../composables/sandbox/useSandboxSettings";
 
 /* THE SWITCH OVER THE SAFETY JUDGE: whether it runs at all, and — read-only — what it is running on.
@@ -30,7 +29,7 @@ import { useSandboxSettings } from "../../../composables/sandbox/useSandboxSetti
  * named in full, billed to which account. Reading it costs nothing; changing it costs one press. */
 
 const { settings, patch } = useSandboxSettings();
-const quickModel = useQuickModel();
+const judge = useRoleModel(`safety-judge`);
 
 /* Three states in the order they escalate, worded for what each DOES. "Watch" is the honest name for a mode
  * whose whole content is that a verdict is written down and nothing happens to the command. */
@@ -42,20 +41,14 @@ const MODES = [
 
 const mode = computed(() => settings.value?.commandJudge ?? `on`);
 
-// Written to by the Models tab, read here. Described rather than printed raw so a pin whose account was
-// disconnected still reads as the model the owner picked instead of as a bare `provider:id` key.
-const pinnedJudges = computed<readonly string[]>(() =>
-    (settings.value?.commandJudgeModels ?? []).map((key) => describePin(parsePinned(key), key).label),
-);
-
-// What answers while nothing is pinned: the sandbox's own quick chain, in the order it would be walked. Named
-// in full for the same reason the Models tab names it — "Auto" does not tell anybody which account their
-// verdicts are billed to.
-const fallbackOrder = computed(() => quickModel.chain.value.map(modelChoiceLabel));
-
-// One line either way, so the row reads the same whether or not the owner has been to Models. The distinction
-// they need is not "pinned vs derived", it is which model is about to read their policy.
-const judgeChain = computed<readonly string[]>(() => (pinnedJudges.value.length > 0 ? pinnedJudges.value : fallbackOrder.value));
+/* WHAT WILL ACTUALLY READ THE POLICY, in the order it will be walked: the RESOLVED chain for the `safety-judge`
+ * role, which is the owner's own list where they have written one and the derived cheapest-connected ladder
+ * where they have not. One line either way, so the row reads the same whether or not they have been to Models.
+ *
+ * The resolved chain rather than the stored setting, and named in full rather than as "Auto", because the
+ * distinction a reader needs here is not "pinned versus derived" — it is which model is about to read their
+ * policy and whose account pays for the verdict. */
+const judgeChain = computed<readonly string[]>(() => judge.chain.value.map(modelChoiceLabel));
 </script>
 
 <template>

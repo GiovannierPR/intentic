@@ -4,6 +4,7 @@ import { capabilitiesOf, newConversationId, PROVIDERS } from "@intentic/sandbox-
 import type { Services } from "../composition.js";
 import { createRequest, resolveRequest } from "../agent/agent-requests.js";
 import { steerTurn } from "../agent/agent-steering.js";
+import { runRoleModel } from "../agent/run-role-model.js";
 import { childSpawn } from "../guard/actions.js";
 import { guard } from "../guard/guard.js";
 import { conversationTaintSource, markConversationTaint } from "../guard/turn-taint.js";
@@ -459,6 +460,35 @@ const admitChildTurn = async (
     };
 };
 
+/* WHAT A CHILD NOBODY POINTED ANYWHERE RUNS ON: the owner's `child-agent` list, and the old hardcoded "claude"
+ * only when they have written nothing there either.
+ *
+ * THE SPAWNING AGENT'S OWN PICK WINS OUTRIGHT. It named a provider for a reason — usually because the parent is
+ * running one and wants its children on the same one — so this answers a SILENCE rather than overriding a
+ * choice, which is the rule every run role follows.
+ *
+ * RESOLVED HERE rather than at turn-resume's boundary like every other run role, and it has to be: a child turn
+ * always carries `agent`, because a fan-out has to know which provider it is spending before it can place the
+ * work (credentialsTravel), and that boundary deliberately leaves a turn that named a provider alone. Resolving
+ * early is also what puts the pin in front of the admission check, so a child on a provider the owner has gated
+ * is refused for the model it would really run rather than for the one it would have defaulted to. */
+const childRouting = async (
+    services: Services,
+    spec: ChildSpawnSpec,
+): Promise<{ readonly provider: string; readonly harness: AgentHarness; readonly model: string | undefined }> => {
+    if (spec.provider !== undefined) {
+        return { provider: spec.provider, harness: spec.harness ?? "native", model: spec.model };
+    }
+    const pinned = await runRoleModel(services, `child-agent`);
+    return {
+        provider: pinned?.provider ?? "claude",
+        harness: spec.harness ?? pinned?.harness ?? "native",
+        // The pin's model only travels with the pin's provider: a model id means nothing to a provider that does
+        // not vend it, which is why the two are one entry (ModelPinSchema).
+        model: spec.model ?? pinned?.model,
+    };
+};
+
 /** Start a child agent and return the moment it is running. Refusals are ordinary states (a budget met, a
  *  depth exhausted), worded for the model that asked; a provider refusal (nothing connected) arrives later,
  *  as the child's own failure, exactly as it would arrive to a person at the composer. */
@@ -468,8 +498,7 @@ export const spawnChild = async (services: Services, parent: ChildParent, spec: 
     if (depth > settings.subagentDepth) {
         return { ok: false, message: `Spawn depth ${settings.subagentDepth} reached: this agent is itself a spawned child and may not go deeper.` };
     }
-    const provider = spec.provider ?? "claude";
-    const harness = spec.harness ?? "native";
+    const { provider, harness, model } = await childRouting(services, spec);
     const allowed = await admitSupervision(services, parent.conversationId, provider, "spawn");
     if (!allowed.ok) {
         return allowed;
@@ -517,15 +546,21 @@ export const spawnChild = async (services: Services, parent: ChildParent, spec: 
             // Nobody is at a composer. This is what the flag means, and it also sets the safe persona floor: an
             // unattended turn with no named persona speaks for no outside account.
             unattended: true,
+            /* Named, though this turn already carries its provider and so never reaches the role fill in
+             * turn-resume: it is what the journal and any resume of this child read back to say which of the
+             * owner's lists paid for it. */
+            runRole: `child-agent`,
             agent: provider,
             harness,
-            ...(spec.model !== undefined ? { model: spec.model } : {}),
+            ...(model !== undefined ? { model } : {}),
             ...(spec.effort !== undefined ? { effort: spec.effort } : {}),
             ...(spec.account !== undefined ? { account: spec.account } : {}),
         };
         kids.set(id, {
+            // The RESOLVED routing, not the spec's: a follow-up steer has to reach the same child on the same
+            // model, and re-resolving would let a settings edit move a live child mid-conversation.
             parent: parent.conversationId,
-            spec: { ...spec, provider, harness },
+            spec: { ...spec, provider, harness, ...(model !== undefined ? { model } : {}) },
             depth,
             cwd: parent.cwd,
             sessionId: undefined,
@@ -602,6 +637,10 @@ export const sendToChild = async (
             conversationId: childId,
             isolated: true,
             unattended: true,
+            // The spec below already holds the routing this child was STARTED on (spawnChild stores the resolved
+            // pair, not the requested one), so this names the role for the record rather than to resolve one:
+            // re-resolving here would move a live child onto a different model between two of its own turns.
+            runRole: `child-agent`,
             ...(spec.provider !== undefined ? { agent: spec.provider } : {}),
             ...(spec.harness !== undefined ? { harness: spec.harness } : {}),
             ...(spec.model !== undefined ? { model: spec.model } : {}),

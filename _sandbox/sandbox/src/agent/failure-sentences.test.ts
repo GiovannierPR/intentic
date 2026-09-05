@@ -175,7 +175,7 @@ test("reads a model self-identity reply as a non-answer", () => {
  * what keeps the family from swallowing an answer ABOUT one: the commit subject for the change that added this
  * predicate has to be writable. Empty is nothing, not a stand-in, same rule as a decline. */
 test("leaves an answer that merely talks about a tool call alone", () => {
-    expect(isToolCallStandIn("fix(quick-model): refuse a [tool_call: …] reply as an answer")).toBe(false);
+    expect(isToolCallStandIn("fix(role-model): refuse a [tool_call: …] reply as an answer")).toBe(false);
     expect(isToolCallStandIn("Tool-call stand-ins · refuse")).toBe(false);
     expect(isToolCallStandIn("")).toBe(false);
     expect(isToolCallStandIn("   ")).toBe(false);

@@ -113,16 +113,18 @@ test("the states that stop holding commands say what still asks", async () => {
  * Named in full rather than as "Auto" or "your quick model" on its own: a verdict is billed to one of these
  * accounts, and reading a policy without knowing what reads it back is the state this row exists to prevent. */
 
-test("names the quick chain in order while no judge model is pinned", () => {
+test("names the derived chain in order while no judge model is pinned", () => {
     const host = mount();
-    expect(settings.value.commandJudgeModels).toEqual([]);
+    // The `safety-judge` role ships with no list, so what answers is its own Auto ladder: the cheapest connected
+    // rung of every provider, best first. Read off the schema rather than transcribed.
+    expect(SandboxSettingsSchema.parse({}).modelRoles[`safety-judge`]).toBeUndefined();
     expect(host.textContent).toContain(`Judged by`);
     expect(host.textContent).toContain(`Claude Haiku 4.5`);
     expect(host.textContent).toContain(`GPT 5.6 Luna`);
 });
 
 test("a model pinned on the Models tab is the one this row names", async () => {
-    settings.value = { ...settings.value, commandJudgeModels: [`codex:gpt-5.6`] };
+    settings.value = { ...settings.value, modelRoles: { "safety-judge": [{ provider: `codex`, model: `gpt-5.6` }] } };
     const host = mount();
     await nextTick();
 
@@ -131,6 +133,20 @@ test("a model pinned on the Models tab is the one this row names", async () => {
     // The pin replaces the chain rather than joining it: what runs is the list the owner wrote, and naming the
     // fallback beside it would read as two models judging one command.
     expect(host.textContent).not.toContain(`Claude Haiku 4.5`);
+});
+
+/* THE ROLE IS THE JUDGE'S OWN, not a list it shares with the rest of the automatic jobs. It used to fall back to
+ * one "quick model" chain covering commit messages and session titles too, so an owner who wanted a stronger
+ * model reading commands had to move all three. Pinning one job must leave the others alone, and this row must
+ * name the job's own answer. */
+test("reads the safety-judge list rather than another job's", async () => {
+    settings.value = { ...settings.value, modelRoles: { "commit-message": [{ provider: `codex`, model: `gpt-5.6` }] } };
+    const host = mount();
+    await nextTick();
+
+    // Commit messages are pinned to Codex; the judge is not pinned at all, so it names its own derived ladder,
+    // which leads with the cheapest connected rung rather than with the other job's pin.
+    expect(host.textContent).toContain(`CLAUDE · Claude Haiku 4.5`);
 });
 
 // Nothing to point a model at: the row says the model is not in use rather than naming one that never runs.

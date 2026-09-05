@@ -62,7 +62,7 @@ test("asks with every tool switched off", async () => {
 
 /* A REPLY WITH NO TEXT IN IT IS NOT AN ANSWER, and the parts that are not text are dropped rather than
  * stringified: a tool call or a reasoning block reaching a caller as its commit subject is the failure the whole
- * answer contract exists for (quick-answer.ts), and this is the road it arrived by. */
+ * answer contract exists for (role-answer.ts), and this is the road it arrived by. */
 test("a reply carrying no text is a rung that did not answer", async () => {
     answering([{ type: `tool` }, { type: `step-finish` }]);
 

@@ -124,7 +124,7 @@ reports the profile.
   range rather than re-fetched, so a restart mid-download costs seconds. How much conversation the server holds
   is the owner's choice on the card (rungs from 16k, or a typed number), because it is a trade only they can
   make: the cache costs roughly a gigabyte of RAM per 16k of window, and a window under what a turn of the agent
-  loop costs on its own serves fine as a quick-model pin and refuses everything else — so the resolved number is
+  loop costs on its own serves fine as a one-shot helper's pin and refuses everything else — so the resolved number is
   quoted back wherever the entry is shown, and `src/endpoints/local-model.ts` is the one place the card's two
   fields become the one `--ctx-size` the server is started with. Only one local-model server owns the machine at
   a time: the last restored or updated entry becomes active, a late download cannot steal that slot, and the
@@ -632,8 +632,8 @@ reports the profile.
   pattern put it. The asymmetry is the design — a wrong "yes" costs one card, a wrong "no" un-gates a real
   credential read — and the reason it is worth having at all is that a card raised over an empty file is not a
   near miss but noise, and noise is what teaches an owner to answer cards without reading them.
-- [src/agent/quick-answer.ts](src/agent/quick-answer.ts): what a one-shot reply has to BE before a helper may
-  use it, and the reason every quick-model caller now asks for a value instead of text. A session title, a
+- [src/agent/role-answer.ts](src/agent/role-answer.ts): what a one-shot reply has to BE before a helper may
+  use it, and the reason every one-shot caller now asks for a value instead of text. A session title, a
   commit subject, the sentence on a permission card and a loop's verdict all get written into a durable field,
   so each of them used to own the same guards separately — and the family kept growing on one caller at a time:
   a spent allowance arriving as prose, then an auth failure (four fleet cards renamed), then a model answering
@@ -641,7 +641,7 @@ reports the profile.
   ([src/agent/failure-sentences.ts](src/agent/failure-sentences.ts), `isToolCallStandIn`: four more cards and
   three commits named `[tool_call: glob for pattern '**']`, because OpenCode prepends its own 27k-character
   coding-agent prompt, whose worked examples demonstrate exactly that, to every Gemini rung). The ask carries
-  the contract now, and [src/agent/quick-model.ts](src/agent/quick-model.ts) reads the reply INSIDE the walk, so
+  the contract now, and [src/agent/role-model.ts](src/agent/role-model.ts) reads the reply INSIDE the walk, so
   a rung that answers unusably is a rung that refused and the next model down gets asked — where the old
   post-hoc checks ran after the chain was finished and left the helper with nothing however many working
   accounts sat below. It is the one refusal that earns no memo: wrong shape is a sample, not a condition.
@@ -663,10 +663,13 @@ reports the profile.
   own approval, and the turn that raises most of these cards is exactly the one that has read a stranger's
   words. Wired as a callback the gate is handed rather than as anything guard/ knows about, so the account
   chain stays behind one seam. It can still be argued with, and two things bound that: the hard rule applied
-  before it is ever called, and tier 0. It is also the one quick-model job with a model list of its own
-  (`settings.commandJudgeModels`, carried on the ask as `QuickAsk.models` and empty for "whatever the quick
-  model is"): every other helper here writes a sentence somebody can edit afterwards, while this one decides
-  whether a card is raised at all, and its input is the only adversarial one in the family.
+  before it is ever called, and tier 0. WHICH MODEL judges is the `safety-judge` role's own list, like every
+  other job in this sandbox that picks one (contract `model-roles.ts`) — it used to be the single exception, a
+  second setting bolted beside one shared "quick model" chain because a verdict visibly could not be configured
+  with commit messages. That exception is now the rule. Its pins are read when the TURN IS PLANNED and handed
+  down (`askRoleModel`'s `pins`), so one turn is judged by one policy document and one model however long it
+  runs; every other helper here writes a sentence somebody can edit afterwards, while this one decides whether a
+  card is raised at all, and its input is the only adversarial one in the family.
 - [src/safety/safety-policy-store.ts](src/safety/safety-policy-store.ts): the policy itself
   (`.intentic/config/safety.md`), the one state file whose reader is a model rather than a parser — so it is
   prose, travels verbatim in both directions, and has no shape to be wrong in. Absent is a normal state, not an
@@ -898,7 +901,7 @@ conversation's worktree instead of a path that still reaches the shared checkout
   models it stands in the way of, because a plan is not one allowance: Google meters Gemini apart from the
   Claude and GPT models it serves off the same sign-in, Claude keeps a per-model weekly slice, ChatGPT publishes
   a code-review limit no chat turn spends. Every decision that asks "is this account spent for this model" (the
-  unnamed-account pick, the quick-model chain, the agent-run pin, a refused turn's reset) goes through
+  unnamed-account pick, a one-shot role's chain, a run role's pin, a refused turn's reset) goes through
   `fleet-limit.ts` on those gates rather than through a rule of its own. The service reads on triggers, a turn
   settled, a plan refused, a screen opened, a person pressed re-measure, the proxy came up, and on one long idle
   floor, never on the two five-minute timers this replaced; every write goes out on `/events` as an

@@ -55,7 +55,7 @@ const emit = defineEmits<{
  * a board of chores starts many runs and the tier is a judgement about the one in front of you: "look into a
  * flaky suite" and "fix a dependency bump" are not worth the same session. Seeded from the sandbox's agent-run
  * list, asked of the host so the button and the daemon cannot disagree about what a click costs. */
-const runModel = useAgentRunPick(() => host().models);
+const runModel = useAgentRunPick(() => host().models, `maintenance-chore`);
 const startRun = (): void => {
     emit(`start`, runModel.overridden.value ? runModel.model.value : undefined);
     runModel.clear();

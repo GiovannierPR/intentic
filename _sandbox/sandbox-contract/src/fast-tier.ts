@@ -1,5 +1,5 @@
 import { compareCheapestFirst, isCheaperRung } from "./model-order.js";
-import { parsePinned } from "./quick-model.js";
+import { parsePinned } from "./model-pins.js";
 import type { AgentProvider } from "./schemas/agent.js";
 
 /* WHICH MODEL A DOWNGRADED TURN ACTUALLY RUNS ON, the second half of automatic tier selection.
@@ -21,7 +21,7 @@ import type { AgentProvider } from "./schemas/agent.js";
  * follow-up cheap to answer. So a cross-provider pin here is dropped rather than honoured: saving a fraction of
  * a cent by starting the conversation over is not a saving.
  *
- * THE ORDER IS A LADDER, for the reason quick-model.ts is one, but a shorter one: the caller spends the head
+ * THE ORDER IS A LADDER, for the reason model-pins.ts is one, but a shorter one: the caller spends the head
  * and falls back to the user's own pick, rather than walking rungs. A downgrade that cannot be started is not
  * worth a second attempt when the honest answer (their model) is sitting right there. */
 
@@ -34,14 +34,14 @@ export interface FastTierInput {
     // That provider's catalog as the caller can see it. Empty is a real state (a catalog that has not loaded),
     // and it resolves to no downgrade rather than to a guess.
     readonly models: readonly string[];
-    // settings.autoFastModels: an ordered list of `${provider}:${modelId}` keys (quickModelKey), or empty for
+    // settings.autoFastModels: an ordered list of `${provider}:${modelId}` keys (modelPinKey), or empty for
     // Auto. Entries naming another provider are dropped, not honoured.
     readonly pinned: readonly string[];
 }
 
 /* THE CHEAPER MODEL TO RUN THIS TURN ON, or undefined for "there isn't one, use their pick".
  *
- * A PIN IS TAKEN VERBATIM against the catalog, the same call resolveQuickModels makes and for the same reason:
+ * A PIN IS TAKEN VERBATIM against the catalog, the same call resolveRoleModels makes and for the same reason:
  * the model picker offers a custom-id escape hatch for a model the static catalog has not caught up with, and
  * second-guessing the id here would run a different model than the settings row names. It is still checked for
  * being CHEAPER, because that is not a fact about the catalog, it is a fact about the id, and a pin that is not
@@ -49,7 +49,7 @@ export interface FastTierInput {
  *
  * AUTO IS THE CHEAPEST ROW THE PROVIDER PUBLISHES, read through the same cheap-end order the quick model uses,
  * so the two features cannot disagree about which rung is the cheap one. Derived, never stored: connect an
- * account tomorrow and the answer improves by itself, exactly as quickModel's empty default does.
+ * account tomorrow and the answer improves by itself, exactly as a one-shot role's empty list does.
  *
  * NOTHING CHEAPER THAN THE PICK ⇒ UNDEFINED, and that is the common case worth being exact about rather than
  * the edge case: a user already working on the cheap rung has nowhere to be sent, and a user on a model whose

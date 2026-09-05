@@ -29,8 +29,8 @@ import { accountLimitReset } from "../usage/account-usage.js";
  *   the TRANSLATOR's pool      , every routed subscription, filed per auth file and scoped to the pool this
  *                                MODEL spends, which is the part no caller can re-derive: Google meters Gemini
  *                                separately from the Claude and GPT models off one sign-in (translator.ts's
- *                                turnLimit). This is the same reading the quick-model ladder already steps over
- *                                spent rungs with (quick-model-quota.ts), so a fact the daemon acts on in one
+ *                                turnLimit). This is the same reading the one-shot helper ladder already steps over
+ *                                spent rungs with (role-model-quota.ts), so a fact the daemon acts on in one
  *                                place stops being one it cannot state in the other.
  *
  * Account first, and only as a fallback to what the frame itself said (see the call site's precedence): a

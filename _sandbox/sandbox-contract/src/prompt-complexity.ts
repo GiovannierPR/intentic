@@ -3,7 +3,7 @@
  * The job is narrow on purpose: decide whether this turn could have run on the cheap rung of the provider the
  * user is already on. Nothing here picks a model, nothing here reads a catalog, and nothing here calls
  * anything. It is a pure function over the turn's own words and shape, so the daemon and the composer can both
- * ask it and get the same answer, which is the same reason quick-model.ts lives in the contract rather than in
+ * ask it and get the same answer, which is the same reason model-pins.ts lives in the contract rather than in
  * either of them.
  *
  * IT CAN ONLY EVER ROUTE DOWN. The standard tier is not a setting: it is whatever the user already picked. So
@@ -213,7 +213,7 @@ const forcing = (input: ComplexityInput, text: string): ComplexityRule[] => {
         rules.push("plan-mode");
     }
     /* An unattended run is billed whole and nobody is watching it fail. The settings this repo already ships
-     * make the same call in the other direction: agentRunModels resolves to NOTHING when empty precisely
+     * make the same call in the other direction: a `run` role resolves to NOTHING when empty precisely
      * because "nothing here can judge whether a job is worth the frontier tier". This file does judge, but not
      * for the runs where a wrong guess costs a whole session with a worktree in it. */
     if (input.unattended) {

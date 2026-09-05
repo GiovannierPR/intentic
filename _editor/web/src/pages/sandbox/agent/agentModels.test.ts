@@ -5,14 +5,20 @@
 // write would be the worst possible version of this feature: the user reads "GPT, then Haiku", the sandbox
 // spends something else, and nothing on either side says so.
 //
-// And, since each agent-run entry carries its own run settings, the second claim: a knob moved on one entry
-// lands on THAT entry. The effort used to be a single field beside the list, so there was nothing to get wrong
-// here and nothing to test; now there is.
+// And, since each entry carries its own run settings, the second claim: a knob moved on one entry lands on THAT
+// entry. The effort used to be a single field beside the list, so there was nothing to get wrong here and
+// nothing to test; now there is.
+//
+// THE THIRD CLAIM IS WHAT THE PAGE WAS REBUILT FOR: there is one list per JOB, and a row writes ITS job's list
+// and no other. The page used to hold a "quick model" covering commit messages, session titles and loop
+// verdicts at once, so pinning a better model for commit subjects moved all three; a row that still wrote a
+// shared key would put that back without anybody noticing, because the screen would look identical.
 //
 // Mounted rather than projected because what is under test is the round trip a person performs: add a model,
 // move it up, take it out, re-point one, change its tier, and each of those happens in the component's own
 // handler.
 import type { SandboxSettings } from "@intentic-app/api-contract";
+import { MODEL_ROLES, type ModelPin } from "@intentic/sandbox-contract";
 import { SandboxSettingsSchema } from "@intentic-app/api-contract";
 import PrimeVue from "primevue/config";
 import { afterEach, expect, test, vi } from "vitest";
@@ -21,6 +27,16 @@ import { createMemoryHistory, createRouter } from "vue-router";
 
 // Same import-time browser globals the sibling suite stands in for (@intentic/ui's useDevice reads
 // window.matchMedia; environment.ts reads window.env).
+
+/* THE THREE ROLES THESE TESTS DRIVE, one per property being pinned: a one-shot with an Auto floor
+ * (`commit-message`), the one-shot with a switch of its own somewhere else (`safety-judge`), and a whole
+ * session whose floor is the composer (`pipeline-fix`). Every other row on the page is one of these three
+ * shapes, drawn from the same catalog by the same code. */
+const COMMIT = `commit-message` as const;
+const JUDGE = `safety-judge` as const;
+const RUN = `pipeline-fix` as const;
+
+const entry = (provider: string, model: string, rest: Record<string, unknown> = {}): ModelPin => ({ provider, model, ...rest }) as ModelPin;
 
 const settings = ref<SandboxSettings>(SandboxSettingsSchema.parse({}));
 const patch = vi.fn((fields: Partial<SandboxSettings>) => {
@@ -136,6 +152,68 @@ const rowButton = (host: HTMLElement, label: string): HTMLButtonElement =>
 const addButton = (host: HTMLElement, label: string): HTMLButtonElement =>
     [...host.querySelectorAll<HTMLButtonElement>(`button`)].find((button) => button.getAttribute(`aria-label`) === label)!;
 
+/* ONE ROW PER JOB, FROM THE CATALOG. The page is built by walking `MODEL_ROLES`, so this is the claim that a
+ * job added to that table becomes configurable by existing rather than by somebody remembering to add a row —
+ * which is what the four hand-written rows this replaced could not promise, and how a documentation sweep came
+ * to share a tier with a red production pipeline. */
+test("draws a row per declared role, plus the one setting that is not a role", async () => {
+    const host = mount();
+    await Promise.resolve();
+
+    const titles = [...host.querySelectorAll(`h3, [class*="font-medium"]`)].map((node) => node.textContent?.trim() ?? ``);
+    for (const role of MODEL_ROLES) {
+        expect(titles, role.id).toContain(role.label);
+    }
+    // The cheaper-tier row belongs to automatic tier selection rather than to a job, so it is drawn by hand and
+    // must still be there.
+    expect(titles).toContain(`Automatic tier`);
+    // Every job offers the same gesture, which is what makes the page one page rather than seventeen designs.
+    const adders = [...host.querySelectorAll(`button`)].map((button) => button.getAttribute(`aria-label`));
+    for (const role of MODEL_ROLES) {
+        expect(adders, role.id).toContain(`Add a model for ${role.label.toLowerCase()}`);
+    }
+});
+
+/* THE READING ORDER, WHICH THE PAGE ARGUES FOR AND NOTHING ENFORCED. Its own comment states the rule: read
+ * down and the REACH grows — from jobs nobody picked a model for, to whole sessions somebody's click started,
+ * to the conversation in front of you. Automatic tier is last because it is the only setting here that can
+ * override a model the user chose a second ago, and a settings page owes that ordering.
+ *
+ * That argument survived several rewrites of this page as prose alone, which is how it came to be defended by a
+ * sentence that had to be re-checked by hand every time a row moved. Three orderings, asserted:
+ *
+ *   - every one-shot helper comes before every whole session (a job nobody picked a model for is read first),
+ *   - both come before Automatic tier (the only one that reaches into a choice already made),
+ *   - and the roles hold the catalog's own order, so the page and the table cannot drift apart. */
+test("reads in order of reach: one-shots, then whole sessions, then the row that can override a live choice", async () => {
+    const host = mount();
+    await Promise.resolve();
+
+    /* READ OFF THE ADD BUTTONS rather than off the headings: every row on this page has exactly one, its label
+     * is already a public fact (the test above pins it), and a title is a bare `div` here that no stable
+     * selector separates from the sub-headings inside a row. Document order of the buttons IS row order. */
+    const adders = [...host.querySelectorAll(`button`)].map((button) => button.getAttribute(`aria-label`) ?? ``);
+    const at = (label: string): number => adders.indexOf(label);
+    const roleAt = (kind: string): number[] =>
+        MODEL_ROLES.filter((role) => role.kind === kind).map((role) => at(`Add a model for ${role.label.toLowerCase()}`));
+
+    const helpers = roleAt(`helper`);
+    const runs = roleAt(`run`);
+    const automaticTier = at(`Add a model for automatic tier selection`);
+
+    expect(helpers).not.toContain(-1);
+    expect(runs).not.toContain(-1);
+    expect(Math.max(...helpers)).toBeLessThan(Math.min(...runs));
+    expect(Math.max(...runs)).toBeLessThan(automaticTier);
+    // …and it is the LAST row on the page, not merely after the roles: anything drawn under it would be read as
+    // reaching further still, which nothing here does.
+    expect(automaticTier).toBe(adders.length - 1);
+    // Within each block, the catalog's order. The rows are drawn by walking MODEL_ROLES, so this is what stops
+    // one being re-sorted here and leaving the table's own stated ordering describing a page it no longer
+    // matches.
+    expect([...helpers, ...runs]).toEqual([...helpers, ...runs].toSorted((left, right) => left - right));
+});
+
 test("draws nothing but Auto's own ladder until a model is written down", async () => {
     const host = mount();
     await Promise.resolve();
@@ -149,7 +227,7 @@ test("draws nothing but Auto's own ladder until a model is written down", async 
 });
 
 test("shows the pinned models in the order the setting holds them", async () => {
-    settings.value = { ...settings.value, quickModel: [`codex:gpt-5.6`, `claude:claude-haiku-4-5`] };
+    settings.value = { ...settings.value, modelRoles: { [COMMIT]: [entry(`codex`, `gpt-5.6`), entry(`claude`, `claude-haiku-4-5`)] } };
     const host = mount();
     await Promise.resolve();
 
@@ -157,7 +235,7 @@ test("shows the pinned models in the order the setting holds them", async () => 
 });
 
 test("moving one earlier writes the whole new order back", async () => {
-    settings.value = { ...settings.value, quickModel: [`codex:gpt-5.6`, `claude:claude-haiku-4-5`] };
+    settings.value = { ...settings.value, modelRoles: { [COMMIT]: [entry(`codex`, `gpt-5.6`), entry(`claude`, `claude-haiku-4-5`)] } };
     const host = mount();
     await Promise.resolve();
 
@@ -165,23 +243,23 @@ test("moving one earlier writes the whole new order back", async () => {
     expect(rowButton(host, `Move CODEX · GPT 5.6 Luna earlier`).disabled).toBe(true);
     rowButton(host, `Move CLAUDE · Claude Haiku 4.5 earlier`).click();
 
-    expect(patch).toHaveBeenCalledWith({ quickModel: [`claude:claude-haiku-4-5`, `codex:gpt-5.6`] });
+    expect(patch).toHaveBeenCalledWith({ modelRoles: { [COMMIT]: [entry(`claude`, `claude-haiku-4-5`), entry(`codex`, `gpt-5.6`)] } });
 });
 
 test("removing the last one hands the choice back to Auto rather than leaving an empty control", async () => {
-    settings.value = { ...settings.value, quickModel: [`codex:gpt-5.6`] };
+    settings.value = { ...settings.value, modelRoles: { [COMMIT]: [entry(`codex`, `gpt-5.6`)] } };
     const host = mount();
     await Promise.resolve();
 
     rowButton(host, `Remove CODEX · GPT 5.6 Luna`).click();
 
-    expect(patch).toHaveBeenCalledWith({ quickModel: [] });
+    expect(patch).toHaveBeenCalledWith({ modelRoles: { [COMMIT]: [] } });
 });
 
 test("keeps a pin whose account went away on screen, and says why it is greyed", async () => {
     // The resolver drops it at run time so the helpers keep working. Dropping it from the ROW as well would
     // look like the app had eaten a setting the user made.
-    settings.value = { ...settings.value, quickModel: [`gemini:gemini-3-flash-lite`, `claude:claude-haiku-4-5`] };
+    settings.value = { ...settings.value, modelRoles: { [COMMIT]: [entry(`gemini`, `gemini-3-flash-lite`), entry(`claude`, `claude-haiku-4-5`)] } };
     const host = mount();
     await Promise.resolve();
 
@@ -193,23 +271,25 @@ test("keeps a pin whose account went away on screen, and says why it is greyed",
 /* THE SAFETY JUDGE'S MODEL IS ONE OF THESE ROWS, and that is the point of the row rather than a detail of it.
  * It used to be a fourth list editor on the Safety tab, which left this page — whose whole subject is which AI
  * does which job — quietly missing one, and left "where do I choose a model" with two answers. What these pin is
- * that it behaves like its neighbours and writes its OWN setting: a judge row that wrote `quickModel` would
- * silently re-point every commit message in the sandbox. */
+ * that it behaves like its neighbours and writes its OWN list: a judge row that wrote the commit-message list
+ * would silently re-point every commit message in the sandbox. */
 
 test("the judge row writes its own setting, never the quick list it falls back to", async () => {
     const host = mount();
     await Promise.resolve();
 
-    addButton(host, `Add a model for the safety judge`).click();
+    addButton(host, `Add a model for safety judge`).click();
     await flush();
     answer?.pick({ provider: `claude`, model: `claude-haiku-4-5` });
 
-    expect(patch).toHaveBeenCalledWith({ commandJudgeModels: [`claude:claude-haiku-4-5`] });
-    expect(patch).not.toHaveBeenCalledWith(expect.objectContaining({ quickModel: expect.anything() }));
+    expect(patch).toHaveBeenCalledWith({ modelRoles: { [JUDGE]: [entry(`claude`, `claude-haiku-4-5`)] } });
+    // And it left every other job's list exactly where it was: the record is written whole, so a row that read
+    // the wrong key would show up here as another role's entry appearing or vanishing.
+    expect(patch.mock.calls.at(-1)?.[0]?.modelRoles?.[COMMIT]).toBeUndefined();
 });
 
-test("a pinned judge model is drawn as written, and removing it hands the job back to the quick chain", async () => {
-    settings.value = { ...settings.value, commandJudgeModels: [`codex:gpt-5.6`] };
+test("a pinned judge model is drawn as written, and removing it hands the job back to its own floor", async () => {
+    settings.value = { ...settings.value, modelRoles: { [JUDGE]: [entry(`codex`, `gpt-5.6`)] } };
     const host = mount();
     await Promise.resolve();
 
@@ -217,17 +297,17 @@ test("a pinned judge model is drawn as written, and removing it hands the job ba
     expect(orderOnScreen(host)).toEqual([`CODEX · GPT 5.6 Luna`]);
 
     rowButton(host, `Remove CODEX · GPT 5.6 Luna`).click();
-    expect(patch).toHaveBeenCalledWith({ commandJudgeModels: [] });
+    expect(patch).toHaveBeenCalledWith({ modelRoles: { [JUDGE]: [] } });
 });
 
-// Its floor is the row directly above it, which is why the two sit together: the fallback is legible from the
-// page rather than asserted by a sentence.
-test("names the quick chain as the judge's floor while nothing is pinned", async () => {
+// Every one-shot row names its own floor in full rather than as the word "Auto" alone: a verdict is billed to
+// one of these accounts, and which one is the fact the row exists to make readable.
+test("names its derived ladder as the judge's floor while nothing is pinned", async () => {
     const host = mount();
     await Promise.resolve();
 
-    expect(settings.value.commandJudgeModels).toEqual([]);
-    expect(host.textContent).toContain(`Your quick model`);
+    expect(settings.value.modelRoles[JUDGE]).toBeUndefined();
+    expect(host.textContent).toContain(`Auto`);
     expect(host.textContent).toContain(`Claude Haiku 4.5`);
 });
 
@@ -239,7 +319,7 @@ test("goes inert with the judge, and says where the switch is", async () => {
     const host = mount();
     await Promise.resolve();
 
-    expect(addButton(host, `Add a model for the safety judge`).disabled).toBe(true);
+    expect(addButton(host, `Add a model for safety judge`).disabled).toBe(true);
     const link = [...host.querySelectorAll<HTMLAnchorElement>(`a[href]`)].find((anchor) => anchor.textContent?.includes(`Turn the judge on`));
     expect(link?.getAttribute(`href`)).toBe(`/sandbox/agent?section=safety`);
 });
@@ -251,7 +331,7 @@ test("the judge row stays live while the judge is merely watching", async () => 
     const host = mount();
     await Promise.resolve();
 
-    expect(addButton(host, `Add a model for the safety judge`).disabled).toBe(false);
+    expect(addButton(host, `Add a model for safety judge`).disabled).toBe(false);
 });
 
 /* EACH AGENT-RUN ENTRY CARRIES ITS OWN RUN SETTINGS, which is what this page was rebuilt for: the effort used
@@ -262,10 +342,12 @@ test("the judge row stays live while the judge is merely watching", async () => 
 test("an agent-run entry names its own tier, and one left at the provider's default names nothing", async () => {
     settings.value = {
         ...settings.value,
-        agentRunModels: [
-            { provider: `claude`, model: `claude-haiku-4-5`, effort: `high` },
-            { provider: `codex`, model: `gpt-5.6` },
-        ],
+        modelRoles: {
+                [RUN]: [
+                    { provider: `claude`, model: `claude-haiku-4-5`, effort: `high` },
+                    { provider: `codex`, model: `gpt-5.6` },
+                ],
+        },
     };
     const host = mount();
     await Promise.resolve();
@@ -281,18 +363,18 @@ test("an agent-run entry names its own tier, and one left at the provider's defa
 test("a tier off the model's own scale is drawn as the one that will actually run", async () => {
     // Claude's API refuses `max` with thinking disabled, and THIS entry disabled it, so the row must not promise
     // a rung this run cannot use. The stored pick is left alone underneath.
-    settings.value = { ...settings.value, agentRunModels: [{ provider: `claude`, model: `claude-haiku-4-5`, effort: `max`, thinking: false }] };
+    settings.value = { ...settings.value, modelRoles: { [RUN]: [{ provider: `claude`, model: `claude-haiku-4-5`, effort: `max`, thinking: false }] } };
     const host = mount();
     await Promise.resolve();
 
     expect(host.querySelector(`ol li`)?.textContent).toContain(`X-High`);
-    expect(settings.value.agentRunModels[0]?.effort).toBe(`max`);
+    expect(settings.value.modelRoles[RUN]?.[0]?.effort).toBe(`max`);
 });
 
 // …while an entry that pinned no thinking at all is not that pair: the turn goes out with no thinking field and
 // the daemon names the reasoning the tier needs, so the row says the tier the entry actually spends.
 test("an entry that pinned no thinking keeps the top tier it asked for", async () => {
-    settings.value = { ...settings.value, agentRunModels: [{ provider: `claude`, model: `claude-haiku-4-5`, effort: `max` }] };
+    settings.value = { ...settings.value, modelRoles: { [RUN]: [{ provider: `claude`, model: `claude-haiku-4-5`, effort: `max` }] } };
     const host = mount();
     await Promise.resolve();
 
@@ -302,10 +384,12 @@ test("an entry that pinned no thinking keeps the top tier it asked for", async (
 test("pressing an agent-run row opens the picker over that entry, with its knobs", async () => {
     settings.value = {
         ...settings.value,
-        agentRunModels: [
-            { provider: `codex`, model: `gpt-5.6` },
-            { provider: `claude`, model: `claude-haiku-4-5`, effort: `low` },
-        ],
+        modelRoles: {
+                [RUN]: [
+                    { provider: `codex`, model: `gpt-5.6` },
+                    { provider: `claude`, model: `claude-haiku-4-5`, effort: `low` },
+                ],
+        },
     };
     const host = mount();
     await Promise.resolve();
@@ -319,10 +403,28 @@ test("pressing an agent-run row opens the picker over that entry, with its knobs
     expect(opened?.taken).toEqual([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]);
 });
 
-test("the quick row opens the same picker without knobs: its jobs cannot honour one", async () => {
-    // A quick helper is a one-shot the daemon runs with thinking disabled and no effort at all, so a reasoning
-    // control there would be a switch with nothing behind it.
-    settings.value = { ...settings.value, quickModel: [`codex:gpt-5.6`] };
+/* A ONE-SHOT ROW GETS THE KNOBS TOO, and it did not use to. The argument against was that the daemon runs those
+ * jobs with thinking disabled and no effort, so a reasoning control would be a switch with nothing behind it —
+ * true of the machinery, and it had become the reason for itself: an owner who pinned a reasoning model to their
+ * commit subjects paid its price and got a cheaper model's behaviour. The one-shot path carries the knobs now,
+ * so the picker offers them. */
+test("a one-shot row opens the picker with knobs, because its job now honours them", async () => {
+    settings.value = { ...settings.value, modelRoles: { [COMMIT]: [entry(`codex`, `gpt-5.6`)] } };
+    const host = mount();
+    await Promise.resolve();
+
+    rowButton(host, `Change CODEX · GPT 5.6 Luna`).click();
+    await flush();
+
+    expect(opened?.pin).toEqual({ provider: `codex`, model: `gpt-5.6` });
+    expect(opened?.knobs).toBe(true);
+});
+
+/* THE CHEAPER-TIER LIST IS THE ONE ROW LEFT WITHOUT THEM, and that exception is real rather than left over:
+ * automatic tier selection substitutes a model into a turn that already carries its own effort, and it never
+ * touches an unattended run, so a control there would be the switch with nothing behind it. */
+test("the cheaper-tier row opens the picker without knobs: its substitution cannot honour one", async () => {
+    settings.value = { ...settings.value, autoFastModels: [`codex:gpt-5.6`] };
     const host = mount();
     await Promise.resolve();
 
@@ -336,10 +438,12 @@ test("the quick row opens the same picker without knobs: its jobs cannot honour 
 test("a knob moved in the picker lands on that entry alone", async () => {
     settings.value = {
         ...settings.value,
-        agentRunModels: [
-            { provider: `codex`, model: `gpt-5.6`, effort: `high` },
-            { provider: `claude`, model: `claude-haiku-4-5` },
-        ],
+        modelRoles: {
+                [RUN]: [
+                    { provider: `codex`, model: `gpt-5.6`, effort: `high` },
+                    { provider: `claude`, model: `claude-haiku-4-5` },
+                ],
+        },
     };
     const host = mount();
     await Promise.resolve();
@@ -349,10 +453,12 @@ test("a knob moved in the picker lands on that entry alone", async () => {
     answer?.configure({ provider: `claude`, model: `claude-haiku-4-5`, effort: `max`, thinking: true });
 
     expect(patch).toHaveBeenCalledWith({
-        agentRunModels: [
-            { provider: `codex`, model: `gpt-5.6`, effort: `high` },
-            { provider: `claude`, model: `claude-haiku-4-5`, effort: `max`, thinking: true },
-        ],
+        modelRoles: {
+                [RUN]: [
+                    { provider: `codex`, model: `gpt-5.6`, effort: `high` },
+                    { provider: `claude`, model: `claude-haiku-4-5`, effort: `max`, thinking: true },
+                ],
+        },
     });
     // The panel stays open over the entry it is configuring, and now reads the new state: these are settings of
     // the entry rather than the answer the panel was opened for.
@@ -363,10 +469,12 @@ test("a knob moved in the picker lands on that entry alone", async () => {
 test("re-pointing an entry replaces it where it stands, because its position is the other half of the setting", async () => {
     settings.value = {
         ...settings.value,
-        agentRunModels: [
-            { provider: `codex`, model: `gpt-5.6` },
-            { provider: `claude`, model: `claude-haiku-4-5`, effort: `low` },
-        ],
+        modelRoles: {
+                [RUN]: [
+                    { provider: `codex`, model: `gpt-5.6` },
+                    { provider: `claude`, model: `claude-haiku-4-5`, effort: `low` },
+                ],
+        },
     };
     const host = mount();
     await Promise.resolve();
@@ -376,28 +484,38 @@ test("re-pointing an entry replaces it where it stands, because its position is 
     answer?.pick({ provider: `claude`, model: `claude-opus-5`, effort: `max` });
 
     expect(patch).toHaveBeenCalledWith({
-        agentRunModels: [
-            { provider: `claude`, model: `claude-opus-5`, effort: `max` },
-            { provider: `claude`, model: `claude-haiku-4-5`, effort: `low` },
-        ],
+        modelRoles: {
+                [RUN]: [
+                    { provider: `claude`, model: `claude-opus-5`, effort: `max` },
+                    { provider: `claude`, model: `claude-haiku-4-5`, effort: `low` },
+                ],
+        },
     });
 });
 
-test("adding appends to the end of the order, in whichever shape that list stores", async () => {
+/* ADDING APPENDS, AND A ROW WRITES THE WHOLE RECORD BACK. The second half is the property worth guarding: the
+ * settings patch merges at the top level only, so a row that sent its own key alone would drop every other
+ * job's list on the way past — the failure would be silent, and would look exactly like the page working. */
+test("adding appends to the end of the order, and leaves every other job's list standing", async () => {
     const host = mount();
     await Promise.resolve();
 
-    addButton(host, `Add a model for agent runs`).click();
+    addButton(host, `Add a model for pipeline fixes`).click();
     await flush();
     expect(opened?.pin).toBeUndefined();
     answer?.pick({ provider: `claude`, model: `claude-haiku-4-5`, effort: `high` });
-    expect(patch).toHaveBeenCalledWith({ agentRunModels: [{ provider: `claude`, model: `claude-haiku-4-5`, effort: `high` }] });
+    expect(patch).toHaveBeenCalledWith({ modelRoles: { [RUN]: [{ provider: `claude`, model: `claude-haiku-4-5`, effort: `high` }] } });
 
-    // The quick list keeps `${provider}:${model}` keys rather than pins, and the same gesture writes one.
-    addButton(host, `Add a quick model`).click();
+    // A different job's row, over settings that now hold the first one: what goes back carries BOTH.
+    addButton(host, `Add a model for commit messages`).click();
     await flush();
     answer?.pick({ provider: `codex`, model: `gpt-5.6` });
-    expect(patch).toHaveBeenCalledWith({ quickModel: [`codex:gpt-5.6`] });
+    expect(patch).toHaveBeenCalledWith({
+        modelRoles: {
+            [RUN]: [{ provider: `claude`, model: `claude-haiku-4-5`, effort: `high` }],
+            [COMMIT]: [entry(`codex`, `gpt-5.6`)],
+        },
+    });
 });
 
 /* THE AUTOMATIC-TIER ROW is the only setting on this page that can override a model the user picked a second

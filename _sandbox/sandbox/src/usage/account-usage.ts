@@ -58,7 +58,7 @@ export const accountLimitReset = async (store: AccountUsageStore, account: strin
  * The rule this replaces was `list()[0]`: the oldest-connected account, permanently, whatever its allowance.
  * That is fine while a sandbox has one account and silently wrong the moment it has several, because the pick
  * never moves, so a single capped account absorbs every unattributed call there will ever be. Found by the
- * session namer, which had never once written a title: its quick-model call went to the same spent account on
+ * session namer, which had never once written a title: its one-shot helper call went to the same spent account on
  * every turn while two others sat with room, and the CLI answered 429 each time.
  *
  * Four tiers, because "no reading", "a reading of 100%" and "it said no" are different facts and ordering them

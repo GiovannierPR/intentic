@@ -183,7 +183,7 @@ export const codexUsageFromRateLimits = (payload: unknown, measuredAt: number = 
  * Models" group and a "Claude and GPT models" group (the buckets are `gemini-weekly` and `3p-weekly`), each
  * with its own fraction and reset. A group naming neither family is read as the plan's own allowance and gates
  * everything: a pool this reader cannot place is better drawn as binding than silently ignored, and the
- * quick-model walk still asks a rung the reading alone would have skipped (its second pass). */
+ * one-shot helper walk still asks a rung the reading alone would have skipped (its second pass). */
 const GEMINI_WORDS = new Set(["gemini"]);
 const THIRD_PARTY_WORDS = new Set(["claude", "gpt", "3p", "third", "party", "anthropic", "openai"]);
 const googleGates = (...names: (string | undefined)[]): WindowGates => {

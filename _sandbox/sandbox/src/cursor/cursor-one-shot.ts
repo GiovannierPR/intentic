@@ -11,10 +11,10 @@ import { CURSOR_SDK_MISSING, cursorSdk } from "./cursor-sdk.js";
  * exists for one reason: CURSOR HAS NO CLAUDE CODE ROAD AT ALL.
  *
  * There is no translator route to Cursor and Cursor publishes no subscription endpoint the harness could dial.
- * The quick model walk used to fall through resolveHarnessCredentials into the Claude OAuth branch anyway,
+ * The one-shot helper walk used to fall through resolveHarnessCredentials into the Claude OAuth branch anyway,
  * then runOneShot with a Composer model id on the Claude Code loop, which fails every time and memoizes the
  * refusal for hours. Chat turns already run on @cursor/sdk (cursor-agent.ts); this is that same move one layer
- * down, for the commit subject and every other one-liner that walks the quick model chain.
+ * down, for the commit subject and every other one-liner that walks the one-shot helper chain.
  *
  * The settings mirror the other runtimes' one-shots: no tools, no MCP, no custom tools, no session worth resuming, and a
  * deadline the chain can step over. A helper is a one-liner nobody is watching. */
@@ -28,7 +28,7 @@ const DEADLINE_MS = 20_000;
  * `tools: []` is the SDK's own spelling for that, and the denylist it replaces is why this rung was never
  * spent: Cursor derives its tool vocabulary from the agent proto at runtime and REJECTS `Agent.create` outright
  * on a name it does not know ("Unknown tool name(s) in `disallowedTools`: write"). The list here carried
- * `write`, which is not in that vocabulary (the file tool is `edit`), so every quick-model walk that reached
+ * `write`, which is not in that vocabulary (the file tool is `edit`), so every one-shot helper walk that reached
  * Composer threw before asking it, memoised the refusal for ten minutes, and paid a Claude rung instead — a
  * connected subscription with a full allowance skipped for a typo the type could not catch, since ToolName is
  * open (`string & {}`) for the proto names it cannot enumerate.
@@ -76,8 +76,13 @@ export const cursorOneShot = async (services: Pick<Services, "cursorStore" | "cu
         ask.model !== undefined && ask.model !== `` && catalog.models.some((entry) => entry.id === ask.model)
             ? ask.model
             : catalog.default;
+    /* THE PIN'S EFFORT, mapped onto whatever dial this Cursor model publishes, exactly as a chat turn's is
+     * (cursor-models.ts selectionFor). It used to be hardcoded `undefined` on the argument that a helper is a
+     * one-liner with nothing to reason about — which is a good default and was standing in for a rule, so an
+     * owner who pinned a tier to a role got a row that said "X-High" and a call that spent none of it. Absent
+     * still means absent, and lands on the model's own default. */
     const item = await services.cursorModels.item(modelId);
-    const selection: ModelSelection = item === undefined ? { id: modelId } : selectionFor(item, undefined);
+    const selection: ModelSelection = item === undefined ? { id: modelId } : selectionFor(item, ask.effort);
 
     let expired = false;
     const abort = new AbortController();

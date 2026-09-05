@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ModelRoleSchema } from "../model-roles.js";
 import { NATIVE_PROVIDERS } from "../provider-specs.js";
 import { AgentPlacementSchema } from "../runner-protocol.js";
 import { entryId } from "./internal.js";
@@ -267,6 +268,23 @@ export const AgentTurnSchema = z
             .describe(
                 "Whether this turn's work merges into the workspace when it finishes. Overrides the conversation's own setting for this turn only.",
             ),
+        /* WHAT STARTED THIS TURN, when it was not a person at a composer, and therefore which of the owner's
+         * model lists answers for it (settings.modelRoles, model-roles.ts declares the roles).
+         *
+         * IT NAMES THE JOB, NOT THE TIER. Before this field there was one list for every unattended turn, so a
+         * production incident and a documentation sweep were configured together, and a surface added tomorrow
+         * inherited that tier by saying nothing. Now a starter says what it IS, and the owner gets to answer
+         * per job: cheap for the sweep, frontier for the incident.
+         *
+         * ONLY FILLS A SILENCE. The daemon applies the role's list to a turn that named no model AND no
+         * provider (turn-resume.ts): a caret pick, an acceptance run's own choice, a workflow step pinned to a
+         * provider — all of those already answered the question, and this must not overrule them.
+         *
+         * A `run` role, always. The `helper` roles never reach here: a one-shot is not a turn, it has no
+         * conversation and no worktree, and it asks its own role directly at the seam that spends it. */
+        runRole: ModelRoleSchema.optional().describe(
+            "What started this turn, when it was not a person typing: which of the sandbox's per-job model lists answers for it. Only used when the turn names no model of its own.",
+        ),
         // Set ONLY by the daemon's own automation dispatchers: this turn opens a conversation on behalf of an
         // outside message rather than a user. Recorded on the registry entry so the fleet can say where the
         // agent came from. Requires conversationId, there is nothing to record it on otherwise.
@@ -311,7 +329,7 @@ export const AgentTurnSchema = z
          * opposite defaults, the chat wants the provider's own catalog default, an unattended run wants the
          * tier its owner chose for work that spends money while they are not watching.
          *
-         * The daemon fills `agent`/`model` and the pinned entry's own knobs from agentRunModels for any turn that says
+         * The daemon fills `agent`/`model` and the pinned entry's own knobs from the turn's own role list for any turn that says
          * this and names none of them (startConversationTurn), walking that list until one can actually be
          * started. Naming one still wins: every surface-started run now carries a caret that overrides the list
          * for that run alone, and Acceptance picks per run because it fans a session out per story. Either way
@@ -416,14 +434,14 @@ export type AgentTurn = z.infer<typeof AgentTurnSchema>;
  * Shared rather than re-declared per route because every surface that starts an agent for the user now carries
  * that caret, and they must all mean the same thing by it: the pair rides onto the turn as `agent`/`model`, and
  * the daemon's own fill step then leaves it alone (turn-resume.ts fills only what is absent). ABSENT is the
- * ordinary case and the one to keep cheap, nobody touched the caret, so `agentRunModels` answers.
+ * ordinary case and the one to keep cheap, nobody touched the caret, so the turn's `runRole` list answers.
  *
  * Both halves or neither, because a model id is only meaningful to the provider that vends it: half a pick
  * would send a Codex model id to Claude. Routes that accept this pass it through verbatim; a model this build
  * has never heard of is a supported pick, since the picker offers a custom-id escape hatch.
  *
  * AND THE TIER IT RUNS AT, because naming a model is only half of what the standing setting says. A pinned
- * entry carries its own effort (AgentRunPinSchema), and the daemon applies the pin's knobs ONLY to a turn that
+ * entry carries its own effort (ModelPinSchema), and the daemon applies the pin's knobs ONLY to a turn that
  * named no model (turn-resume.ts): so a caret that could re-point the model but not the tier moved every
  * override onto the provider's own default effort, and the one moment somebody reaches for the caret is the
  * failure that just beat the standing order. Optional, and absent means absent, the turn goes out without an
@@ -442,29 +460,36 @@ export const AgentRunPickSchema = z
     })
     .optional();
 export type AgentRunPick = z.infer<typeof AgentRunPickSchema>;
-/* A MODEL PINNED FOR EVERY SURFACE-STARTED RUN, one entry of settings.agentRunModels: the standing version of
- * the pick above, and not merely which model but HOW it is to be run.
+/* ONE ENTRY OF ONE ROLE'S MODEL LIST (settings.modelRoles): the standing version of the pick above, and not
+ * merely which model but HOW it is to be run.
  *
- * THE KNOBS RIDE THE ENTRY RATHER THAN THE LIST, which is the whole reason this is an object where the setting
- * used to hold a `${provider}:${model}` string. The reasoning effort was a single field beside the list, so one
- * tier answered for every model in it — and the entries of that list are deliberately NOT interchangeable: it
- * is a frontier pin with the cheap account underneath that catches it when the first is spent. A tier scale is
- * a property of the MODEL as well ('max' is off Kimi's scale entirely, and off Claude's own the moment thinking
+ * THE KNOBS RIDE THE ENTRY RATHER THAN THE LIST, which is the whole reason this is an object rather than a
+ * `${provider}:${model}` string. The reasoning effort was once a single field beside a list, so one tier
+ * answered for every model in it — and the entries of such a list are deliberately NOT interchangeable: it is a
+ * frontier pin with the cheap account underneath that catches it when the first is spent. A tier scale is a
+ * property of the MODEL as well ('max' is off Kimi's scale entirely, and off Claude's own the moment thinking
  * is switched off), so a shared effort was either off-scale for half the list or the lowest common rung for all
- * of it. Each entry now carries what the composer's picker configures for the turn in front of you.
+ * of it. Each entry carries what the composer's picker configures for the turn in front of you.
  *
- * EVERY FIELD BUT THE PAIR IS OPTIONAL, AND ABSENT MEANS ABSENT: the turn goes out without the field and the
+ * THE SAME SHAPE FOR EVERY ROLE, one-shot helpers included, and that is a deliberate widening. A commit
+ * message or a session title used to be pinnable by model alone, on the argument that the daemon runs those
+ * with reasoning off and no effort, so a control for either would be a switch with nothing behind it. True of
+ * the machinery, and it made the machinery the argument: an owner who pins a reasoning model to their commit
+ * subjects was paying that model's price to have its distinguishing feature suppressed. The knobs now travel
+ * through the one-shot path too, so an entry means the same thing wherever it is written.
+ *
+ * EVERY FIELD BUT THE PAIR IS OPTIONAL, AND ABSENT MEANS ABSENT: the work goes out without the field and the
  * provider's own default answers, exactly as an unconfigured pin always did. Nothing here invents a "low".
  *
  * NO TIER HOLD, and its absence is the rule rather than an omission: automatic tier selection gates on
- * `unattended` (prompt-complexity.ts), so a surface-started run is never downgraded in the first place and a
- * veto over it would be a control whose state can make no difference to anything.
+ * `unattended` (prompt-complexity.ts), so a role-started run is never downgraded in the first place and a veto
+ * over it would be a control whose state can make no difference to anything.
  *
  * The pair is BOTH HALVES for the reason the pick above is: a model id is only meaningful to the provider that
  * vends it, so half a pin would send a Codex id to Claude. Taken verbatim, never validated against a catalog:
  * the picker offers a custom-id escape hatch, so a model this build has never heard of is a supported pin. */
-export const AgentRunPinSchema = z.object({
-    provider: AgentProviderSchema.describe("Which provider serves the run."),
+export const ModelPinSchema = z.object({
+    provider: AgentProviderSchema.describe("Which provider serves this work."),
     model: z.string().min(1).describe("Which of its models. Both halves, because a model name only means anything to the provider that serves it."),
     effort: z
         .string()
@@ -474,7 +499,7 @@ export const AgentRunPinSchema = z.object({
     fast: z.boolean().optional().describe("Ask for this model's work at a higher rate for a higher price. A request rather than a promise."),
     harness: AgentHarnessSchema.optional().describe("Which agentic loop runs it. Leave it out to use the provider's own."),
 });
-export type AgentRunPin = z.infer<typeof AgentRunPinSchema>;
+export type ModelPin = z.infer<typeof ModelPinSchema>;
 // POST /agent's ack: the daemon-minted id of the detached turn run it started. The turn executes daemon-side
 // regardless of any client connection; every window, the initiator included, renders it via /agent/attach.
 export const StartedTurnSchema = z.object({

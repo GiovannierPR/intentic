@@ -2,8 +2,8 @@ import { exec } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { fieldsValidator, type Loop, type LoopCheck, type LoopDocument, LoopDocumentSchema } from "@intentic/sandbox-contract";
-import type { QuickAnswer } from "../agent/quick-answer.js";
-import { askQuickModel } from "../agent/quick-model.js";
+import type { RoleAnswer } from "../agent/role-answer.js";
+import { askRoleModel } from "../agent/role-model.js";
 import type { Services } from "../composition.js";
 import { verdictPathIn } from "./loop-brief.js";
 
@@ -56,7 +56,7 @@ export interface StopVerdict {
  * not-done, which is the safe direction but also a silent one. A rung that answered off-shape (a tool-call
  * stand-in from a Gemini rung, a paragraph of reasoning, its own provider's refusal as prose) counted as a
  * ruling the judge never made, and the loop paid a full iteration on it. Stated as the ask's contract instead
- * (quick-answer.ts), the same reply is a rung that did not answer, so the next model in the chain rules and the
+ * (role-answer.ts), the same reply is a rung that did not answer, so the next model in the chain rules and the
  * loop only ever acts on a verdict some model actually gave. Nothing rules ⇒ the catch below says so. */
 const JUDGE_ANSWER = {
     what: `a DONE or CONTINUE verdict`,
@@ -66,7 +66,7 @@ const JUDGE_ANSWER = {
     },
     unusable: ({ detail }: StopVerdict): string | undefined =>
         /^(?:done|continue)\b/iu.test(detail ?? ``) ? undefined : `did not open with DONE or CONTINUE`,
-} satisfies QuickAnswer<StopVerdict>;
+} satisfies RoleAnswer<StopVerdict>;
 
 /* Read and validate the iteration's document. Absent, unparseable, schema-violating and field-violating all
  * read the same way, not done, and each says so in its own words, because "the model never wrote the file"
@@ -108,7 +108,7 @@ const readDocument = async (services: Services, loop: Loop, iteration: number): 
 /* The judge: a second model, no tools, no transcript, ruling on the goal against the rubric.
  *
  * It is shown the goal, the rubric and the iteration's own closing report, and NOT the diff. That is a real
- * limitation and it is the honest one: the judge runs through the quick-model seam (one prompt, one string, no
+ * limitation and it is the honest one: the judge runs through the one-shot helper seam (one prompt, one string, no
  * filesystem), so what it can rule on is whether the work as DESCRIBED meets the bar. That still catches the
  * failure this exists for, an agent that stops while its own account of what it did plainly falls short of the
  * goal, and it does so for the price of one cheap call. A judge that must inspect the tree is a `command`.
@@ -137,7 +137,7 @@ const askJudge = async (services: Services, loop: Loop, rubric: string, report: 
             `whose verification is not described are all CONTINUE. If the report is too vague to tell, that is CONTINUE.`,
     ].join(`\n`);
     try {
-        const { value } = await askQuickModel(services, { prompt, answer: JUDGE_ANSWER }, signal);
+        const { value } = await askRoleModel(services, `loop-verdict`, { prompt, answer: JUDGE_ANSWER }, signal);
         return value;
     } catch (error) {
         // A judge that cannot run is not a verdict. Reported as the detail so the row says why the loop is

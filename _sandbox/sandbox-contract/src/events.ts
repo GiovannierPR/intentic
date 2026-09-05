@@ -1279,7 +1279,7 @@ export const AgentEventSchema = z.discriminatedUnion("kind", [
     // was stopped, or died under the card), which is not a decision and must not replay as one.
     z.object({ kind: z.literal("resolved"), requestId: z.string(), reply: AgentReplySchema.optional() }),
     /* There was a `permission_note` frame here: a late sentence raced onto a command card that had already gone
-     * out, because the explanation was optional and the card must not wait for a quick-model rung that might
+     * out, because the explanation was optional and the card must not wait for a one-shot helper rung that might
      * take tens of seconds. It is gone with the setting that made it optional. The judge now decides the
      * verdict, so the sentence is not a decoration arriving afterwards — it is the REASON THE CARD EXISTS, and
      * a card cannot be raised before it is known. Nothing races, and `PermissionAsk.explain` is populated at

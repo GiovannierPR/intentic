@@ -2,8 +2,8 @@ import { type AccountUsage, gatingWindows, type ModelRef, SPENT_UTILIZATION, typ
 
 /* WHAT THE RECORDED QUOTA SAYS ABOUT A PROVIDER'S FLEET FOR ONE MODEL, the single rule behind every daemon
  * decision that used to have its own: which routed turn's refusal names a reset (translator.ts turnLimit),
- * which quick-model rung is stepped over (quick-model-quota.ts), and whether an agent-run pin is worth
- * spending a session on (agent-run-model.ts). Three facts rather than one instant, because they call for
+ * which one-shot helper rung is stepped over (role-model-quota.ts), and whether a run role's pin is worth
+ * spending a session on (run-role-model.ts). Three facts rather than one instant, because they call for
  * different things next.
  *
  * `withHeadroom` is the fact a single reset could not carry, and the one that changes what a refusal means:

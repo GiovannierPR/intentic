@@ -7,6 +7,7 @@ import {
     type Capability,
     type CredentialGate,
     type CredentialGateKind,
+    type ModelPin,
     type Rule,
     type SandboxSettings,
     type SystemPromptMode,
@@ -71,6 +72,7 @@ import { withAttachmentNote } from "./attachment-note.js";
 import { contextShortfall } from "./context-budget.js";
 import { subagentWaitServer } from "./subagent-wait.js";
 import { watchServer } from "./watch-server.js";
+import type { WatcherTurnSeed } from "./watchers.js";
 import { resolveHarnessCredentials } from "./harness-credentials.js";
 import { turnPromptPlacement } from "./system-prompt.js";
 import { composeWirePrompt, LITERAL_SLASH_NOTE, worktreeNote, worktreeReminder } from "./turn-preamble.js";
@@ -205,10 +207,30 @@ export interface TurnContext {
  * is the only thing standing. What keeps it cheap is that the gate only calls it when triage fires, and memoises
  * per program within the turn; whether it is called AT ALL is the owner's (settings.commandJudge, carried beside
  * this as `judging`), and at `off` the gate never reaches this closure. */
+/* THE TURN IDENTITY A WATCH'S WAKE HAS TO REPRODUCE (watchers.ts WatcherTurnSeed): where the arming turn ran,
+ * on whose account, at what tier, in what posture, and WHAT JOB IT WAS.
+ *
+ * `runRole` is the last of those and the reason the seed is worth naming as a function rather than spelling out
+ * inline: a wake that fires four hours later has nobody to ask, so a watch armed inside somebody's pipeline fix
+ * has to be able to spend the pipeline-fix list rather than a tier chosen for watches in general. Everything is
+ * a conditional spread, and absent means absent throughout: a seed that filled a blank with a default would be
+ * a request to run on an account of that name rather than on the provider's first. */
+const watchSeed = (input: AgentTurn): WatcherTurnSeed => ({
+    ...(input.agent !== undefined ? { agent: input.agent } : {}),
+    ...(input.harness !== undefined ? { harness: input.harness } : {}),
+    ...(input.account !== undefined ? { account: input.account } : {}),
+    ...(input.model !== undefined ? { model: input.model } : {}),
+    ...(input.effort !== undefined ? { effort: input.effort } : {}),
+    ...(input.isolated === true ? { isolated: true } : {}),
+    ...(input.unattended === true ? { unattended: true } : {}),
+    ...(input.runRole !== undefined ? { runRole: input.runRole } : {}),
+});
+
 const judgeFor =
-    (services: Services, policy: string, models: readonly string[]): CommandGateOptions["judge"] =>
+    (services: Services, policy: string, pins: readonly ModelPin[] | undefined): CommandGateOptions["judge"] =>
     (program, facts, signal) =>
-        judgeCommand(services, { policy, program, facts, models }, signal);
+        // An unpinned role reads as an empty list, which the walk answers with its Auto ladder.
+        judgeCommand(services, { policy, program, facts, pins: pins ?? [] }, signal);
 
 /* WHICH ARM A CONVERSATION IS IN, decided from its id so every turn of it lands the same way without anything
  * being stored.
@@ -802,7 +824,7 @@ const TURN_RULE_OUTPUT_BYTES = 4_000;
 
 /* The Claude Code harness, a native Claude turn's subscription OAuth (with its mid-turn refresh callback), or
  * the translator endpoint a routed provider rides. Credentials are resolved by harness-credentials.ts,
- * which the quick-model one-shot behind the landed-work messages reads too, so both authenticate identically;
+ * which the one-shot helper behind the landed-work messages reads too, so both authenticate identically;
  * its refusals are values, and this is where they become the refusal the composer's connect gate reads. */
 export const planHarnessTurn = async (
     services: Services,
@@ -1016,15 +1038,7 @@ export const planHarnessTurn = async (
                       // The BASE's env, the persona-filtered one, for the same reason shellEnv below reads
                       // it: a check must not run with a credential the card withheld from the turn that arms it.
                       env: context.base.cliEnv ?? {},
-                      turn: {
-                          ...(input.agent !== undefined ? { agent: input.agent } : {}),
-                          ...(input.harness !== undefined ? { harness: input.harness } : {}),
-                          ...(input.account !== undefined ? { account: input.account } : {}),
-                          ...(input.model !== undefined ? { model: input.model } : {}),
-                          ...(input.effort !== undefined ? { effort: input.effort } : {}),
-                          ...(input.isolated === true ? { isolated: true } : {}),
-                          ...(input.unattended === true ? { unattended: true } : {}),
-                      },
+                      turn: watchSeed(input),
                   }),
               }
             : {}),
@@ -1352,7 +1366,7 @@ export const planHarnessTurn = async (
              * document and one model however long it runs. */
             safetyPolicy,
             judging: settings.commandJudge,
-            judge: judgeFor(services, safetyPolicy, settings.commandJudgeModels),
+            judge: judgeFor(services, safetyPolicy, settings.modelRoles[`safety-judge`]),
             logSafety: (entry) => {
                 void services.safetyLog.record(entry).catch(() => undefined);
             },

@@ -14,7 +14,7 @@ import { splitAttachments } from "./attachment-note.js";
 /* AUTOMATIC TIER SELECTION, daemon side: the one place a turn is judged and, when the owner has asked for it,
  * quietly moved onto a cheaper rung of the provider it is already on.
  *
- * The split is the same one quick-model.ts and agent-run-model.ts already make. The CONTRACT owns the rule
+ * The split is the same one role-model.ts and run-role-model.ts already make. The CONTRACT owns the rule
  * (prompt-complexity.ts judges the words, fast-tier.ts names the cheaper model), because a settings row has to
  * be able to say what a turn will run on before it runs; this file owns the facts only the daemon holds — what
  * the settings say, what the provider's catalog publishes, and what the previous turn in this conversation was
@@ -56,7 +56,7 @@ const isNative = (provider: AgentProvider): provider is NativeProvider => (NATIV
  *
  * Native providers only. An `endpoint` provider is somebody's own model server: this repo cannot see its bill,
  * and reaching for whichever of its rows happens to carry the cheapest-sounding word is the same overreach
- * quick-model.ts already refuses when it seats an endpoint last in Auto. A PIN on an endpoint model still
+ * role-model.ts already refuses when it seats an endpoint last in Auto. A PIN on an endpoint model still
  * works, because a pin is the owner saying they know what that row costs, which is exactly the fact missing
  * here. Empty is a legal answer and resolves, through fastTierModel, to no downgrade at all.
  *

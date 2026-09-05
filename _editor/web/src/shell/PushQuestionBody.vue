@@ -14,7 +14,7 @@ import { usePushFlow } from "../composables/workspace/usePushFlow";
  * sit on one row together; see the row itself. */
 
 const pushFlow = usePushFlow();
-const fixModel = useAgentRunPick(() => shellModelPicking());
+const fixModel = useAgentRunPick(() => shellModelPicking(), `pre-push-fix`);
 
 const pushAnywayLabel = computed(() => (pushFlow.question.value?.kind === `push` ? `Try again` : `${pushFlow.pending.value?.verb ?? `Push`} anyway`));
 

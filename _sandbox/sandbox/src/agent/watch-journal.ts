@@ -1,6 +1,6 @@
 import { readdir, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { AgentHarnessSchema, AgentProviderSchema } from "@intentic/sandbox-contract";
+import { AgentHarnessSchema, AgentProviderSchema, ModelRoleSchema } from "@intentic/sandbox-contract";
 import { z } from "zod";
 import { writeJsonFile } from "../store/json-file.js";
 
@@ -70,6 +70,9 @@ const JournalledWatchSchema = z.object({
         effort: z.string().optional(),
         isolated: z.boolean().optional(),
         unattended: z.boolean().optional(),
+        // Which of the owner's model lists paid for the arming turn: the wake spends the same one unless the
+        // arming turn named a model outright (watchers.ts wakeRole).
+        runRole: ModelRoleSchema.optional(),
     }),
 });
 export type JournalledWatch = z.infer<typeof JournalledWatchSchema>;

@@ -474,8 +474,8 @@ export const createExtensionApi = (
              * day these two disagreed about which model a click spends, one of them would be lying to the user
              * about money. `named` still wraps the answer here because PickedModel carries one field the kit's
              * structural AgentRunChoice does not, accountLabel, which only this side can look up. */
-            agentRun: () => {
-                const choice = agentRunChoice();
+            agentRun: (role) => {
+                const choice = agentRunChoice(role);
                 return named({ provider: choice.provider as AgentProvider, model: choice.model, effort: choice.effort });
             },
             describe: (selection) =>

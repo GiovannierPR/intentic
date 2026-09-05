@@ -669,7 +669,7 @@ const baseOptions = (
             // the environment is marked already-sandboxed) plus this turn's credential. A custom endpoint points the
             // harness at ANTHROPIC_BASE_URL + its bearer and WITHHOLDS the subscription OAuth token; a native Claude
             // turn keeps the token and the default (unset) base URL. The per-turn value wins over any container-env
-            // ANTHROPIC_BASE_URL default. Shared with the quick-model one-shot, see harnessEnv.
+            // ANTHROPIC_BASE_URL default. Shared with the one-shot helper, see harnessEnv.
             ...harnessEnv(request),
             // The output-cleaner spec/holdout (or the filter-off flag) that the agent's Bash → tmux-run → agent-output-filter reads.
             ...cleanerEnv(request),

@@ -6,7 +6,7 @@ import type { AccountUsage, UsageWindow, WindowGates } from "./schemas/plan-limi
  * call, is this Google fleet spent for Claude Opus, when does the pool that refused this turn reopen, what
  * does the ring beside the composer measure. The pools a reading carries answer that only through their
  * `gates` (UsageWindowSchema says why the reader decides them), and this file is the one place the gate is
- * read, so the daemon's account picker, its quick-model walk, its refusal dressing and the browser's rings,
+ * read, so the daemon's account picker, its one-shot helper walk, its refusal dressing and the browser's rings,
  * rail and picker rows all agree about which pool is binding for a given model.
  *
  * WITHOUT A MODEL the answer is the account's own tightest pool, which is what a roster or a rail that has not

@@ -44,7 +44,7 @@ const toggle = (dir: string): void => {
  * pick for the whole fan-out rather than one per package: the dialog starts N+1 sessions on one press, and a
  * per-package model would be N+1 decisions to make a single scope choice. Cleared on start, so re-opening the
  * dialog is back on the sandbox's standing list. */
-const runModel = useAgentRunPick(() => host().models);
+const runModel = useAgentRunPick(() => host().models, `documentation-run`);
 
 const start = (): void => {
     emit(`start`, [...chosen.value], runModel.overridden.value ? runModel.model.value : undefined);

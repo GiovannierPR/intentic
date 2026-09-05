@@ -376,6 +376,7 @@ const runFire = async (
              * otherwise. Its prompt is the automation's standing brief, whose first 400 characters are a brief
              * about being a brief. */
             unattended: true,
+            runRole: `automation-wake`,
             /* SOMEBODY ELSE'S WORDS STARTED THIS TURN, set for a listener wake only, and named by the provider
              * that carried it. It is the same fact the envelope above states to the model, said once more to
              * the guard layer, which does not depend on the model believing it (guard/turn-taint.ts). A

@@ -1,5 +1,9 @@
 import { STATE_DIR } from "@intentic/constants";
 import { describe, expect, it } from "vitest";
+
+// The job a batch pack starts, which decides whose model list pays for it. Maintenance stands in for all of
+// them: what `batchTurnBody` owes is that the role it is handed reaches the turn, not which one it was.
+const ROLE = `maintenance-chore` as const;
 import {
     type BatchRunKind,
     batchConversationId,
@@ -134,16 +138,17 @@ describe(`what the agent is told`, () => {
 
 describe(`the turn a run starts`, () => {
     it(`is always isolated and unattended, which is what registers the fleet entry`, () => {
-        const body = batchTurnBody({ prompt: `do it`, title: `t`, conversationId: `mt-r5k2a` });
+        const body = batchTurnBody({ prompt: `do it`, title: `t`, conversationId: `mt-r5k2a`, role: ROLE });
         expect([body[`isolated`], body[`unattended`]]).toEqual([true, true]);
     });
 
     it(`caps the title at what the fleet row can show`, () => {
-        expect(String(batchTurnBody({ prompt: `p`, title: `t`.repeat(200), conversationId: `c` })[`title`])).toHaveLength(80);
+        expect(String(batchTurnBody({ prompt: `p`, title: `t`.repeat(200), conversationId: `c`, role: ROLE })[`title`])).toHaveLength(80);
     });
 
     it(`carries a pinned model and its tier when the row's caret chose one`, () => {
         const body = batchTurnBody({
+            role: ROLE,
             prompt: `p`,
             title: `t`,
             conversationId: `c`,
@@ -153,15 +158,15 @@ describe(`the turn a run starts`, () => {
     });
 
     /* ABSENT rather than undefined: the body is serialized to JSON and the daemon's fill step reads a missing
-     * key as "the owner's agentRunModels decide", which is not what an explicit null would say. */
+     * key as "the owner's list for this job decides", which is not what an explicit null would say. */
     it(`omits the keys a pick did not pin, rather than sending them empty`, () => {
-        const body = batchTurnBody({ prompt: `p`, title: `t`, conversationId: `c`, pick: { provider: `claude` } });
+        const body = batchTurnBody({ prompt: `p`, title: `t`, conversationId: `c`, role: ROLE, pick: { provider: `claude` } });
         expect(Object.keys(body)).not.toContain(`model`);
         expect(Object.keys(body)).not.toContain(`effort`);
     });
 
     it(`sends no model keys at all when nothing was pinned`, () => {
-        const keys = Object.keys(batchTurnBody({ prompt: `p`, title: `t`, conversationId: `c` }));
+        const keys = Object.keys(batchTurnBody({ prompt: `p`, title: `t`, conversationId: `c`, role: ROLE }));
         expect(keys.some((key) => [`agent`, `model`, `effort`].includes(key))).toBe(false);
     });
 });

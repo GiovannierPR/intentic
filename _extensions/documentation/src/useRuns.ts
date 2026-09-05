@@ -209,7 +209,8 @@ export function useRuns(repo: Ref<string>) {
             });
     });
 
-    /* `unattended` and usually no model: the daemon then fills in from `agentRunModels`, which is the one place
+    /* `unattended` with a `runRole` and usually no model: the daemon then fills in from that role's list, which
+     * is the one place
      * a documentation run and every other surface-started run get their answer from.
      *
      * `pick` is the run's own override, read back off its manifest so every session in the fan-out opens on the
@@ -224,6 +225,8 @@ export function useRuns(repo: Ref<string>) {
                 isolated: true,
                 permissionMode: `bypassPermissions`,
                 unattended: true,
+                // Which of the owner's model lists pays for it (Sandbox ▸ Agent ▸ Models).
+                runRole: `documentation-run`,
                 ...(pick !== undefined
                     ? { agent: pick.agent, model: pick.model, ...(pick.effort === undefined ? {} : { effort: pick.effort }) }
                     : {}),

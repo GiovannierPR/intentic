@@ -14,17 +14,22 @@ strongest and the calibration burden smallest.
 
 Three pieces are already in place, and they shape the answer more than the research does.
 
-**An ordered ladder is the established unit of model configuration.** `quickModel` and `agentRunModels`
-(`_sandbox/sandbox-contract/src/schemas/settings.ts`) are both *lists*, resolved by `resolveQuickModels` /
-`resolveAgentRunModels`: `quickModel` holds `${provider}:${model}` keys, while an `agentRunModels` entry is a
-pin that carries how its model is to be run (effort, thinking, speed, harness) beside which model it is. The
-comment in `quick-model.ts` states the rule plainly:
+**An ordered ladder is the established unit of model configuration.** `settings.modelRoles`
+(`_sandbox/sandbox-contract/src/schemas/settings.ts`) is one *list per job* — one per entry in the role catalog
+(`model-roles.ts`) — and every entry is a pin carrying how its model is to be run (effort, thinking, speed,
+harness) beside which model it is. All of them resolve through one `resolveRoleModels`. The comment in
+`model-pins.ts` states the rule plainly:
 
 > IT IS AN ORDER, NOT A MODEL … A single pick is a single point of failure.
 
-The two resolvers differ on exactly one thing: what an empty list means. `quickModel` derives an Auto ladder
-from whatever is connected; `agentRunModels` resolves to nothing and defers to the user's own chat pick,
-because *"nothing here can judge whether a job is worth the frontier tier."*
+*(This section described two lists, `quickModel` and `agentRunModels`, grouped by how hard the work was assumed
+to be. They are gone: an intensity is a guess about work its owner knows better, and it made the useful thing
+unsayable — pinning a stronger model for commit subjects also moved every session title and loop verdict.)*
+
+The two KINDS of role differ on exactly one thing: what an empty list means. A `helper` role — a one-shot such
+as a commit message or a safety verdict — derives an Auto ladder from whatever is connected; a `run` role
+resolves to nothing and defers to the user's own chat pick, because *"nothing here can judge whether a job is
+worth the frontier tier."*
 
 That last sentence is the thing this design changes. A router **is** the something that judges it.
 
@@ -176,7 +181,7 @@ Deterministic, non-negotiable, evaluated first because they are also the cheapes
 - **Images present.** Standard. The cheap rung is the one most likely to misread a screenshot, on the turn
   least likely to notice that it did.
 - **Plan mode.** Standard. The turn is being asked to think before it acts; that *is* the request.
-- **A surface-started agent run.** Standard. `agentRunModels` exists precisely because *"an agent run is a full
+- **A surface-started agent run.** Standard. The `run` roles exist precisely because *"an agent run is a full
   session with a worktree, billed whole"* — the router should not be the thing that guesses on the most
   expensive kind of run this app starts.
 - **Three or more attachments**, **a long prompt**, **pasted code or a stack trace**, **a hard word**, **a
@@ -278,10 +283,14 @@ that it only routes down. Swapping it for something merely known to be cheap is 
 | The pre-send preview + per-chat veto | `composables/chat/tierPreview.ts`, `ComposerTierChip.vue`, `AgentTurn.tierHold` |
 | The one dial | `FAST_CEILINGS` + `ComplexityInput.eagerness` (`settings.autoTierEagerness`) |
 
-The judge lives in the contract for the reason `quick-model.ts` does: a settings row has to be able to say what
-a turn will run on before it runs. Configuration mirrors `quickModel` — one ordered list, empty means derive
+The judge lives in the contract for the reason `model-pins.ts` does: a settings row has to be able to say what
+a turn will run on before it runs. Configuration mirrors a helper role's — one ordered list, empty means derive
 from what is connected — and `model-order.ts` already answers "which row is the cheap rung", so Auto's
 derivation is a function that already existed.
+
+`autoFastModels` is deliberately NOT a role. It names a substitution this feature makes on a turn the user
+started themselves, so it belongs to the feature rather than being a job of its own, and it stores bare
+`${provider}:${model}` keys because the turn it substitutes into already carries its own effort.
 
 ### 3.7 What it costs to decide
 
@@ -352,7 +361,7 @@ guardrail. Past a few percent, the router is costing more in retries and trust t
 
 ## 6. Build order
 
-1. ~~**Gates and ladders, no scoring.**~~ **Built.** One ordered list (`autoFastModels`) beside `quickModel`;
+1. ~~**Gates and ladders, no scoring.**~~ **Built.** One ordered list (`autoFastModels`) beside the role lists;
    gates; explicit picks always win.
 2. ~~**Shadow scoring.**~~ **Built, and it is the default.** `autoTier: "shadow"` judges every turn and writes
    the verdict — score, the rules that fired, and whether anything came of it — onto the spend ledger beside

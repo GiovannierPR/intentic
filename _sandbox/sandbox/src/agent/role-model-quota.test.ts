@@ -3,7 +3,7 @@ import type { UsageWindow } from "@intentic/sandbox-contract";
 import { expect, test } from "vitest";
 import type { Services } from "../composition.js";
 import type { TurnLimit } from "../usage/fleet-limit.js";
-import { spentRung } from "./quick-model-quota.js";
+import { spentRung } from "./role-model-quota.js";
 
 /* READING THE QUOTA INSTEAD OF DISCOVERING IT. Every case here is about the same trade: this may only ever say
  * "spent", and only on evidence, because a wrong "spent" retires a working account silently while a wrong

@@ -33,7 +33,7 @@ test("the derived endpoint is loopback and openai-protocol by construction", () 
 
 /* endpointConfigOf is THE reader of "which capabilities are endpoints": an endpoint carries its config
  * verbatim, a localmodel derives one, and every other kind is not an endpoint, which is what keeps the
- * translator, the picker route, the credential resolver and the quick-model sources one opinion. */
+ * translator, the picker route, the credential resolver and the one-shot helper sources one opinion. */
 test("endpointConfigOf answers for both endpoint-minting kinds and nothing else", () => {
     const endpoint: Capability = { id: "ollama", kind: "endpoint", config: { baseUrl: "https://x.example.com/v1", protocol: "anthropic" } };
     expect(endpointConfigOf(endpoint)).toEqual(endpoint.config);

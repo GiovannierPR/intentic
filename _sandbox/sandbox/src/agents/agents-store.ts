@@ -55,7 +55,7 @@ const PersistedAgentStatusSchema = z.enum(["idle", "interrupted", "stopped", "er
  * is one question asked four times, how much authority does whoever wrote this name have over the job?
  *
  * `derived` is the opening prompt CUT to a line by a rule with no model behind it (deriveTitle), which is the
- * best that can be done before the first frame comes back. `model` is the quick model's name for the same
+ * best that can be done before the first frame comes back. `model` is the naming helper's name for the same
  * prompt (agent/title-namer.ts): it writes rather than cuts, so it beats the guess. `plan` is the heading of a
  * plan the agent wrote, its own name for the whole job, better than any reading of the ask alone. `user` is a
  * rename, which outranks everything: an agent that renames a tab the user just named is a bug.

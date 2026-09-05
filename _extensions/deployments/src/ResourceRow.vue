@@ -51,7 +51,7 @@ const emit = defineEmits<{
 /* Which model this row's fix will spend, and the caret that re-points it for this container alone. Seeded from
  * the sandbox's agent-run list: asked of the host rather than read here, so the button and the daemon cannot
  * disagree about what a click costs. Per row, because the choice belongs to the failure you are looking at. */
-const fixModel = useAgentRunPick(() => host().models);
+const fixModel = useAgentRunPick(() => host().models, `deployment-fix`);
 const startFix = (): void => {
     emit(`fix`, props.resource, fixModel.overridden.value ? fixModel.model.value : undefined);
     fixModel.clear();

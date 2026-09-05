@@ -275,7 +275,7 @@ test("unwraps the packaging a cheap model adds even when told not to", () => {
 test("skips a preamble to the line that is actually the message", () => {
     // The failure this prevents is a commit whose subject is "Here's the commit message:": the cheap rung
     // ignores "no preamble" often enough that anchoring on the type prefix is the only reliable start.
-    const reply = "Sure! Here's the commit message:\nfix: stop the picker reordering on refresh\n\n- drops the sort in resolveQuickModels";
+    const reply = "Sure! Here's the commit message:\nfix: stop the picker reordering on refresh\n\n- drops the sort in resolveRoleModels";
     const subject = reply.split("\n").find((line) => line.startsWith("fix:"))!;
     expect(cleanCommitSubject(reply)).toBe(subject);
 });

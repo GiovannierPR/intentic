@@ -1,4 +1,4 @@
-import type { AgentHarness, AgentProvider } from "@intentic/sandbox-contract";
+import type { AgentHarness, AgentProvider, ModelPin } from "@intentic/sandbox-contract";
 import { unstubbed } from "@intentic/testing";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { Services } from "../composition.js";
@@ -30,15 +30,15 @@ vi.mock("./adapter-registry.js", async () => {
     };
 });
 
-const { askQuickModel, REFUSED_FOR_MS } = await import("./quick-model.js");
-const { sentenceAnswer } = await import("./quick-answer.js");
+const { askRoleModel, REFUSED_FOR_MS } = await import("./role-model.js");
+const { sentenceAnswer } = await import("./role-answer.js");
 
-/* WHAT THESE TESTS ASK FOR. Every ask carries the contract its reply is read against (quick-answer.ts, which has
+/* WHAT THESE TESTS ASK FOR. Every ask carries the contract its reply is read against (role-answer.ts, which has
  * its own suite for what makes a reply usable); this is the thinnest one that accepts an ordinary commit
  * subject, so a test about the WALK never turns on the shape of a mocked reply. */
 const DRAFT = { prompt: `draft`, answer: sentenceAnswer(`a commit subject`, (reply: string) => reply.trim(), 20) };
 
-/* WALKING THE CHAIN: the daemon half of the ordered quick model. The contract decides the ORDER (its own
+/* WALKING THE CHAIN: the daemon half of the ordered helper chain. The contract decides the ORDER (its own
  * suite pins that); what is testable here is the part only the daemon can do, which is notice that a model
  * refused and ask the next one instead of handing the user a button that did nothing. */
 
@@ -53,14 +53,23 @@ const CATALOGS: Record<string, readonly string[]> = {
 };
 
 /* WHICH PROVIDERS' ACCOUNTS THE RECORDED QUOTA SAYS ARE SPENT. The reading itself has its own suite next door
- * (quick-model-quota.test.ts); what these tests are about is what the WALK does with it, so the two seams it
+ * (role-model-quota.test.ts); what these tests are about is what the WALK does with it, so the two seams it
  * reads through are stood up at their thinnest: a fleet is spent or it is not.
  *
- * Default: nothing spent, so every existing test below asks its chain exactly as it always did. */
-const fakeServices = (quickModel: readonly string[], spent: readonly string[] = []): Services =>
+ * Default: nothing spent, so every existing test below asks its chain exactly as it always did.
+ *
+ * The settings hand back one ROLE'S list. `commit-message` throughout, because these tests are about the walk
+ * and the walk is the same whichever one-shot job asked for it — what differs per role is only which list is
+ * read and, for a `run` role, that an empty one resolves to nothing (contract model-pins.test.ts pins that). */
+const ROLE = `commit-message` as const;
+
+const asPins = (keys: readonly string[]): ModelPin[] =>
+    keys.map((key) => ({ provider: key.slice(0, key.indexOf(`:`)), model: key.slice(key.indexOf(`:`) + 1) }));
+
+const fakeServices = (pinned: readonly string[], spent: readonly string[] = []): Services =>
     unstubbed<Services>(`services`, {
         sandboxSettings: unstubbed<Services[`sandboxSettings`]>(`sandboxSettings`, {
-            get: async () => ({ quickModel: [...quickModel] }) as Awaited<ReturnType<Services[`sandboxSettings`][`get`]>>,
+            get: async () => ({ modelRoles: { [ROLE]: asPins(pinned) } }) as Awaited<ReturnType<Services[`sandboxSettings`][`get`]>>,
         }),
         capabilities: unstubbed<Services[`capabilities`]>(`capabilities`, { list: async () => [] }),
         cliProxy: unstubbed<Services[`cliProxy`]>(`cliProxy`, {
@@ -124,7 +133,7 @@ afterEach(() => {
 });
 
 test("spends the first model in the order and reports nothing skipped", async () => {
-    const answer = await askQuickModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), DRAFT, signal());
+    const answer = await askRoleModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), ROLE, DRAFT, signal());
 
     expect(answer.choice).toEqual({ provider: `codex`, model: `gpt-5.6` });
     expect(answer.skipped).toEqual([]);
@@ -136,7 +145,7 @@ test("steps over a spent allowance and answers on the next model down", async ()
     // a commit message is not worth waiting six hours for.
     oneShot.mockRejectedValueOnce(new Error(`ChatGPT usage limit reached: the allowance is exhausted.`));
 
-    const answer = await askQuickModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), DRAFT, signal());
+    const answer = await askRoleModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), ROLE, DRAFT, signal());
 
     expect(answer.value).toBe(`fix: tree truncation`);
     expect(answer.choice).toEqual({ provider: `claude`, model: `claude-haiku-4-5` });
@@ -149,7 +158,7 @@ test("treats a credential that fails on the way in as one more refusal to step o
     // the user's side that is the same dead end as a spent allowance, and the next account answers both.
     oneShot.mockRejectedValueOnce(new Error(`Reconnect your ChatGPT account.`));
 
-    const answer = await askQuickModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), DRAFT, signal());
+    const answer = await askRoleModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), ROLE, DRAFT, signal());
 
     expect(answer.choice.provider).toBe(`claude`);
     expect(answer.skipped[0]?.reason).toMatch(/ChatGPT|Reconnect/i);
@@ -160,7 +169,7 @@ test("names every model it asked when the whole chain is spent", async () => {
     // needs is which accounts were tried and what each one said.
     oneShot.mockRejectedValue(new Error(`usage limit reached`));
 
-    await expect(askQuickModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), DRAFT, signal())).rejects.toThrow(
+    await expect(askRoleModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), ROLE, DRAFT, signal())).rejects.toThrow(
         /gpt-5\.6.*claude-haiku-4-5/,
     );
 });
@@ -172,7 +181,7 @@ test("stops the moment the user cancels rather than spending the rest of the cha
         throw new Error(`aborted`);
     });
 
-    await expect(askQuickModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), DRAFT, controller.signal)).rejects.toThrow(`aborted`);
+    await expect(askRoleModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), ROLE, DRAFT, controller.signal)).rejects.toThrow(`aborted`);
     expect(oneShot).toHaveBeenCalledTimes(1);
 });
 
@@ -182,35 +191,61 @@ test("falls through Auto's own ladder when nothing is pinned", async () => {
     // cheapest tier of the cheapest channel), which is why the refusal is armed on that road.
     geminiOneShot.mockRejectedValueOnce(new Error(`usage limit reached`));
 
-    const answer = await askQuickModel(fakeServices([]), DRAFT, signal());
+    const answer = await askRoleModel(fakeServices([]), ROLE, DRAFT, signal());
 
     expect(answer.skipped).toHaveLength(1);
     expect(answer.choice.provider).not.toBe(answer.skipped[0]?.choice.provider);
 });
 
-/* AN ASK MAY BRING ITS OWN CHAIN, which one of them does: the safety judge decides whether a command runs and
- * reads text that may be a stranger's, so an owner is entitled to spend a different model on it than on their
- * commit messages (settings.commandJudgeModels → QuickAsk.models). Everything else about the walk is unchanged,
- * which is the property these two pin. */
-test("an ask that names its own models spends those instead of the sandbox's quick chain", async () => {
-    const answer = await askQuickModel(fakeServices([`gemini:gemini-3-flash-lite`]), { ...DRAFT, models: [`claude:claude-opus-5`] }, signal());
+/* A ROLE'S OWN LIST IS THE WHOLE ANSWER, and the two tests that used to sit here pinned the opposite: an ASK
+ * could carry a list of its own, for the one job (the safety judge) whose model visibly could not be shared
+ * with commit messages. That was a bundled default admitting an exception. Every ask now names its role and
+ * reads that role's list, so the exception is the rule and there is nothing left to override. */
+test("spends the list belonging to the role that asked, not another role's", async () => {
+    const services = unstubbed<Services>(`services`, {
+        ...fakeServices([`gemini:gemini-3-flash-lite`]),
+        sandboxSettings: unstubbed<Services[`sandboxSettings`]>(`sandboxSettings`, {
+            get: async () =>
+                ({
+                    modelRoles: { [ROLE]: asPins([`gemini:gemini-3-flash-lite`]), "safety-judge": asPins([`claude:claude-opus-5`]) },
+                }) as Awaited<ReturnType<Services[`sandboxSettings`][`get`]>>,
+        }),
+    });
+
+    expect((await askRoleModel(services, `safety-judge`, DRAFT, signal())).choice).toEqual({ provider: `claude`, model: `claude-opus-5` });
+    expect(geminiOneShot).not.toHaveBeenCalled();
+});
+
+/* A CALLER MAY HAND THE LIST IN, and exactly one does: the safety judge is bound when a turn is PLANNED, beside
+ * the policy document it will read, so a turn running for an hour is judged by one document and one model
+ * however long that takes rather than by whatever the settings file said at each command. */
+test("walks the pins a caller snapshotted instead of re-reading the role's list", async () => {
+    const answer = await askRoleModel(fakeServices([`gemini:gemini-3-flash-lite`]), ROLE, DRAFT, signal(), {
+        pins: asPins([`claude:claude-opus-5`]),
+    });
 
     expect(answer.choice).toEqual({ provider: `claude`, model: `claude-opus-5` });
     expect(geminiOneShot).not.toHaveBeenCalled();
 });
 
-// Empty is the floor rather than "no models": every pin setting here ships empty, and the row that edits one
-// has to be emptiable back to what it did before the setting existed.
-test("an ask whose own list is empty falls back to the sandbox's quick chain", async () => {
-    const answer = await askQuickModel(fakeServices([`codex:gpt-5.6`]), { ...DRAFT, models: [] }, signal());
+/* AN EMPTY SNAPSHOT IS THE ROLE'S FLOOR, not "no models" and not a reason to go back to the settings file, and
+ * the difference is visible exactly when the file has moved since the snapshot was taken — which is what this
+ * sets up: `codex:gpt-5.6` is in settings for this role, and the walk still answers with the Auto ladder's
+ * cheapest rung.
+ *
+ * That is the point of snapshotting rather than a wrinkle in it. A safety judge bound when the turn was planned
+ * must stay bound: an owner pinning a model an hour into a long turn should see it on the NEXT turn, not have
+ * the running one change judges underneath a policy it has already been applying. */
+test("falls back to the role's own Auto ladder when the snapshot handed in is empty", async () => {
+    const answer = await askRoleModel(fakeServices([`codex:gpt-5.6`]), ROLE, DRAFT, signal(), { pins: [] });
 
-    expect(answer.choice).toEqual({ provider: `codex`, model: `gpt-5.6` });
+    expect(answer.choice).toEqual({ provider: `gemini`, model: `gemini-3-flash-lite` });
 });
 
 test("says the sandbox has no account rather than failing on a model call", async () => {
     ready.mockResolvedValue({ claude: false, gemini: false, codex: false });
 
-    await expect(askQuickModel(fakeServices([`claude:claude-haiku-4-5`]), DRAFT, signal())).rejects.toThrow(/No AI account is connected/);
+    await expect(askRoleModel(fakeServices([`claude:claude-haiku-4-5`]), ROLE, DRAFT, signal())).rejects.toThrow(/No AI account is connected/);
     expect(oneShot).not.toHaveBeenCalled();
 });
 
@@ -221,11 +256,11 @@ test("says the sandbox has no account rather than failing on a model call", asyn
 test("a model that just refused is stepped over without being asked again", async () => {
     const pinned = [`codex:gpt-5.6`, `claude:claude-haiku-4-5`];
     oneShot.mockRejectedValueOnce(new Error(`usage limit reached`));
-    await askQuickModel(fakeServices(pinned), DRAFT, signal());
+    await askRoleModel(fakeServices(pinned), ROLE, DRAFT, signal());
     expect(oneShot).toHaveBeenCalledTimes(2); // the refusal, then the model that answered
 
     oneShot.mockClear();
-    const answer = await askQuickModel(fakeServices(pinned), DRAFT, signal());
+    const answer = await askRoleModel(fakeServices(pinned), ROLE, DRAFT, signal());
 
     expect(oneShot).toHaveBeenCalledTimes(1);
     expect(oneShot).toHaveBeenCalledWith(expect.objectContaining({ model: `claude-haiku-4-5` }));
@@ -236,11 +271,11 @@ test("a model that just refused is stepped over without being asked again", asyn
 test("asks it again once the memo has run out: an allowance resets and nothing announces it", async () => {
     const pinned = [`codex:gpt-5.6`, `claude:claude-haiku-4-5`];
     oneShot.mockRejectedValueOnce(new Error(`usage limit reached`));
-    await askQuickModel(fakeServices(pinned), DRAFT, signal());
+    await askRoleModel(fakeServices(pinned), ROLE, DRAFT, signal());
 
     vi.setSystemTime(clock + PAST_THE_MEMO_MS);
     oneShot.mockClear();
-    const answer = await askQuickModel(fakeServices(pinned), DRAFT, signal());
+    const answer = await askRoleModel(fakeServices(pinned), ROLE, DRAFT, signal());
 
     expect(answer.choice).toEqual({ provider: `codex`, model: `gpt-5.6` });
     expect(answer.skipped).toEqual([]);
@@ -249,13 +284,13 @@ test("asks it again once the memo has run out: an allowance resets and nothing a
 test("an answer clears the memo, so a recovered model keeps its place at the top", async () => {
     const pinned = [`codex:gpt-5.6`, `claude:claude-haiku-4-5`];
     oneShot.mockRejectedValueOnce(new Error(`usage limit reached`));
-    await askQuickModel(fakeServices(pinned), DRAFT, signal());
+    await askRoleModel(fakeServices(pinned), ROLE, DRAFT, signal());
 
     // The window ends, it answers, and the walk must not go back to skipping it a moment later.
     vi.setSystemTime(clock + PAST_THE_MEMO_MS);
-    await askQuickModel(fakeServices(pinned), DRAFT, signal());
+    await askRoleModel(fakeServices(pinned), ROLE, DRAFT, signal());
     oneShot.mockClear();
-    const answer = await askQuickModel(fakeServices(pinned), DRAFT, signal());
+    const answer = await askRoleModel(fakeServices(pinned), ROLE, DRAFT, signal());
 
     expect(answer.choice).toEqual({ provider: `codex`, model: `gpt-5.6` });
     expect(oneShot).toHaveBeenCalledTimes(1);
@@ -266,11 +301,11 @@ test("an answer clears the memo, so a recovered model keeps its place at the top
 test("tries the whole chain anyway when every rung is cooling down", async () => {
     const pinned = [`codex:gpt-5.6`, `claude:claude-haiku-4-5`];
     oneShot.mockRejectedValue(new Error(`usage limit reached`));
-    await expect(askQuickModel(fakeServices(pinned), DRAFT, signal())).rejects.toThrow();
+    await expect(askRoleModel(fakeServices(pinned), ROLE, DRAFT, signal())).rejects.toThrow();
 
     oneShot.mockClear();
     oneShot.mockResolvedValue(`fix: tree truncation`);
-    const answer = await askQuickModel(fakeServices(pinned), DRAFT, signal());
+    const answer = await askRoleModel(fakeServices(pinned), ROLE, DRAFT, signal());
 
     expect(answer.choice).toEqual({ provider: `codex`, model: `gpt-5.6` });
     expect(oneShot).toHaveBeenCalledTimes(1);
@@ -284,7 +319,7 @@ test("tries the whole chain anyway when every rung is cooling down", async () =>
 test("steps over a rung that writes a tool call instead of an answer", async () => {
     oneShot.mockResolvedValueOnce(`[tool_call: glob for pattern '**']`);
 
-    const answer = await askQuickModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), DRAFT, signal());
+    const answer = await askRoleModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), ROLE, DRAFT, signal());
 
     expect(answer.value).toBe(`fix: tree truncation`);
     expect(answer.choice).toEqual({ provider: `claude`, model: `claude-haiku-4-5` });
@@ -299,10 +334,10 @@ test("steps over a rung that writes a tool call instead of an answer", async () 
 test("an unusable reply leaves no memo: the same rung is asked again on the next call", async () => {
     const pinned = [`codex:gpt-5.6`, `claude:claude-haiku-4-5`];
     oneShot.mockResolvedValueOnce(`[tool_call: glob for pattern '**']`);
-    await askQuickModel(fakeServices(pinned), DRAFT, signal());
+    await askRoleModel(fakeServices(pinned), ROLE, DRAFT, signal());
 
     oneShot.mockClear();
-    const answer = await askQuickModel(fakeServices(pinned), DRAFT, signal());
+    const answer = await askRoleModel(fakeServices(pinned), ROLE, DRAFT, signal());
 
     expect(answer.choice).toEqual({ provider: `codex`, model: `gpt-5.6` });
     expect(oneShot).toHaveBeenCalledTimes(1);
@@ -315,7 +350,7 @@ test("names what every rung wrote when none of them wrote an answer", async () =
     oneShot.mockResolvedValue(`I need more context. What am I naming?`);
     geminiOneShot.mockResolvedValue(`I need more context. What am I naming?`);
 
-    await expect(askQuickModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), DRAFT, signal())).rejects.toThrow(
+    await expect(askRoleModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), ROLE, DRAFT, signal())).rejects.toThrow(
         /gpt-5\.6: answered the asker.*claude-haiku-4-5: answered the asker/,
     );
 });
@@ -326,7 +361,7 @@ test("names what every rung wrote when none of them wrote an answer", async () =
  * its own runtime for this reason; these two tests are what stop the helper drifting back. */
 
 test("runs a Cursor rung on its own runtime, never through the Claude Code harness", async () => {
-    const answer = await askQuickModel(fakeServices([`cursor:composer-2.5`]), DRAFT, signal());
+    const answer = await askRoleModel(fakeServices([`cursor:composer-2.5`]), ROLE, DRAFT, signal());
 
     expect(answer.choice).toEqual({ provider: `cursor`, model: `composer-2.5` });
     expect(cursorOneShot).toHaveBeenCalledWith(expect.objectContaining({ model: `composer-2.5` }));
@@ -334,7 +369,7 @@ test("runs a Cursor rung on its own runtime, never through the Claude Code harne
 });
 
 test("runs a Gemini rung on its own runtime, never through the Claude Code harness", async () => {
-    const answer = await askQuickModel(fakeServices([`gemini:gemini-3-flash-lite`]), DRAFT, signal());
+    const answer = await askRoleModel(fakeServices([`gemini:gemini-3-flash-lite`]), ROLE, DRAFT, signal());
 
     expect(answer.choice).toEqual({ provider: `gemini`, model: `gemini-3-flash-lite` });
     expect(geminiOneShot).toHaveBeenCalledWith(expect.objectContaining({ model: `gemini-3-flash-lite` }));
@@ -344,7 +379,7 @@ test("runs a Gemini rung on its own runtime, never through the Claude Code harne
 test("keeps every other provider on the Claude Code harness", async () => {
     // The fix is scoped to the provider that refuses that loop. Sending the rest down Gemini's or Cursor's
     // road would swap one wrong runtime for another.
-    await askQuickModel(fakeServices([`codex:gpt-5.6`]), DRAFT, signal());
+    await askRoleModel(fakeServices([`codex:gpt-5.6`]), ROLE, DRAFT, signal());
 
     expect(oneShot).toHaveBeenCalledWith(expect.objectContaining({ model: `gpt-5.6` }));
     expect(geminiOneShot).not.toHaveBeenCalled();
@@ -357,7 +392,7 @@ test("keeps every other provider on the Claude Code harness", async () => {
  * 100% with a renewal three days out was still asked three times in a single landing. */
 
 test("steps over a rung the recorded quota already says is spent", async () => {
-    const answer = await askQuickModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`], [`codex`]), DRAFT, signal());
+    const answer = await askRoleModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`], [`codex`]), ROLE, DRAFT, signal());
 
     expect(answer.choice).toEqual({ provider: `claude`, model: `claude-haiku-4-5` });
     expect(oneShot).toHaveBeenCalledTimes(1);
@@ -367,7 +402,7 @@ test("steps over a rung the recorded quota already says is spent", async () => {
 });
 
 test("a rung with headroom on file is asked, whatever the rest of the fleet looks like", async () => {
-    const answer = await askQuickModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), DRAFT, signal());
+    const answer = await askRoleModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), ROLE, DRAFT, signal());
 
     expect(answer.choice).toEqual({ provider: `codex`, model: `gpt-5.6` });
     expect(answer.skipped).toEqual([]);
@@ -377,7 +412,7 @@ test("a rung with headroom on file is asked, whatever the rest of the fleet look
  * A snapshot can sit minutes behind a window that has already reopened, and a helper that went quiet on one
  * would be a worse failure than the wasted call it was avoiding. */
 test("asks every rung anyway when the quota says the whole chain is spent", async () => {
-    const answer = await askQuickModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`], [`codex`, `claude`]), DRAFT, signal());
+    const answer = await askRoleModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`], [`codex`, `claude`]), ROLE, DRAFT, signal());
 
     expect(answer.choice).toEqual({ provider: `codex`, model: `gpt-5.6` });
     expect(oneShot).toHaveBeenCalledTimes(1);
@@ -392,10 +427,10 @@ test("a cancel leaves no memo behind", async () => {
         controller.abort();
         throw new Error(`aborted`);
     });
-    await expect(askQuickModel(fakeServices([`codex:gpt-5.6`]), DRAFT, controller.signal)).rejects.toThrow(`aborted`);
+    await expect(askRoleModel(fakeServices([`codex:gpt-5.6`]), ROLE, DRAFT, controller.signal)).rejects.toThrow(`aborted`);
 
     oneShot.mockClear();
-    const answer = await askQuickModel(fakeServices([`codex:gpt-5.6`]), DRAFT, signal());
+    const answer = await askRoleModel(fakeServices([`codex:gpt-5.6`]), ROLE, DRAFT, signal());
 
     expect(answer.choice).toEqual({ provider: `codex`, model: `gpt-5.6` });
     expect(oneShot).toHaveBeenCalledTimes(1);
@@ -405,9 +440,9 @@ test("a cancel leaves no memo behind", async () => {
 // not one of them: reporting it would tell the user an account was passed over when it was simply not needed.
 test("does not report a cooling rung that sits behind the model that answered", async () => {
     oneShot.mockRejectedValueOnce(new Error(`usage limit reached`));
-    await askQuickModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), DRAFT, signal());
+    await askRoleModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), ROLE, DRAFT, signal());
 
-    const answer = await askQuickModel(fakeServices([`claude:claude-haiku-4-5`, `codex:gpt-5.6`]), DRAFT, signal());
+    const answer = await askRoleModel(fakeServices([`claude:claude-haiku-4-5`, `codex:gpt-5.6`]), ROLE, DRAFT, signal());
 
     expect(answer.choice).toEqual({ provider: `claude`, model: `claude-haiku-4-5` });
     expect(answer.skipped).toEqual([]);
@@ -419,9 +454,9 @@ test("tells a listener every beat: asking, the refusal in its own words, and the
     const beats: string[] = [];
     oneShot.mockRejectedValueOnce(new Error(`usage limit reached`));
 
-    await askQuickModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), DRAFT, signal(), (attempts) =>
-        beats.push(attempts.map((attempt) => `${attempt.choice.model}:${attempt.status}`).join(` `)),
-    );
+    await askRoleModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), ROLE, DRAFT, signal(), {
+        onProgress: (attempts) => beats.push(attempts.map((attempt) => `${attempt.choice.model}:${attempt.status}`).join(` `)),
+    });
 
     expect(beats).toEqual([
         `gpt-5.6:asking`,
@@ -434,13 +469,15 @@ test("tells a listener every beat: asking, the refusal in its own words, and the
 test("a rung skipped on its memo is a beat too, with the remembered reason, and a listener's throw costs the walk nothing", async () => {
     const pinned = [`codex:gpt-5.6`, `claude:claude-haiku-4-5`];
     oneShot.mockRejectedValueOnce(new Error(`usage limit reached`));
-    await askQuickModel(fakeServices(pinned), DRAFT, signal());
+    await askRoleModel(fakeServices(pinned), ROLE, DRAFT, signal());
 
     const beats: { model: string; status: string; reason?: string | undefined }[] = [];
     oneShot.mockClear();
-    const answer = await askQuickModel(fakeServices(pinned), DRAFT, signal(), (attempts) => {
-        beats.push(...attempts.slice(beats.length > 0 ? -1 : 0).map((a) => ({ model: a.choice.model, status: a.status, reason: a.reason })));
-        throw new Error(`a broken listener`);
+    const answer = await askRoleModel(fakeServices(pinned), ROLE, DRAFT, signal(), {
+        onProgress: (attempts) => {
+            beats.push(...attempts.slice(beats.length > 0 ? -1 : 0).map((a) => ({ model: a.choice.model, status: a.status, reason: a.reason })));
+            throw new Error(`a broken listener`);
+        },
     });
 
     expect(answer.value).toBe(`fix: tree truncation`);
@@ -452,10 +489,10 @@ test("a rung skipped on its memo is a beat too, with the remembered reason, and 
 test("bills every model it asks, by name, answered or refused", async () => {
     oneShot.mockRejectedValueOnce(new Error(`usage limit reached`));
 
-    await askQuickModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), DRAFT, signal());
+    await askRoleModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), ROLE, DRAFT, signal());
 
     expect(timed.map((entry) => [entry.op, entry.fields[`model`], entry.failed])).toEqual([
-        [`quick.model`, `gpt-5.6`, true],
-        [`quick.model`, `claude-haiku-4-5`, undefined],
+        [`role.model`, `gpt-5.6`, true],
+        [`role.model`, `claude-haiku-4-5`, undefined],
     ]);
 });

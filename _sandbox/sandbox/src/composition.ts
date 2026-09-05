@@ -555,7 +555,7 @@ export interface Services extends ClaudeSlice, CodexSlice, CursorSlice, GrokSlic
      * the rows so the picker stops offering a model the plan will not run (usage/model-refusals.ts). */
     readonly modelRefusals: ModelRefusalStore;
     // Every native provider's live model catalog, keyed by provider, what /providers/{provider}/models serves
-    // the picker, what the quick model compares over, and what a routed turn validates its pick against.
+    // the picker, what the one-shot helper resolver compares over, and what a routed turn validates its pick against.
     // ASSEMBLED from the provider modules (agent/provider-registry.ts), so those readers do a lookup instead
     // of each keeping its own enumeration of the providers.
     readonly providerCatalogs: Record<NativeProvider, ProviderCatalog>;

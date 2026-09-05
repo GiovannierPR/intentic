@@ -95,7 +95,7 @@ const trigger = computed(() => triggerLabel(props.run.trigger));
  * Per ROW rather than per view: the choice belongs to the failure you are looking at, and the whole reason to
  * reach for a bigger model is that this particular one beat the standing order. Cleared once the run has
  * started, so the next fix on the same row opens on the standing list again. */
-const fixModel = useAgentRunPick(() => host().models);
+const fixModel = useAgentRunPick(() => host().models, `pipeline-fix`);
 
 const api = host();
 const agentLink = (id: string): { href: string; onClick: (event: MouseEvent) => void } =>

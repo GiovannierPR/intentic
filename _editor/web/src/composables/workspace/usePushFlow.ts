@@ -1,8 +1,8 @@
-import { type AgentHarness, type AgentProvider, type CommandRun, commandRunOutcome, type PushRun, quickModelKey } from "@intentic/sandbox-contract";
+import { type AgentHarness, type AgentProvider, type CommandRun, commandRunOutcome, type PushRun, modelPinKey } from "@intentic/sandbox-contract";
 import type { AgentRunChoice } from "@intentic/ui";
 import { computed, ref, shallowRef, watch } from "vue";
 import { composeSession, startSession } from "../agents/sessionSuggestion";
-import { useAgentRunModel } from "../chat/agentRunModel";
+import { useRoleModel } from "../chat/roleModel";
 import type { Conversation } from "../chat/conversation";
 import { useSandbox } from "../sandbox/useSandbox";
 import { prepushCommandOf } from "../sandbox/rules";
@@ -289,7 +289,10 @@ export const resetPushFlow = (): void => {
 export function usePushFlow() {
     git ??= useChanges();
     const { settings } = useSandboxSettings();
-    const agentRun = useAgentRunModel();
+    // The owner's list for THIS job. A pre-push fix is its own row in Sandbox ▸ Agent ▸ Models: it reads a
+    // failing check on work that is about to leave the machine, which is not the same spend as a documentation
+    // sweep, and used to share a tier with one.
+    const prePushFix = useRoleModel(`pre-push-fix`);
     if (sandboxId === undefined) {
         sandboxId = useSandbox().activeSandboxId;
         watch(sandboxId, (id) => readTypical(id), { immediate: true });
@@ -306,17 +309,17 @@ export function usePushFlow() {
             return;
         }
         const push: PendingPush = { verb, what, targets };
-        /* The HEAD of the agent-run list, the entry the daemon would reach for, rather than the raw setting:
+        /* The HEAD of the pre-push-fix list, the entry the daemon would reach for, rather than the raw setting:
          * this is composed into a draft the user can see and re-point, so it has to name a model that can
-         * actually be sent. `quickModelKey` because composeSession takes the pinned `${provider}:${model}`
+         * actually be sent. `modelPinKey` because composeSession takes the pinned `${provider}:${model}`
          * form. Read before the check is even considered: a push with no check configured can still be refused
          * by the repository's own hook, and the fix proposed for that reads the same settings.
          *
          * THE EFFORT COMES OFF THAT ENTRY, not from a setting beside the list: each pin now carries its own
-         * (AgentRunPinSchema), so the tier proposed here is the one the owner wrote for the model being
+         * (ModelPinSchema), so the tier proposed here is the one the owner wrote for the model being
          * proposed rather than one shared with every other entry. */
-        const head = agentRun.choice.value;
-        fixWith = head === undefined ? {} : { model: quickModelKey(head), effort: head.effort };
+        const head = prePushFix.choice.value;
+        fixWith = head === undefined ? {} : { model: modelPinKey(head), effort: head.effort };
         const command = prepushCommandOf(settings.value?.rules ?? []);
         if (command === `` || !targets.some((target) => target.push)) {
             void send(push);

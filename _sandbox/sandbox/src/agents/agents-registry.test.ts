@@ -519,7 +519,7 @@ describe("agents registry", () => {
         await registry.init();
         await registry.begin(turn({ prompt: "we have recently added the fleet board" }), 1_000);
 
-        // The quick model has written a name for the opening prompt: it beats the rule that only cut one…
+        // The session-title helper has written a name for the opening prompt: it beats the rule that only cut one…
         expect((await registry.setTitle("c1", "Fleet board broadcast · wire", "model"))?.title).toBe("Fleet board broadcast · wire");
         // …once. A second model name is a sideways move, so the first one stands.
         await registry.setTitle("c1", "A second reading", "model");
@@ -534,7 +534,7 @@ describe("agents registry", () => {
     });
 
     /* The two conditions the CLI reports as prose (agent/failure-sentences.ts), each of which has reached this
-     * function as a proposed name: the limit sentence from a naming pass whose quick-model call was out of
+     * function as a proposed name: the limit sentence from a naming pass whose one-shot helper call was out of
      * allowance, the auth sentence from one whose token had been revoked. Both are asserted at every rule
      * because guarding the first alone is precisely how the second got in. */
     const FAILURE_SENTENCES = [
@@ -549,7 +549,7 @@ describe("agents registry", () => {
         await registry.init();
         await registry.begin(turn(), 1_000);
 
-        // A naming pass whose own quick-model call hit the condition hands the sentence over as if it were
+        // A naming pass whose own one-shot helper call hit the condition hands the sentence over as if it were
         // the name. The derived title must stand, and stand REPLACEABLE (the next honest name lands).
         await registry.setTitle("c1", sentence, "model");
         expect(registry.get("c1")?.title).toBe("Fix the login bug");

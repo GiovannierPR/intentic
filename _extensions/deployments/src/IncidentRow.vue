@@ -24,7 +24,7 @@ const { incident, resource } = defineProps<{
 }>();
 const emit = defineEmits<{ fix: [resource: DeployResource, pick: AgentRunChoice | undefined] }>();
 
-const fixModel = useAgentRunPick(() => host().models);
+const fixModel = useAgentRunPick(() => host().models, `deployment-fix`);
 const startFix = (): void => {
     if (resource !== undefined) {
         emit(`fix`, resource, fixModel.overridden.value ? fixModel.model.value : undefined);

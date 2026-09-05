@@ -437,7 +437,7 @@ async function* runConversationTurn(
      * conversation on the derived cut forever. */
     // WARN, not debug: this pass is invisible by construction, nobody waits on it and its only output is a
     // rename that silently doesn't happen. At debug it sat below the daemon's own level and failed unnoticed
-    // for every conversation the sandbox ever ran, which is how a rate-limited quick model went undiagnosed
+    // for every conversation the sandbox ever ran, which is how a rate-limited helper model went undiagnosed
     // while 240 fleet cards wore the derivation's cut sentence.
     nameAgentTitle(services, conversationId, input.prompt).catch((error: unknown) =>
         services.logger.warn({ err: error }, "agents: title naming failed"),

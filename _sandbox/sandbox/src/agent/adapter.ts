@@ -100,11 +100,12 @@ export interface AgentAdapter<R extends AgentCapabilities["runtime"] = AgentCapa
     readonly holdsSession: (services: Services, sessionId: string, cwd: string) => Promise<boolean>;
     /* ONE PROMPT IN, ONE STRING OUT, on this runtime: no tools, no session, no transcript, no events, its own
      * deadline, and every failure thrown as the provider's own sentence. The shape a helper needs (draft me a
-     * commit message) as opposed to the shape a chat needs, which is `preflight`. The quick-model walk
-     * (quick-model.ts) asks the adapter the contract names for the provider rather than choosing a loop of its
-     * own, so a provider that refuses the Claude Code harness (Google does, on its identity line; Cursor has no
-     * such road at all) is served on its own runtime for one-liners exactly as it is for turns. Absent for a
-     * runtime nothing asks one line of, which the walk reports as a refusal and steps over. */
+     * commit message) as opposed to the shape a chat needs, which is `preflight`. The helper-role walk
+     * (role-model.ts) asks the adapter the contract names for the (provider, harness) the pin states rather than
+     * choosing a loop of its own, so a provider that refuses the Claude Code harness (Google does, on its
+     * identity line; Cursor has no such road at all) is served on its own runtime for one-liners exactly as it is
+     * for turns. Absent for a runtime nothing asks one line of, which the walk reports as a refusal and steps
+     * over. */
     readonly oneShot?: (services: Services, ask: OneShotAsk) => Promise<string>;
 }
 
@@ -116,6 +117,20 @@ export interface OneShotAsk {
     // a path that doesn't exist fails the spawn.
     readonly cwd: string;
     readonly model: string;
+    /* HOW THE PIN SAYS TO RUN IT, and these three are why a helper role's list holds full pins rather than bare
+     * (provider, model) keys.
+     *
+     * They used to not exist, and this seam hardcoded the opposite of each: reasoning off, no effort, no speed
+     * request, on the argument that a one-liner has nothing to reason about. That argument is right about the
+     * DEFAULT and was being used as a rule, so an owner who deliberately pinned a reasoning model to their commit
+     * subjects paid for one and was handed the other, with nothing on screen to say so.
+     *
+     * ABSENT STILL MEANS THE OLD ANSWER, which is what keeps the default honest: an unconfigured pin runs with
+     * thinking disabled and no effort, so the ordinary case is the ~2s call it has always been (claude-one-shot.ts
+     * measures the difference). Nothing here invents a value; these are only ever what somebody wrote down. */
+    readonly effort?: string | undefined;
+    readonly thinking?: boolean | undefined;
+    readonly fast?: boolean | undefined;
     // The caller's cancel (a second click, a closed panel).
     readonly signal: AbortSignal;
 }

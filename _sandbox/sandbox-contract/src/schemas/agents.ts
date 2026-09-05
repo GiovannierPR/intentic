@@ -182,8 +182,8 @@ export const LandedMessageSchema = z.object({
         .describe("What this change takes away, for anything already relying on it. Nearly always absent: it is for removals, not for additions."),
 });
 export type LandedMessage = z.infer<typeof LandedMessageSchema>;
-/* ONE MODEL'S TURN IN THE DRAFTING WALK, asked, and what became of the ask. The quick-model chain tries the
- * connected models in order (agent/quick-model.ts), and each rung ends one of four ways:
+/* ONE MODEL'S TURN IN THE DRAFTING WALK, asked, and what became of the ask. The one-shot helper chain tries the
+ * connected models in order (agent/role-model.ts), and each rung ends one of four ways:
  *   asking  , in flight right now; `ms` absent because it is still being spent.
  *   answered, it wrote the sentence, in `ms`.
  *   refused , it failed or declined, in `ms`, with its own words in `reason`.

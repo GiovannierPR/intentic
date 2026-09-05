@@ -24,8 +24,9 @@ import { useRules } from "../../../composables/sandbox/useRules";
  * than a form, but there is nothing behind them the table cannot express, which is why outgrowing any of them
  * (a second command before a push, a check that only applies to one repo) needs no new setting.
  *
- * WHICH MODEL the failed check's suggested fix opens on is NOT here: it is `agentRunModels`, up in the Models
- * group, because that session is an agent run like the Fix button on a red pipeline and a Maintenance chore. */
+ * WHICH MODEL the failed check's suggested fix opens on is NOT here: it is the `pre-push-fix` row, up in the
+ * Models group, where every job in this sandbox picks its own. A row of its own rather than one shared with the
+ * Fix button on a red pipeline and a Maintenance chore, because they are not the same spend. */
 
 const { settings, byId, upsert, remove, setEnabled } = useRules();
 

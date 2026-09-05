@@ -65,7 +65,7 @@ const emit = defineEmits<{ submit: [PickedModel]; clear: [] }>();
  * Maintenance, Documentation) each grew a tooltip apologising for it. One control now, on all of them, and the
  * differences that remain here are the ones that are actually about acceptance: the run costs a session PER
  * STORY, which is what the line to its left is for. */
-const fixModel = useAgentRunPick(() => host().models);
+const fixModel = useAgentRunPick(() => host().models, `acceptance-run`);
 
 const storyCount = (howMany: number): string => `${howMany} ${howMany === 1 ? `story` : `stories`}`;
 
