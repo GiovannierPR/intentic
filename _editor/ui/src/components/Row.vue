@@ -136,6 +136,29 @@ const {
      * fact about the click, not about the block, so it cannot go stale when a caller's title stops being a
      * link — which is the exact drift the block-wide version was built to survive and did not. */
     headlineGuard?: boolean;
+    /* HANGS `#below` OFF THE ROW'S NAME, on a spine under the row's own mark.
+     *
+     * `#below` is full-width by this component's contract, so a sub-block drawn at the row's edge starts to the
+     * LEFT of the title it belongs to and reads as the GROUP's content rather than this row's. That is the same
+     * observation <DisclosureRow> makes about its rail, and the same one <PlanLimitsPanel> arrived at
+     * independently: it had a bordered card per provider, threw it away for exactly the reasons a fill under a
+     * row is wrong ("the panel is already one bordered surface, so a card per provider is a second frame inside
+     * it", and its tint was invisible in the light scheme), and replaced it with a mark, a spine under the mark,
+     * and the content one step in. Whitespace and a left edge cost no ink and work in both schemes.
+     *
+     * THE SPINE GOES UNDER THE MARK, NOT DOWN THE TEXT COLUMN, and that is the whole of getting it right. Drawn
+     * at the text's left edge it aligns to nothing — measured against a compact row it lands 13px short of the
+     * title, and a rail plus its own indent overshoots by 11px and eats 37px of width, which at 390px is enough
+     * to break a verdict away from its unit. Under the mark, the content lands exactly on the title.
+     *
+     * THE WIDTH IS DERIVED, never typed: the lead cluster is drawn a second time and hidden, which is
+     * <DisclosureRow>'s device and for its reason — a number here is `pl-8` in one file and `pl-9` in two more,
+     * each of them stale the first time an icon changes size.
+     *
+     * NOT FOR EVERY `#below`. A sentence continuing the description, or a grid that wants the full width, is not
+     * a sub-block and gains nothing from a spine. This is for `#below` that is a BLOCK BELONGING TO THIS ROW: a
+     * sub-setting with its own title, a reading, a report. */
+    spine?: boolean;
 }>();
 
 const emit = defineEmits<{ headerClick: [event: MouseEvent] }>();
@@ -275,7 +298,22 @@ const picked = as === `button`;
             </div>
         </div>
         <div v-if="$slots[`below`]" class="mt-3">
-            <slot name="below" />
+            <!-- THE SPINE. See `spine` above. The first column is the lead cluster drawn again and hidden, so it
+                 measures whatever the mark and the icon actually measure at this tier; the rule is absolutely
+                 positioned inside it so it centres on that column and runs the block's full height without
+                 adding to it. `aria-hidden` on both: the mirror is a duplicate of content already read out, and
+                 a rule is not content. -->
+            <div v-if="spine" class="flex" :class="TIERS[tier].gap">
+                <div class="relative flex shrink-0 justify-center">
+                    <span class="invisible flex items-center" :class="TIERS[tier].gap" aria-hidden="true">
+                        <slot name="lead" :mark="TIERS[tier].mark" />
+                        <Icon v-if="icon !== undefined" :name="icon" :class="TIERS[tier].icon" />
+                    </span>
+                    <span class="absolute inset-y-0 w-px bg-line-strong" aria-hidden="true" />
+                </div>
+                <div class="min-w-0 flex-1"><slot name="below" /></div>
+            </div>
+            <slot v-else name="below" />
         </div>
     </component>
 </template>

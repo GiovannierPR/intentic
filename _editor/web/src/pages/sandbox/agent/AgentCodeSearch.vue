@@ -48,7 +48,9 @@ const searchReadings = computed<PanelReading[]>(() => {
 
         <!-- iq code search: loads the iq plugin (skill + nudge) so the assistant reaches for the iq CLI instead
              of grep/find/glob. Opt-in per sandbox; the browser Search box uses iq regardless. -->
-        <Row icon="search" title="iq code search" description="Use iq search CLI instead of grep/find/glob.">
+        <!-- `spine`: the measurement block hangs off this row's name rather than starting at the group's edge.
+             See <Row>'s own note for why the rule sits under the mark and not down the text column. -->
+        <Row spine icon="search" title="iq code search" description="Use iq search CLI instead of grep/find/glob.">
             <template #control>
                 <ToggleSwitch
                     :model-value="settings?.iqSearch ?? false"

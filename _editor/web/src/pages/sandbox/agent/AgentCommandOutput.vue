@@ -144,6 +144,7 @@ const savedTokens = computed(() => savedByCleaner(savings.value?.input));
     <RowGroup label="Command output">
         <template #info><CommandOutputInfo /></template>
         <Row
+            spine
             icon="bolt"
             title="Clean command output"
             description="Trim noisy shell output before it reaches the assistant."
@@ -213,7 +214,7 @@ const savedTokens = computed(() => savedByCleaner(savings.value?.input));
              description, so the one state a reader most needs to recognise was the one drawn least like the
              others. Before that it wasn't rendered at all, and a page of switches promising savings showed
              nothing whatever about them. -->
-        <Row icon="wave-pulse" title="Output savings">
+        <Row spine icon="wave-pulse" title="Output savings">
             <template #below>
                 <div class="flex flex-col gap-3">
                     <Verdict

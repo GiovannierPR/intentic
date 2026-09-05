@@ -239,7 +239,13 @@ const eagernessOptions = [
              default exists but which model a click is about to bill, and, the day that one is spent, which
              one catches it. A trigger 14rem wide can say one of those; the full-width area under the row can
              say all of them, numbered, in the order they will actually be tried. -->
-        <Row icon="sparkles" title="Quick model" description="Fast models for automatic background tasks.">
+        <!-- THE SPINE FOLLOWS THE CONTENT, and on these three rows the content changes: a pinned LIST is a block
+             belonging to this row and hangs off its name; the Auto fallback is one sentence continuing the
+             description, and every other explanatory `#below` in the app is flush. Drawn beside a single line the
+             rule is a 14px stub that reads as a tick mark rather than as a spine, which is worse than no rule at
+             all — so the condition is which of the two this row is currently showing. <Row>'s `spine` says the
+             same thing in general terms. -->
+        <Row :spine="quick.entries.value.length > 0" icon="sparkles" title="Quick model" description="Fast models for automatic background tasks.">
             <template #control>
                 <AddModelButton
                     label="Add a quick model"
@@ -274,7 +280,7 @@ const eagernessOptions = [
         <!-- THE OTHER ONE-SHOT, and the reason it is here rather than on Safety: this page is where a model is
              chosen, without exceptions, or it is not a place anybody learns to look. Directly under the quick
              row because that row is its floor, spelled out below in the same words. -->
-        <Row icon="shield" title="Safety judge" description="Which model reads your safety policy.">
+        <Row :spine="judge.entries.value.length > 0" icon="shield" title="Safety judge" description="Which model reads your safety policy.">
             <template #control>
                 <AddModelButton
                     label="Add a model for the safety judge"
@@ -332,7 +338,7 @@ const eagernessOptions = [
              them, but BELOW rather than in the description, because the description column is 14rem wide and
              a five-item list read there as six lines of prose beside a one-line dropdown. The same names on
              the full-width row underneath are one line, and read as the list they are. -->
-        <Row icon="bolt" title="Agent runs" description="Model tier for runs started in a worktree.">
+        <Row :spine="runs.entries.value.length > 0" icon="bolt" title="Agent runs" description="Model tier for runs started in a worktree.">
             <template #control>
                 <AddModelButton
                     label="Add a model for agent runs"
@@ -365,7 +371,7 @@ const eagernessOptions = [
              that can override a choice the user made a second ago, and a settings page owes that ordering:
              read down and the reach grows, from jobs nobody picked a model for, to runs somebody started, to
              the conversation in front of you. -->
-        <Row icon="credit-card" title="Automatic tier" description="Run simple turns on a cheaper model from the same provider.">
+        <Row spine icon="credit-card" title="Automatic tier" description="Run simple turns on a cheaper model from the same provider.">
             <template #control>
                 <SegmentedControl
                     :model-value="settings?.autoTier ?? `shadow`"

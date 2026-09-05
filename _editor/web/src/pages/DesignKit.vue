@@ -415,6 +415,20 @@ const pickedTier = ref(`collaborator`);
                     <RowGroup label="Loading">
                         <SkeletonRows :rows="4" description control />
                     </RowGroup>
+                    <!-- `#below` IS FULL-WIDTH, WHICH IS WRONG FOR A SUB-BLOCK. `spine` hangs it off the row's
+                         name instead, on a rule under the row's own mark — the device <PlanLimitsPanel> arrived
+                         at for the same reason, having thrown away a bordered card per provider to get there.
+                         For a `#below` that is a BLOCK; a sentence continuing the description stays flush. -->
+                    <RowGroup label="Below: flush, and on a spine">
+                        <Row icon="sitemap" title="Flush" description="The default: the block starts at the group's edge">
+                            <template #below><p class="text-2xs text-muted">A sentence continuing the description wants this.</p></template>
+                        </Row>
+                        <Row spine icon="credit-card" title="On a spine" description="Hangs off the row's name, under its mark">
+                            <template #below>
+                                <Verdict tone="content" value="10" unit="of 40 turns judged simple" evidence="4 down-routed · 2 vetoed" />
+                            </template>
+                        </Row>
+                    </RowGroup>
                 </div>
 
                 <!-- THE THREE TIERS, SIDE BY SIDE, because side by side is the only place this drift was ever
