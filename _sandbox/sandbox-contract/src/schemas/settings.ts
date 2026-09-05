@@ -262,6 +262,8 @@ export const SkillRemoveSchema = z.object({
 //   workspaceMap     , computes an AREA index of the project a run starts in and prepends it to the
 //                        conversation's opening message, so the turn does not have to buy its own orientation
 //                        with a directory listing. Generated from the filesystem every time, never stored.
+//   workspaceMapHoldout, conversation-level measurement control for workspaceMap (UsageTurn.mapArm), judged on
+//                        the directory listings the opening turn ran rather than on its searches.
 //   sidecars         , the background pass converging a markdown shadow of every binary workspace file
 //                        (docx/pdf/images/audio → .intentic/local/cache/derived/) the moment it lands, via
 //                        the baked fileq CLI, so reasoning-time reads are pre-derived. The CLI itself is
@@ -387,6 +389,21 @@ export const SandboxSettingsSchema = z.object({
         .default(false)
         .describe(
             "Open every conversation with a map of the project it starts in: what is in it, what each part is for, and where the agent is standing. Worked out fresh each time rather than written down anywhere, because a written layout is wrong within a fortnight. Off by default, since it spends tokens on the first message of every conversation.",
+        ),
+    /* Measurement control for the map, at CONVERSATION level for the plainest of reasons: the note is sent on
+     * the opening message, so every later turn of a mapped conversation has a map in its transcript and a
+     * per-turn flip would call eleven treated turns controls.
+     *
+     * Judged on `UsageTurn.openingListings` and read on each conversation's opening turn (usage/turn-experiments.ts),
+     * because that is the turn the note was sent to and averaging it across a long conversation divides the
+     * effect by the conversation's length. 0 ⇒ no measurement and every conversation receives the map. */
+    workspaceMapHoldout: z
+        .number()
+        .min(0)
+        .max(1)
+        .default(0)
+        .describe(
+            "What share of conversations to open without the map, so the two can be compared. Whole conversations rather than individual turns, because the map is sent once and stays in the conversation's history afterwards.",
         ),
     /* THE MARKDOWN SHADOWS OF BINARY FILES, the eager half of fileq (_sandbox/fileq). The lazy half — the
      * `fileq` CLI an agent runs mid-task — is always on PATH and gated only by its skill; this switch is
@@ -836,10 +853,15 @@ export const SavingsArmSchema = z.object({ turns: z.number(), mean: z.number() }
  * `metric` says what `mean` counts and what `deltaPct` is a delta in, and choosing it is most of the work.
  *   searchCalls    , the search teaching: the searches a turn ran, which the teaching directly changes.
  *   openingSearches, the same, narrower: the searches before the turn first touched a file.
- * Search mechanisms must not be judged on COST. Cost is a whole turn's work, a search mechanism moves one part
- * of it, and the part sits inside the noise of the rest. */
+ *   openingListings   , the project map: the directory listings a turn ran to work out where it was, which is
+ *                      what the map hands over and what its note tells the turn not to go and fetch.
+ *   callsBeforeTarget, the map again, on value rather than compliance: how far the turn walked before
+ *                      touching a file it went on to edit.
+ * Neither mechanism may be judged on COST. Cost is a whole turn's work, both of these move one part of it, and
+ * the part sits inside the noise of the rest. The map's whole payload is about 200 tokens, so a cost reading
+ * would be measuring a quantity two orders of magnitude under its own error bar. */
 export const TurnMetricReadingSchema = z.object({
-    metric: z.enum(["searchCalls", "openingSearches"]),
+    metric: z.enum(["searchCalls", "openingSearches", "openingListings", "callsBeforeTarget"]),
     on: SavingsArmSchema,
     off: SavingsArmSchema,
     /* HOW MUCH LONGER, when the margin spans zero and the honest answer is "keep collecting": the additional
@@ -896,9 +918,14 @@ export const TurnExperimentSchema = z.object({
     // counts toward the daemon's real threshold instead of a number the browser guessed. Shared by every
     // reading: they are the same turns counted differently, so they clear it together.
     minTurns: z.number(),
-    // The randomized unit behind the arm counts. Turn mechanisms default to turns; teaching loaded into a
-    // provider session randomizes and analyzes whole conversations so repeated turns are not false replicas.
-    sampleUnit: z.enum(["turns", "conversations"]).optional(),
+    /* The randomized unit behind the arm counts. Turn mechanisms default to turns. Teaching loaded into a
+     * provider session randomizes and analyzes whole conversations, so repeated turns are not false replicas.
+     *
+     * "opening turns" is the third case and belongs to a treatment sent ONCE: the project map rides the first
+     * message and nothing after it, so the sample is one turn per conversation rather than an average over
+     * the conversation's turns. The distinction is not cosmetic. Averaging a first-turn treatment across a
+     * twelve-turn conversation divides its effect by twelve and reports the remainder as noise. */
+    sampleUnit: z.enum(["turns", "conversations", "opening turns"]).optional(),
     // Content-addressed treatment version. Present where mixing rows from two instruction revisions would turn
     // one experiment into two unnamed ones; the reader filters to this (latest) cohort.
     cohort: z.string().optional(),
@@ -942,6 +969,10 @@ export type TierReport = z.infer<typeof TierReportSchema>;
 export const SavingsReportSchema = z.object({
     input: InputSavingsSchema,
     search: TurnExperimentSchema.optional(),
+    /* The project map's arms, read on opening turns (see TurnExperimentSchema.sampleUnit). Absent under the
+     * same rule as `search`: the switch is off, or no holdout is set, and a section that is not there reads as
+     * "not measured", which is the truth, where zeros would read as "measured, worth nothing". */
+    map: TurnExperimentSchema.optional(),
     // Automatic tier selection's readout, see TierReportSchema. Absent ⇒ nothing was judged in the window.
     tier: TierReportSchema.optional(),
 });

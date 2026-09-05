@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { TurnExperiment } from "@intentic/sandbox-contract";
 import { Row, RowGroup } from "@intentic/ui";
 import ToggleSwitch from "primevue/toggleswitch";
 import { computed } from "vue";
@@ -29,8 +30,7 @@ const iqSearchHoldoutPercent = computed<number>(() => asPercent(settings.value?.
  * Through `verdictsOf` rather than mapping every metric as a peer: this experiment reports TWO readings of one
  * subject (searches per turn, and searches before the first file), and drawn at equal weight they read as two
  * findings. <MeasurementPanel> gives the first the headline and the second a line under it. */
-const searchReadings = computed<PanelReading[]>(() => {
-    const experiment = savings.value?.search;
+const readingsOf = (experiment: TurnExperiment | undefined): PanelReading[] => {
     if (experiment === undefined) {
         return [];
     }
@@ -39,7 +39,14 @@ const searchReadings = computed<PanelReading[]>(() => {
         const reading = experiment.metrics[index];
         return reading === undefined ? [] : [{ verdict, on: reading.on.turns, off: reading.off.turns }];
     });
-});
+};
+
+const searchReadings = computed<PanelReading[]>(() => readingsOf(savings.value?.search));
+
+/* The map's holdout flips whole conversations for the same reason the teaching's does, and is READ on their
+ * opening turns, which is the turn the note was sent to. Same two arms, same shape, one function. */
+const mapHoldoutPercent = computed<number>(() => asPercent(settings.value?.workspaceMapHoldout));
+const mapReadings = computed<PanelReading[]>(() => readingsOf(savings.value?.map));
 </script>
 
 <template>
@@ -79,11 +86,8 @@ const searchReadings = computed<PanelReading[]>(() => {
              itself and, left to itself, buys with a folder listing. Read off disk each time a conversation
              opens rather than written down anywhere, which is the whole reason it is a switch here and not a
              paragraph somebody maintains by hand. -->
-        <Row
-            icon="sitemap"
-            title="Project map"
-            description="Provide project structure overview to new conversations."
-        >
+        <!-- `spine` for the same reason its neighbour has one: the measurement block hangs off this row's name. -->
+        <Row spine icon="sitemap" title="Project map" description="Provide project structure overview to new conversations.">
             <template #control>
                 <ToggleSwitch
                     :model-value="settings?.workspaceMap ?? false"
@@ -91,11 +95,24 @@ const searchReadings = computed<PanelReading[]>(() => {
                     @update:model-value="(value: boolean) => patch({ workspaceMap: value })"
                 />
             </template>
-            <!-- Nothing below the switch. No holdout, unlike its neighbour: what the map removes is the opening
-                 look around, one or two calls on the first message of a conversation: too small a slice of too
-                 few turns for a split to say anything before the layout it describes has changed. And nothing to
-                 say in 11px text either; where the map lands and which project it follows are both facts about
-                 the feature rather than about the click, and the (i) gives them a paragraph each. -->
+            <!-- THIS ROW USED TO SAY A SPLIT COULD NOT ANSWER, and the reasoning was half right: what the map
+                 removes is one or two calls on a conversation's first message, which is too small a slice of a
+                 turn for any cost or search figure to resolve. What that missed is that the map is not a
+                 quantity of searching, it is a CHOICE of one, and a choice shows up in a rate: measured over
+                 468 mapped conversations of this workspace against 497 unmapped ones, searches before the
+                 first file did not move (+7.6% ±17.6pp) while the share that opened by listing a directory
+                 fell from 46.3% to 32.1%. So the arms are read on the opening turn, and on the listings rather
+                 than the searches. The method itself is a paragraph and lives in the (i). -->
+            <template v-if="settings?.workspaceMap === true" #below>
+                <MeasurementPanel
+                    :percent="mapHoldoutPercent"
+                    :readings="mapReadings"
+                    note="Opens this share of conversations without it, as a control."
+                    on-label="mapped"
+                    off-label="unmapped"
+                    @commit="(workspaceMapHoldout: number) => patch({ workspaceMapHoldout })"
+                />
+            </template>
         </Row>
 
         <!-- Document shadows: the background pass keeping every binary file (docx, pdf, images, audio)

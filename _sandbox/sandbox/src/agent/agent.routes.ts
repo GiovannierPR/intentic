@@ -51,7 +51,6 @@ import { limitReopensAt } from "./limit-reset.js";
 import { createFrameLedger } from "./agent-verification.js";
 import { createViewFrameLedger } from "./agent-viewing.js";
 import { nudgeUnverifiedWork } from "./verify-nudge.js";
-import { isFileWorkCall, isSearchCall, searchPrecedesFileWork } from "./tool-calls.js";
 import { mentionsSpentAllowance } from "./failure-sentences.js";
 import { conversationOf } from "./agent-requests.js";
 import { registerTurn, SteeringQueue, steerTurn, stopTurn } from "./agent-steering.js";
@@ -73,6 +72,7 @@ import { applyReply, composeSteerText } from "./turn-interactions.js";
 import { withRuntimeHistory } from "./runtime-history.js";
 import { turnRunOf } from "./turn-runs.js";
 import { nameAgentTitle } from "./title-namer.js";
+import { createTurnMetrics } from "./turn-metrics.js";
 import { planTurn } from "./turn-plan.js";
 import { turnTier } from "./turn-tier.js";
 import { sumUsage, type UsageFrame } from "./turn-usage.js";
@@ -1459,16 +1459,14 @@ async function* runTurn(
      * model stopped after 59 tool calls" send a reader to two different places, and this loop is the last thing
      * that knows which one happened. */
     const kinds = new Set<AgentEvent["kind"]>();
-    let toolCalls = 0;
-    /* The turn's search work, the search teaching's metric. The mechanism changes how the turn searches, so
-     * searches are what it has to be scored on, and cost per turn could never see it (UsageTurn.searchCalls says why).
+    /* What the turn did before it did the work: its searches, the ones that came before the first file, its
+     * directory listings, and how far it walked before touching a file it went on to edit. All four are
+     * readings of one walk through the frame stream, so they are one ledger (agent/turn-metrics.ts) rather
+     * than four counters loose in this loop, and it is fed the AGENT's root because the paths are the agent's.
      *
-     * `openingSearches` stops at the first file the turn opens or changes, which is the moment orientation ended
-     * and the work began. Counted here for the same reason as the prose: the frame stream is the only place that
-     * still knows the ORDER things happened in. */
-    let searchCalls = 0;
-    let openingSearches = 0;
-    let reachedTheWork = false;
+     * Cost per turn could never stand in for any of them: cost is a whole turn's work, these mechanisms move
+     * one part of it, and the part sits inside the noise of the rest (UsageTurn.searchCalls says why). */
+    const metrics = createTurnMetrics(effectiveCwd);
     /* DID THIS TURN PROVE ANYTHING, kept as the turn runs so the ledger can say at the end. The same ledger the
      * Stop nudge is built on (agent-verification.ts) and the same feeder a child's verdict comes off
      * (child-verification.ts), fed here from the PARENT turn's frames.
@@ -1513,7 +1511,7 @@ async function* runTurn(
             kinds,
             proseChars,
             filesEdited: verification.edited().length,
-            toolCalls,
+            toolCalls: metrics.calls(),
         });
     const record = (event: Omit<ActivityEvent, "id" | "at" | "provider" | "direction">): void => {
         // Read per event, never captured once: nameAgentTitle runs concurrently with this turn, so turn.started
@@ -1599,27 +1597,9 @@ async function* runTurn(
             // …and what KINDS of frame this turn produced at all, which is how the ending below knows whether
             // anything was ever put in front of the user (silentEnding, and TurnSilence on why it is a set).
             kinds.add(event.kind);
-            if (event.kind === "tool_call") {
-                // Counted for the silent ending's sentence alone (silentEnding). `tool_call` only, on the same
-                // rule the search counters below follow: an update is a later state of a call already counted.
-                toolCalls += 1;
-                // Subagents' calls included, on the same rule as the prose above: a turn that sends an Explore
-                // agent looking still went looking, and the retrieval it was handed is what it would have used.
-                // `tool_call` only, an update is a later state of a call already counted.
-                // A compound Bash call may both search and open a file. Count its search against the state at
-                // call entry, then independently close orientation after it; making these branches exclusive
-                // hid most real file reads (`cat`/`sed`/`head`/`tail`) and inflated openingSearches.
-                const searched = isSearchCall(event);
-                if (searched) {
-                    searchCalls += 1;
-                }
-                if (searched && !reachedTheWork && searchPrecedesFileWork(event)) {
-                    openingSearches += 1;
-                }
-                if (isFileWorkCall(event)) {
-                    reachedTheWork = true;
-                }
-            }
+            // Subagents' calls included, on the same rule as the prose above: a turn that sends an Explore
+            // agent looking still went looking, and the retrieval it was handed is what it would have used.
+            metrics.note(event);
             /* WHAT THIS TURN CHANGED AND WHAT PROVED IT, and the two facts that say whether it ended against
              * the wall. Frames the loop already carries, folded here because nothing downstream of it still
              * knows the ORDER they arrived in, which is the whole of the verification question: `pnpm test`
@@ -1976,14 +1956,18 @@ async function* runTurn(
                 durationMs: usage?.durationMs ?? 0,
                 // How it ended, past what it cost: what the turn changed, what proved it, what it left open.
                 ...ending,
-                ...(billed
-                    ? {
-                          searchCalls,
-                          openingSearches,
-                      }
-                    : {}),
+                ...(billed ? metrics.reading(verification.edited()) : {}),
+                // Which turn of its conversation this was, so a windowed reader can tell an opening turn from a
+                // conversation's earliest turn to fall inside its window (UsageTurn.turnIndex).
+                ...(plan.turnIndex !== undefined ? { turnIndex: plan.turnIndex } : {}),
                 ...(plan.searchArm !== undefined ? { iqSearchArm: plan.searchArm } : {}),
                 ...(plan.searchCohort !== undefined ? { iqSearchCohort: plan.searchCohort } : {}),
+                /* Which arm of the project map experiment this conversation drew, and what the note cost on the
+                 * turn that carried one. The arm rides EVERY turn of the conversation, not only the turn that
+                 * was mapped: the note stays in the transcript once sent, so the conversation is the thing that
+                 * was treated, and the reader takes one opening turn from each (usage/turn-experiments.ts). */
+                ...(plan.mapArm !== undefined ? { mapArm: plan.mapArm } : {}),
+                ...(plan.mapChars !== undefined ? { mapChars: plan.mapChars } : {}),
                 /* What the complexity judge said, and whether anything came of it. Absent together when
                  * the judge did not run (settings.autoTier "off"), which the ledger must be able to tell
                  * apart from a turn that scored zero, see UsageTurn.tierScore.

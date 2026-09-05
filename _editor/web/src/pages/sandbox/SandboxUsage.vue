@@ -154,7 +154,9 @@ const { savings } = useSavings(window);
 const composition = computed(() => (savings.value === undefined ? undefined : compositionOf(savings.value.input)));
 // A section that would only say "nothing yet" is not shown at all: every other panel on this tab is about
 // turns that ran, and an empty savings card on a sandbox that never enabled a cleaner is just furniture.
-const hasSavings = computed(() => (savings.value?.input.commands ?? 0) > 0 || savings.value?.search !== undefined);
+const hasSavings = computed(
+    () => (savings.value?.input.commands ?? 0) > 0 || savings.value?.search !== undefined || savings.value?.map !== undefined,
+);
 // Which calendar these numbers are on, said next to them rather than left to the range picker above: a total
 // under a 7-day filter and the same total over all time are the same digits with different meanings.
 const savingsPeriod = computed(() => (preset.value === `all` ? `all time` : `this range`));

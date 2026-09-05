@@ -146,13 +146,15 @@ const SEARCH_COMMANDS = new Set(["iq", "grep", "rg", "ag", "ack", "find", "fd", 
  * truncating its stdout opened a file. */
 const FILE_WORK_COMMANDS = new Set(["cat", "sed", "head", "tail", "less", "more", "bat", "awk"]);
 
+/* One shell line's statements, split on the separators that start a new command and NEVER on a pipe: `git log
+ * | grep fix` filters a command's own output, which is not the model looking for code, and counting it would
+ * put ordinary shell plumbing in a search figure. */
+const statementsOf = (command: string): string[] => command.split(/&&|\|\||;|\n/);
+
 /* Each statement's leading program, past an env prefix and a path, `cd /work && iq q "…"` runs two and the
- * second is the one that matters, and `/usr/bin/rg` is `rg`.
- *
- * Split on statement separators and NEVER on a pipe: `git log | grep fix` filters a command's own output, which
- * is not the model looking for code, and counting it would put ordinary shell plumbing in a search figure. */
+ * second is the one that matters, and `/usr/bin/rg` is `rg`. */
 const commandHeads = (command: string): string[] =>
-    command.split(/&&|\|\||;|\n/).map((statement) => {
+    statementsOf(command).map((statement) => {
         const head =
             statement
                 .trim()
@@ -176,6 +178,68 @@ export const isSearchCall = (call: { readonly category: ToolKind; readonly targe
         return false;
     }
     return commandHeads(call.target).some((head) => SEARCH_COMMANDS.has(head));
+};
+
+/* THE PROGRAMS THAT LIST A DIRECTORY, as opposed to searching inside one. A subset of SEARCH_COMMANDS, kept
+ * apart because the project map answers exactly these and answers none of the others. */
+const LISTING_COMMANDS = new Set(["ls", "tree"]);
+
+// Native tool names that list a directory, lowercased. `list` is OpenCode's id for what Claude Code calls LS.
+const LISTING_TOOLS = new Set(["ls", "list"]);
+
+/* How far below `root` a listing's target sits, or undefined when it is not a path under the root at all.
+ * `~` is the sandbox's home rather than the workspace, so it is a listing of somewhere else and scores as one. */
+const depthBelow = (raw: string, root: string): number | undefined => {
+    const path = raw.replace(/^["']|["']$/g, "").replace(/\/+$/, "");
+    if (path === "" || path === "." || path === "./") {
+        return 0;
+    }
+    const rel = isAbsolute(path) ? relative(root, path) : path.replace(/^\.\//, "");
+    if (rel === "") {
+        return 0;
+    }
+    return rel === ".." || rel.startsWith("../") ? undefined : rel.split("/").length;
+};
+
+/* A LISTING THE PROJECT MAP CLAIMS TO REPLACE: `ls`, `ls /work`, `tree intentic`, and the LS tool aimed at the
+ * same places. The note the map rides in on tells a turn in so many words not to do this, so this is the
+ * behaviour the map has to be judged on, and the one the ledger could not see: `isSearchCall` counts a listing
+ * and a ripgrep as the same event, on purpose, so a turn that swaps one for the other scores identically.
+ *
+ * SHALLOW IS THE WHOLE RULE. `ls src/components/forms` is a turn looking into a directory it has already
+ * chosen; `ls` and `ls /work/intentic` are a turn working out what the project is. The cut sits one level
+ * below the root because that is where the map's own answer stops (it names areas, not what is inside them),
+ * so a listing this counts is a listing the map could have answered.
+ *
+ * `root` is the tree as the AGENT sees it (an isolated turn's namespace root), because these paths are the
+ * agent's. A glob argument is not a directory listing and is left alone: `ls *.test.ts` is a question about
+ * files, which no map answers. */
+export const isRootListing = (
+    call: { readonly name?: string | undefined; readonly category: ToolKind; readonly target?: string | undefined },
+    root: string,
+): boolean => {
+    const shallow = (path: string): boolean => {
+        const depth = depthBelow(path, root);
+        return depth !== undefined && depth <= 1;
+    };
+    if (call.name !== undefined && LISTING_TOOLS.has(call.name.toLowerCase())) {
+        // The tool's target is its path, and a call that named none listed where it stood.
+        return call.target === undefined || shallow(call.target);
+    }
+    if (call.category !== "execute" || call.target === undefined) {
+        return false;
+    }
+    return statementsOf(call.target).some((statement) => {
+        // Everything past a pipe belongs to the filter, not to the listing: `ls | head -30` lists the same
+        // directory `ls` does, and reading `head` as an argument to it would score it as a deep one.
+        const words = (statement.split("|")[0] ?? "").trim().split(/\s+/);
+        const head = words.find((word) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) ?? "";
+        if (!LISTING_COMMANDS.has(head.split("/").pop() ?? head)) {
+            return false;
+        }
+        const args = words.slice(words.indexOf(head) + 1).filter((word) => word !== "" && !word.startsWith("-"));
+        return args.length === 0 ? true : !args.some((arg) => arg.includes("*")) && args.some(shallow);
+    });
 };
 
 /* DID THIS CALL REACH FILE CONTENT. Search counting and this transition are independent: one compound Bash

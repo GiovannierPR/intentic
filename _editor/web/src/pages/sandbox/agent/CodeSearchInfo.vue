@@ -83,6 +83,20 @@ const SHADOW_COMPARISON = [
                 isn't there any more. Sent once per conversation, and you can read exactly what was sent: it appears above your first message.
             </p>
         </div>
+        <!-- The map's measurement block, and the one thing about it a reader will otherwise get wrong: it is
+             not scored on the same quantity as its neighbour, on purpose, because the same corpus that showed
+             the map working showed searching-per-turn unable to see it. -->
+        <div class="mt-2 flex items-start gap-2 rounded-lg border border-line bg-canvas px-2.5 py-2">
+            <Icon name="wave-pulse" class="mt-0.5 shrink-0 text-2xs text-subtle" />
+            <p class="text-2xs text-muted">
+                <span class="font-medium text-content">Measure it</span> opens a slice of conversations without the map, as a control, and compares
+                what the two groups did on their <span class="text-content">first message</span> — the only message the map is ever sent on. It is
+                scored on the folder listings a conversation opens with rather than on how much it searched, and that is the whole finding behind this
+                control: across a thousand conversations here, the map did not change how many times the assistant looked something up, it changed
+                what it looked up. Conversations that were handed the map opened by listing a folder about a third less often. Both groups need around
+                30 conversations before a figure appears.
+            </p>
+        </div>
 
         <!-- ③ Document shadows, one step before either of the above: the files no text search can see into.
              The two things worth being precise about: it never invents content (a scan or a photo says what

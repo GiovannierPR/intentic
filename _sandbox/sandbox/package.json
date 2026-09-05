@@ -21,7 +21,8 @@
         "e2e:providers": "INTENTIC_E2E_PROVIDERS=1 vitest run --project integration wire.e2e",
         "bench:cleaners": "node bench/cleaner-bench.mjs",
         "bench:agents": "tsx bench/agent-bench.ts",
-        "bench:guidance": "tsx bench/guidance-stats.ts"
+        "bench:guidance": "tsx bench/guidance-stats.ts",
+        "bench:map": "tsx bench/map-stats.ts"
     },
     "dependencies": {
         "@agentclientprotocol/sdk": "catalog:",

@@ -5,6 +5,7 @@ import {
     displayNameOf,
     editDiffContent,
     isFileWorkCall,
+    isRootListing,
     isSearchCall,
     searchPrecedesFileWork,
     toolCategoryOf,
@@ -51,6 +52,35 @@ test("isSearchCall counts the CLI searches the category misses, and leaves shell
     // A tool with no command to read: a browser click is `execute` too.
     expect(isSearchCall({ category: "execute" })).toBe(false);
     expect(isSearchCall({ category: "read", target: "src/index.ts" })).toBe(false);
+});
+
+/* THE LISTING THE PROJECT MAP CLAIMS TO REPLACE, and the line it draws is depth: a listing of the root or of
+ * one directory below it is a turn working out what the project is, and a listing three levels down is a turn
+ * looking into somewhere it has already chosen. The map answers the first and says nothing about the second,
+ * so counting both would report a mechanism against work it never touches. */
+test("isRootListing counts the orientation listings and leaves the ones that are work alone", () => {
+    expect(isRootListing({ category: "execute", target: "ls" }, CWD)).toBe(true);
+    expect(isRootListing({ category: "execute", target: "ls -la" }, CWD)).toBe(true);
+    expect(isRootListing({ category: "execute", target: `ls ${CWD}` }, CWD)).toBe(true);
+    expect(isRootListing({ category: "execute", target: `ls ${CWD}/intentic` }, CWD)).toBe(true);
+    expect(isRootListing({ category: "execute", target: "tree intentic/" }, CWD)).toBe(true);
+    // A filter behind a pipe belongs to the filter, not to the listing.
+    expect(isRootListing({ category: "execute", target: "ls | head -30" }, CWD)).toBe(true);
+    // …and a compound command is read statement by statement, like every other predicate here.
+    expect(isRootListing({ category: "execute", target: `cd ${CWD} && ls docs` }, CWD)).toBe(true);
+
+    expect(isRootListing({ category: "execute", target: `ls ${CWD}/intentic/_sandbox/sandbox/src` }, CWD)).toBe(false);
+    expect(isRootListing({ category: "execute", target: "ls src/agent" }, CWD)).toBe(false);
+    // A glob is a question about files, which no map answers.
+    expect(isRootListing({ category: "execute", target: "ls intentic/*.json" }, CWD)).toBe(false);
+    // Outside the workspace entirely: a listing of somewhere the map never described.
+    expect(isRootListing({ category: "execute", target: "ls /etc" }, CWD)).toBe(false);
+    expect(isRootListing({ category: "execute", target: "rg needle" }, CWD)).toBe(false);
+    // The native listing tool, whose target is a path rather than a command line.
+    expect(isRootListing({ name: "LS", category: "search", target: CWD }, CWD)).toBe(true);
+    expect(isRootListing({ name: "LS", category: "search" }, CWD)).toBe(true);
+    expect(isRootListing({ name: "LS", category: "search", target: `${CWD}/a/b/c` }, CWD)).toBe(false);
+    expect(isRootListing({ name: "Grep", category: "search", target: "needle" }, CWD)).toBe(false);
 });
 
 test("isFileWorkCall recognizes direct shell reads but not output-truncation pipes", () => {

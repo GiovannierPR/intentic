@@ -133,6 +133,68 @@ test("a shelf among real areas stays one line, and opens only when the run is in
     expect(open?.areas.find((area) => area.name === "packages")?.children.find((child) => child.name === "packages/web")?.here).toBe(true);
 });
 
+/* THE RUN STANDING NOWHERE, which measurement turned out to be nearly every run: across 470 mapped
+ * conversations of this workspace not one said "you are here", so the zoom above had never fired in
+ * production, while 97.7% of them opened a file under a single area that got one line. */
+test("at the project root the area holding most of the project is opened up", async () => {
+    const root = await scaffold({
+        ".git/HEAD": "ref: refs/heads/main\n",
+        // A repository with its own manifest, so it is an area rather than a shelf of packages: the case the
+        // packages-only zoom could never have opened.
+        "app/package.json": pkg("app", "The product"),
+        "app/server/a.ts": "",
+        "app/server/b.ts": "",
+        "app/server/c.ts": "",
+        "app/ui/a.tsx": "",
+        "app/ui/b.tsx": "",
+        "notes/one.md": "",
+    });
+
+    const map = workspaceMapOf({ root, cwd: root });
+
+    expect(named(map)).toEqual(["app", "notes"]);
+    expect(map?.areas[0]?.children.map((child) => child.name)).toEqual(["app/server", "app/ui"]);
+    expect(map?.areas[0]?.children[0]).toMatchObject({ files: 3, kinds: ["ts"], here: false });
+    // The area opened up is not the one the run is standing in: nothing is.
+    expect(map?.areas[0]?.here).toBe(false);
+});
+
+/* A MAJORITY, not the largest. Three areas of a third each are a project whose top level IS the answer, and
+ * opening one of them would be picking a favourite out of a tie. */
+test("no area is opened up when none of them dominates", async () => {
+    const root = await scaffold({
+        ".git/HEAD": "ref: refs/heads/main\n",
+        "one/src/a.ts": "",
+        "one/src/b.ts": "",
+        "two/src/a.ts": "",
+        "two/src/b.ts": "",
+        "three/src/a.ts": "",
+        "three/src/b.ts": "",
+    });
+
+    const map = workspaceMapOf({ root, cwd: root });
+
+    expect(named(map)).toEqual(["one", "three", "two"]);
+    expect(map?.areas.every((area) => area.children.length === 0)).toBe(true);
+});
+
+// The budget is a WHOLE-note budget and the shed that enforces it drops whole areas, so an area with forty
+// subdirectories could otherwise take itself out of the note it was opened to describe.
+test("an opened area lists at most a dozen children and counts the rest out loud", async () => {
+    const root = await scaffold({
+        ".git/HEAD": "ref: refs/heads/main\n",
+        "notes/one.md": "",
+        ...Object.fromEntries(Array.from({ length: 20 }, (_, index) => [`app/part-${index}/file.ts`, ""])),
+    });
+
+    const map = workspaceMapOf({ root, cwd: root });
+    const note = workspaceMapNote({ root, cwd: root });
+
+    expect(map?.areas[0]?.children).toHaveLength(12);
+    expect(map?.areas[0]?.childrenOmitted).toBe(8);
+    expect(note).toContain("… and 8 more in app");
+});
+
 test("a purpose is read from whatever manifest the ecosystem uses, and a README when there is none", async () => {
     const root = await scaffold({
         ".git/HEAD": "ref: refs/heads/main\n",

@@ -116,21 +116,28 @@ export const compositionOf = (input: InputSavings): Composition => {
 
 // --- the turn experiments -------------------------------------------------------------------------------------
 
-/* WHAT EACH METRIC IS A QUANTITY OF, said in the reader's words rather than the ledger's. The unit is never
- * decoration: "↓12%" alone does not say twelve percent of what, and the search experiment reports two
+/* WHAT EACH METRIC IS A QUANTITY OF, said in the reader's words rather than the ledger's, in the three lengths
+ * the surfaces need: `unit` under a verdict, `mean` beside an arm's bar, `total` after a realized saving. The
+ * unit is never decoration: "↓12%" alone does not say twelve percent of what, and each experiment reports two
  * readings at once whose whole difference is which of these they count.
  *
  * `searches per turn` and `searches before the first file` are deliberately near-identical phrases. They ARE
  * near-identical quantities, the second is a prefix of the first, and naming them as if they were unrelated
- * would invite a reader to treat two readings of one experiment as two findings. */
-const METRIC_UNITS = {
-    searchCalls: `searches per turn`,
-    openingSearches: `searches before the first file`,
-} satisfies Record<TurnMetricReading["metric"], string>;
+ * would invite a reader to treat two readings of one experiment as two findings.
+ *
+ * The map's two are not near-identical and must not be phrased as if they were: one counts what the note stops
+ * a turn doing, the other counts whether the turn got where it was going sooner. A reader who conflates them
+ * would read compliance as value. */
+const METRICS = {
+    searchCalls: { unit: `searches per turn`, mean: `searches/turn`, total: `searches` },
+    openingSearches: { unit: `searches before the first file`, mean: `searches/turn`, total: `searches` },
+    openingListings: { unit: `directory listings opening a conversation`, mean: `listings/turn`, total: `listings` },
+    callsBeforeTarget: { unit: `calls before the file it edits`, mean: `calls`, total: `calls` },
+} satisfies Record<TurnMetricReading["metric"], { unit: string; mean: string; total: string }>;
 
-export const meanLabel = (_reading: TurnMetricReading, value: number): string => `${value} searches/turn`;
+export const meanLabel = (reading: TurnMetricReading, value: number): string => `${value} ${METRICS[reading.metric].mean}`;
 
-const savedLabel = (reading: TurnMetricReading): string => `${Math.round(reading.saved ?? 0)} searches`;
+const savedLabel = (reading: TurnMetricReading): string => `${Math.round(reading.saved ?? 0)} ${METRICS[reading.metric].total}`;
 
 /* Both A/B cards' HEADLINE, from one function, because the two experiments differ in nothing a reader cares
  * about: each states a verdict, what the verdict is a verdict about, and the one line the figure is worthless
@@ -157,7 +164,7 @@ export const readingVerdict = (
     minTurns: number,
     sampleUnit: NonNullable<TurnExperiment["sampleUnit"]> = `turns`,
 ): ExperimentVerdict => {
-    const unit = METRIC_UNITS[reading.metric];
+    const unit = METRICS[reading.metric].unit;
 
     // The margin arrives as soon as both arms clear minTurns; the delta waits for the margin to exclude zero.
     // Two states, two shortfalls, and neither is allowed to borrow the other's headline.

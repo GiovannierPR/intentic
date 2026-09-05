@@ -119,6 +119,65 @@ export const UsageTurnSchema = z.object({
      *
      * Absent ⇒ as for `searchCalls`. */
     openingSearches: z.number().optional(),
+    /* THE LISTINGS THIS TURN RAN TO WORK OUT WHERE IT WAS, `ls`, `ls /work`, `tree intentic`, the LS tool
+     * aimed at the same places (isRootListing owns the rule). What the project map is judged on, and the
+     * reason it could not be judged before.
+     *
+     * `searchCalls` counts a directory listing and a ripgrep as one event, deliberately, so that a taxonomy
+     * cannot report whichever spelling of a search the model happened to reach for. That is right for the
+     * search teaching and blind to the map: measured over 468 mapped sessions of this workspace against 497
+     * unmapped ones, searches before the first file moved +7.6% with a margin of ±17.6pp, while the share of
+     * sessions opening with a directory listing fell from 46.3% to 32.1%. The map does not shorten the
+     * orientation burst, it changes what the burst is made of, and only this counts the difference.
+     *
+     * UP TO THE FIRST FILE, exactly like `openingSearches`, which took the corpus to settle. Counted over the
+     * whole turn instead, the same sessions give 66.4% against 73.3%, a gap of 6.9pp where the orientation
+     * window gives 14.2pp. The dilution is not noise: a turn already at work lists the directory it has
+     * narrowed to, and no map could have answered that. The shape of the listing cannot tell the two apart,
+     * because it is the same shape; only when it happened can.
+     *
+     * Absent ⇒ the turn predates this being measured, never a turn that listed nothing. */
+    openingListings: z.number().optional(),
+    /* TOOL CALLS BEFORE THE TURN FIRST TOUCHED A FILE IT WENT ON TO EDIT: how far it walked before reaching
+     * the thing it turned out to be looking for. The corpus study this map was designed from measured the
+     * same quantity by hand (the workspace's docs/agent-exploration-patterns.md §4: median 4, mean 8.2) and called it the one
+     * honest reading of whether orientation got better.
+     *
+     * IT CAN ONLY BE KNOWN AT THE END, which is why it is recorded here and computed nowhere else: whether a
+     * file was the target is a fact about the turn's edits, and the turn has to finish before that is
+     * decided. The route keeps the first call index per path and intersects it with the edit ledger.
+     *
+     * Absent on a turn that edited nothing, which is most short turns, and NOT zero: a turn with no target
+     * never reached one, and averaging that in as "reached it immediately" would report the turns that did
+     * no work as the best targeted. That absence costs the reading three quarters of the population, so it
+     * is a metric to accumulate for months rather than a gate to wait on. */
+    callsBeforeTarget: z.number().optional(),
+    /* WHICH ARM OF THE PROJECT MAP EXPERIMENT this conversation ran (settings.workspaceMapHoldout), and how
+     * many characters the note actually cost when it was sent.
+     *
+     * CONVERSATION-STABLE, and for a plainer reason than the search teaching's: the map is sent once, on the
+     * opening message, so every later turn of a mapped conversation is a turn whose transcript holds a map.
+     * A per-turn flip would label eleven treated turns as controls.
+     *
+     * `mapChars` rather than a token estimate, because characters are what the renderer's budget is in
+     * (workspace-map.ts caps the note at 2,800) and a tokenizer's answer would vary by model. Present only on
+     * the turn that actually sent one, so the ledger says what the feature costs instead of assuming it: the
+     * median note over this workspace's own corpus is 795 characters against a ceiling of 2,800.
+     *
+     * Absent ⇒ no measurement (the holdout is zero, or the row predates it); true/false ⇒ mapped/unmapped. */
+    mapArm: z.boolean().optional(),
+    mapChars: z.number().optional(),
+    /* WHICH TURN OF ITS CONVERSATION THIS WAS, counting from zero, so an opening turn can be recognised from
+     * one row instead of inferred from the rows around it.
+     *
+     * The inference it replaces is wrong at exactly one place and it is the place that matters: a reader
+     * windowed to the last seven days would take each conversation's earliest row IN THE WINDOW as its
+     * opening turn, so every conversation that started the week before would contribute a mid-conversation
+     * turn to a reading about first turns. The project map is sent on turn zero and nowhere else, so that
+     * misreading is not an edge case for it, it is the measurement.
+     *
+     * Absent ⇒ the row predates this, or the turn belonged to no conversation at all. */
+    turnIndex: z.number().optional(),
     /* DID THIS TURN FINISH, OR DID IT STOP TALKING. The fields that tell the two apart, and the reason
      * `outcome` alone could never.
      *

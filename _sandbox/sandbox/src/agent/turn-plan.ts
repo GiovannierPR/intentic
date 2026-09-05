@@ -122,6 +122,15 @@ export type TurnPlan =
           // has entered a provider session, a later control turn in that session is already contaminated.
           readonly searchArm?: boolean;
           readonly searchCohort?: string;
+          // Which turn of its conversation this is, counting from zero. Carried so the ledger can recognise an
+          // opening turn from its own row (UsageTurn.turnIndex).
+          readonly turnIndex?: number;
+          // The project map experiment's arm, conversation-level for a plainer reason: the note is sent on the
+          // opening message and stays in the transcript, so the conversation is what was treated.
+          readonly mapArm?: boolean;
+          // What the map note cost this turn, in characters, present only on the turn that actually sent one.
+          // Read off the composed request rather than predicted, so the ledger records the note as sent.
+          readonly mapChars?: number;
           readonly request: AgentRequest;
       };
 
@@ -201,12 +210,53 @@ const judgeFor =
     (program, facts, signal) =>
         judgeCommand(services, { policy, program, facts, models }, signal);
 
-export const conversationExperimentArm = (conversationId: string | undefined, holdout: number): boolean => {
+/* WHICH ARM A CONVERSATION IS IN, decided from its id so every turn of it lands the same way without anything
+ * being stored.
+ *
+ * `experiment` IS THE SALT, and it is the whole reason this takes three arguments. The hash was written with
+ * one experiment in mind and the name baked into it; a second caller passing the same conversation id would
+ * have drawn the same bucket, so a conversation running the search teaching would have been in the map's
+ * treated arm too, always, and the two treatments would have been perfectly confounded with no test able to
+ * see it. Salting by experiment makes the draws independent, which is the only property that lets two of these
+ * run at once. */
+export const conversationExperimentArm = (experiment: string, conversationId: string | undefined, holdout: number): boolean => {
     if (conversationId === undefined) {
         return Math.random() >= holdout;
     }
-    const bucket = createHash("sha256").update(`iq-search:${conversationId}`).digest().readUInt32BE(0) / 0x1_0000_0000;
+    const bucket = createHash("sha256").update(`${experiment}:${conversationId}`).digest().readUInt32BE(0) / 0x1_0000_0000;
     return bucket >= holdout;
+};
+
+/* Whether a mechanism is measuring at all, and on which side of it this conversation falls. Undefined ⇒ not
+ * measuring, which every reader downstream treats as "no experiment" rather than as a control turn: the
+ * mechanism's own switch decides what happens then. One function for both experiments, because the three
+ * conditions that put a conversation in an arm are the same three each time. */
+const holdoutArm = (experiment: string, on: boolean, holdout: number, conversationId: string | undefined): boolean | undefined =>
+    on && holdout > 0 && conversationId !== undefined ? conversationExperimentArm(experiment, conversationId, holdout) : undefined;
+
+/* THE MEASUREMENT STAMPS A PLAN CARRIES TO THE LEDGER: which arm each experiment drew for this conversation,
+ * and what the map note cost on the turn that sent one.
+ *
+ * Every field is omitted rather than defaulted, because absent is the one value the experiment readers already
+ * treat as "not measured" and a zero would be a turn that measured nothing.
+ *
+ * The map's size is read off the NOTES THAT WERE COMPOSED rather than from the decision to compose one. The
+ * two differ on every project the map declines to describe (fewer than two areas, an unreadable tree), and a
+ * ledger recording the intention would price a note that was never sent. */
+const experimentStamps = (
+    turnIndex: number | undefined,
+    search: { readonly arm: boolean | undefined; readonly cohort: string | undefined },
+    map: { readonly arm: boolean | undefined; readonly notes: readonly TurnNote[] | undefined },
+): { turnIndex?: number; searchArm?: boolean; searchCohort?: string; mapArm?: boolean; mapChars?: number } => {
+    const chars = map.notes?.find((note) => note.title === WORKSPACE_MAP_NOTE_TITLE)?.text.length;
+    return {
+        ...(turnIndex !== undefined ? { turnIndex } : {}),
+        ...(search.arm !== undefined
+            ? { searchArm: search.arm, ...(search.cohort !== undefined ? { searchCohort: search.cohort } : {}) }
+            : {}),
+        ...(map.arm !== undefined ? { mapArm: map.arm } : {}),
+        ...(chars !== undefined ? { mapChars: chars } : {}),
+    };
 };
 
 /* A RULE'S COMMAND RUNS WHERE THE TURN DID, and for an isolated turn that means inside its namespace.
@@ -351,10 +401,9 @@ export const planTurn = async (services: Services, input: AgentTurn, context: Tu
      * conversation's opening turn, the iq teaching's rule — the provider session carries it thereafter. */
     const spawnNoteText =
         maySpawn && capabilities.runtime !== "claude-code" && capabilities.runtime !== "cursor" && conversationTurns === 0 ? spawnNote() : undefined;
-    const searchArm =
-        settings.iqSearch && settings.iqSearchHoldout > 0 && input.conversationId !== undefined
-            ? conversationExperimentArm(input.conversationId, settings.iqSearchHoldout)
-            : undefined;
+    // "iq-search" is the salt this experiment has always drawn on, kept verbatim so conversations already
+    // running keep the arm they were assigned rather than being re-randomized mid-experiment.
+    const searchArm = holdoutArm("iq-search", settings.iqSearch, settings.iqSearchHoldout, input.conversationId);
     const iqSearchEnabled = searchArm ?? settings.iqSearch;
     // Claude Code loads the source as a plugin. Runtimes without that seam receive the same source text once,
     // on the conversation's opening request; their provider session carries it through later turns.
@@ -400,8 +449,15 @@ export const planTurn = async (services: Services, input: AgentTurn, context: Tu
      * one searches for the WORDS of the message, and an automation's brief is scaffolding that searches badly.
      * This one answers a question that does not depend on the words at all, what is this project and where am I
      * standing in it, and an unattended wake is precisely the run with nobody around to answer it. A schedule
-     * mints a fresh conversation on every fire, so this is its only turn. */
-    const workspaceMapEligible = settings.workspaceMap && input.forkOf === undefined && conversationTurns === 0;
+     * mints a fresh conversation on every fire, so this is its only turn.
+     *
+     * AND THE CONTROL GROUP, when the owner has asked for one. The arm is drawn per conversation and stamped on
+     * every turn of it, not only the turn that carries the note: the map stays in the transcript once sent, so a
+     * conversation is mapped or unmapped as a whole, and the reader takes one opening turn from each
+     * (usage/turn-experiments.ts). A fork's opening turn is ineligible in both arms, so a forked conversation
+     * contributes an unmapped sample to whichever arm it drew, which is noise both arms pay equally. */
+    const mapArm = holdoutArm("workspace-map", settings.workspaceMap, settings.workspaceMapHoldout, input.conversationId);
+    const workspaceMapEligible = (mapArm ?? settings.workspaceMap) && input.forkOf === undefined && conversationTurns === 0;
     /* WHO GETS TOLD THAT THE CHECKS AT THE END OF A TURN RUN THEMSELVES: the opening message, and the turn after
      * a compaction. Not every turn, which is what this used to be.
      *
@@ -469,7 +525,11 @@ export const planTurn = async (services: Services, input: AgentTurn, context: Tu
     }
     return {
         ...plan,
-        ...(searchArm !== undefined ? { searchArm, ...(teaching !== undefined ? { searchCohort: teaching.cohort } : {}) } : {}),
+        ...experimentStamps(
+            input.conversationId === undefined ? undefined : conversationTurns,
+            { arm: searchArm, cohort: teaching?.cohort },
+            { arm: mapArm, notes: planned.base.notes },
+        ),
     };
 };
 

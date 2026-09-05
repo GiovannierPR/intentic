@@ -160,6 +160,36 @@ describe(`meanLabel`, () => {
         expect(meanLabel(reading(), 3.2)).toBe(`3.2 searches/turn`);
         expect(meanLabel(reading({ metric: `openingSearches` }), 1.5)).toBe(`1.5 searches/turn`);
     });
+
+    /* The map's arms are not searches and must not be drawn as if they were: it is judged on the listings a
+     * conversation opens with, and on how far it walked before the file it edited. */
+    it(`prints the map's own quantities`, () => {
+        expect(meanLabel(reading({ metric: `openingListings` }), 0.3)).toBe(`0.3 listings/turn`);
+        expect(meanLabel(reading({ metric: `callsBeforeTarget` }), 4)).toBe(`4 calls`);
+    });
+});
+
+describe(`the map's verdicts`, () => {
+    it(`names the quantity each of its two readings counts`, () => {
+        const verdicts = verdictsOf(
+            experiment([reading({ metric: `openingListings`, deltaPct: -31, marginPct: 9 }), reading({ metric: `callsBeforeTarget` })], {
+                sampleUnit: `opening turns`,
+            }),
+        );
+        expect(verdicts.headline).toMatchObject({ value: `↓31%`, unit: `directory listings opening a conversation`, tone: `success` });
+        expect(verdicts.also[0]?.unit).toBe(`calls before the file it edits`);
+    });
+
+    // The shortfall sentence counts in the unit the arms were randomized in, so an experiment read on opening
+    // turns says so rather than borrowing the word "turns" from a mechanism sampled differently.
+    it(`counts what it still needs in opening turns`, () => {
+        const verdict = verdictsOf(
+            experiment([reading({ metric: `openingListings`, on: { turns: 12, mean: 0.3 }, off: { turns: 8, mean: 0.5 } })], {
+                sampleUnit: `opening turns`,
+            }),
+        ).headline;
+        expect(verdict.detail).toBe(`needs 30 opening turns per arm, 22 more on the shorter one`);
+    });
 });
 
 describe(`savedByCleaner`, () => {

@@ -303,13 +303,26 @@ test("a compaction three turns back does not earn the note on every turn since",
     expect(wire(plan)).not.toContain(TURN_ENDING_NOTE_HEADER);
 });
 
-test("iq search holdout assigns one balanced arm deterministically per conversation", () => {
+test("a holdout assigns one balanced arm deterministically per conversation", () => {
     for (let index = 0; index < 20; index += 1) {
         const id = `conversation-${index}`;
-        expect(conversationExperimentArm(id, 0.5)).toBe(conversationExperimentArm(id, 0.5));
+        expect(conversationExperimentArm("iq-search", id, 0.5)).toBe(conversationExperimentArm("iq-search", id, 0.5));
     }
-    const arms = new Set(Array.from({ length: 100 }, (_, index) => conversationExperimentArm(`conversation-${index}`, 0.5)));
+    const arms = new Set(Array.from({ length: 100 }, (_, index) => conversationExperimentArm("iq-search", `conversation-${index}`, 0.5)));
     expect(arms).toEqual(new Set([true, false]));
+});
+
+/* THE PROPERTY TWO EXPERIMENTS RUNNING AT ONCE DEPEND ON. With the experiment's name baked into the hash rather
+ * than passed in, both would have drawn the same bucket for a conversation, so every conversation taught to
+ * search would also have been mapped, and no reading of either could have separated them. */
+test("two experiments draw independent arms for the same conversation", () => {
+    const together = Array.from({ length: 200 }, (_, index) => {
+        const id = `conversation-${index}`;
+        return conversationExperimentArm("iq-search", id, 0.5) === conversationExperimentArm("workspace-map", id, 0.5);
+    }).filter(Boolean).length;
+    // Independent draws agree about half the time. Perfect agreement is the bug this guards.
+    expect(together).toBeGreaterThan(60);
+    expect(together).toBeLessThan(140);
 });
 
 test("the account the credential resolver answered with becomes the turn's attribution key", async () => {

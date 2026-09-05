@@ -55,6 +55,15 @@ const MAX_AREA_ENTRIES = 4_000;
 const MAX_AREAS = 24;
 // How many child directories with manifests make a directory a CONTAINER of areas rather than an area itself.
 const CONTAINER_MIN_CHILDREN = 3;
+/* What share of a project's files one area has to hold before its own name stops being an answer, and the map
+ * opens it up for a run that is standing nowhere in particular. A majority: below that the top level is the
+ * map, and picking the largest of several peers would be picking a favourite. */
+const DOMINANT_SHARE = 0.5;
+/* How many children one opened-up area may list. The ceiling exists because the note's budget is a whole-note
+ * budget: an area with forty subdirectories would push the render past it, and the shed that follows drops
+ * WHOLE areas, which could take out the very area being opened. Twelve is what this workspace's dominant area
+ * happens to hold, and past that the extras are counted out loud rather than dropped. */
+const MAX_EXPANDED = 12;
 
 // Manifests that can name a directory's purpose, in the order they are believed. A directory carrying more than
 // one (a Python package with a package.json for its tooling) is described by the first that actually says
@@ -75,14 +84,17 @@ export interface MapArea {
      * whether the area is a shelf at all, and always said, so a reader can tell that `packages/` has a level
      * below it even on the runs where that level is not worth spending lines on. */
     readonly packages: number;
-    /* Those packages, listed, filled ONLY for the area the run is standing in.
+    /* What is inside this area, filled for AT MOST ONE area of the map: the one the run is standing in, or,
+     * for a run standing nowhere, the one holding most of the project (see `dominant` below).
      *
-     * The second half of "zoom to the starting position", and it exists because the first draft of this got it
-     * wrong in a way worth recording: descending into every container flattened this workspace's 9 areas into 87
-     * packages, of which the budget could show 24. The reader lost the level that mattered (which of the nine)
-     * to gain a level they had not asked for (which of the eighty-seven), and 63 areas vanished into a footnote.
-     * Expanding one container costs a few lines and answers both. */
+     * One, because the first draft of this got it wrong in a way worth recording: descending into every
+     * container flattened this workspace's 9 areas into 87 packages, of which the budget could show 24. The
+     * reader lost the level that mattered (which of the nine) to gain a level they had not asked for (which of
+     * the eighty-seven), and 63 areas vanished into a footnote. Opening one costs a few lines and answers both. */
     readonly children: readonly MapArea[];
+    // Children this area has and the note does not list. Said out loud (areaBlock), never dropped quietly: a
+    // list that silently stops reads as a complete one, which is the single way this note can mislead.
+    readonly childrenOmitted: number;
 }
 
 export interface WorkspaceMap {
@@ -363,18 +375,43 @@ export const workspaceMapOf = ({ root, cwd }: WorkspaceMapInput): WorkspaceMap |
     // flattening this design already had to be walked back from.
     const asArea = (name: string, dir: string, packages: number, children: readonly MapArea[]): MapArea => {
         const { files, kinds } = measure(dir, root);
-        return { name, files, kinds, purpose: purposeOf(dir), here: isHere(name), packages, children };
+        return { name, files, kinds, purpose: purposeOf(dir), here: isHere(name), packages, children, childrenOmitted: 0 };
     };
-    const measured = found.map(({ name, dir, packages }): MapArea => {
-        /* The shelf's packages are measured only for the shelf the run is inside. Walking every package of every
-         * shelf to print a number nobody will read is what this lazily avoids, on this workspace that is 87
-         * walks against 9, and it is the same restraint the note itself is an argument for. */
-        const children = isHere(name)
-            ? packages
-                  .map((entry) => asArea(`${name}/${entry.name}`, entry.dir, 0, []))
-                  .toSorted((left, right) => right.files - left.files || left.name.localeCompare(right.name))
-            : [];
-        return asArea(name, dir, packages.length, children);
+    /* One area opened up, its children measured and ranked the way the top level is. Lazy on purpose: walking
+     * every package of every shelf to print a number nobody will read is what this avoids, on this workspace
+     * that is 87 walks against 9, and it is the same restraint the note itself is an argument for. */
+    const expand = (parent: string, entries: readonly { readonly name: string; readonly dir: string }[]): Pick<MapArea, "children" | "childrenOmitted"> => {
+        const ranked = entries
+            .map((entry) => asArea(`${parent}/${entry.name}`, entry.dir, packagesIn(entry.dir, root).length, []))
+            .toSorted((left, right) => right.files - left.files || left.name.localeCompare(right.name));
+        return { children: ranked.slice(0, MAX_EXPANDED), childrenOmitted: Math.max(0, ranked.length - MAX_EXPANDED) };
+    };
+    const base = found.map((area) => ({ ...area, measured: asArea(area.name, area.dir, area.packages.length, []) }));
+    /* WHICH AREA GETS OPENED UP, and the second answer is the one measurement added.
+     *
+     * The first is the area the run is standing in, which is the zoom this was designed around: a run three
+     * levels inside `packages/` is asking about that shelf and not about the nine areas above it.
+     *
+     * The second is for the run standing NOWHERE, at the project root, which turned out to be every run.
+     * Across 470 mapped conversations of this workspace not one said "you are here", because an isolated
+     * conversation's worktree is bound over the workspace root and no persona set a start folder, so the whole
+     * zoom was code that had never executed. Meanwhile 97.7% of those conversations opened a file under one
+     * area and 0.7% under the next, and that area got one line describing 3,387 files while four lines went to
+     * places nobody entered. A map whose reader already knows which of the five is not a map, it is a bill.
+     *
+     * A MAJORITY, not merely the largest, because "which area dominates" has to be a fact about the project
+     * rather than a tie-break. Three areas of a third each are a project whose top level IS the answer, and
+     * opening one of them would be picking a favourite. Recursing one level rather than into packages, because
+     * a dominant area is routinely a repository with its own manifest, which is not a shelf of packages at
+     * all: `areaDirsOf` asks the same question of it that was asked of the project, and stops there. */
+    const total = base.reduce((sum, entry) => sum + entry.measured.files, 0);
+    const biggest = base.toSorted((left, right) => right.measured.files - left.measured.files)[0];
+    const dominant = cwdRel === "" && biggest !== undefined && biggest.measured.files >= total * DOMINANT_SHARE ? biggest.name : undefined;
+    const measured = base.map(({ name, dir, packages, measured: area }): MapArea => {
+        if (isHere(name)) {
+            return { ...area, ...expand(name, packages) };
+        }
+        return name === dominant ? { ...area, ...expand(name, areaDirsOf(dir, root)) } : area;
     });
     // Biggest first: with a budget to hold, the areas most of the work is in are the ones worth the characters.
     const ranked = measured.toSorted((left, right) => right.files - left.files || left.name.localeCompare(right.name));
@@ -409,6 +446,9 @@ const areaBlock = (area: MapArea, width: number, silent: ReadonlySet<string>): s
         areaLine(child, width, "      "),
         ...(child.purpose === "" || silent.has(child.name) ? [] : [`      ${" ".repeat(width - 6)}  ${child.purpose}`]),
     ]),
+    // What opening this area left out, at the children's own indent, because an opened area that stops without
+    // saying so reads as an area with exactly this many things in it.
+    ...(area.childrenOmitted > 0 ? [`      … and ${area.childrenOmitted} more in ${area.name}`] : []),
 ];
 
 /* THE NOTE, rendered to fit. Detail is shed in the order it is worth least: the purpose lines of the smallest
