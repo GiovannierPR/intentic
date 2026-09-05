@@ -83,7 +83,7 @@ export interface QuickAsk<T> {
  * stepping over.
  *
  * THE PROVIDER'S OWN PROSE IS CHECKED FIRST, and on the raw reply. Some providers hand a spent allowance or a
- * dead credential to a helper as the reply text rather than as an error (one-shot.ts catches that on the Claude
+ * dead credential to a helper as the reply text rather than as an error (claude/claude-one-shot.ts catches that on the Claude
  * road; the OpenCode road has no equivalent), and that is a lasting condition wearing an answer's clothes: it is
  * re-thrown as an ordinary refusal so the memo picks it up and the chain stops asking a rung that is out. */
 export const readQuickAnswer = <T>(answer: QuickAnswer<T>, reply: string): T => {

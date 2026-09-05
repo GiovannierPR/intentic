@@ -23,8 +23,6 @@
     "_sandbox/sandbox/src/agent/agent-redaction.test.ts": 3,
     "_sandbox/sandbox/src/agent/agent-test-strength.integration.test.ts": 1,
     "_sandbox/sandbox/src/agent/agent.routes.integration.test.ts": 4,
-    "_sandbox/sandbox/src/agent/one-shot-cursor.test.ts": 3,
-    "_sandbox/sandbox/src/agent/one-shot-gemini.test.ts": 1,
     "_sandbox/sandbox/src/agent/quick-answer.test.ts": 1,
     "_sandbox/sandbox/src/agent/quick-model.test.ts": 1,
     "_sandbox/sandbox/src/agent/turn-plan.test.ts": 2,

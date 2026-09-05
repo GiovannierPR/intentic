@@ -131,7 +131,7 @@ export const createHostRouter = (runtime: HostRuntime) => {
         ping: os.ping.handler(() => ({ ok: true })),
         // The one opaque procedure. Its payload is MCP, understood by handleMcpMessage and by the tool it names,
         // not by this contract, and deliberately not by the daemon (see the contract for why).
-        mcp: os.mcp.handler(async ({ input }) => await handleMcpMessage(input, runtime.scopes)),
+        mcp: os.mcp.handler(async ({ input }) => await handleMcpMessage(input, runtime.scopes())),
         // The scopes are read HERE, per call, exactly as the MCP handler reads them, a stream opened before the
         // owner flipped a switch must not outlive the decision.
         runSandboxFlow: os.runSandboxFlow.handler(({ input }) => streamFlow(flowFor(input, runtime.scopes()))),

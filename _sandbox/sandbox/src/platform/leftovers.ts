@@ -74,7 +74,7 @@ export const workloadStamp = (owner: string): Record<string, string> => ({ [WORK
  * live in this life, so the in-life sweep never touches one; what the stamp buys is the OTHER half, since a pool
  * process from a previous daemon is indistinguishable from a live one by any other means and nothing adopts it.
  *
- * `one-shot` is the helper calls (agent/one-shot.ts): toolless, maxTurns 1, and unwilling to wait even fifteen
+ * `one-shot` is the helper calls (claude/claude-one-shot.ts): toolless, maxTurns 1, and unwilling to wait even fifteen
  * seconds on a retry because "the answer is worthless by the time it arrives". Nothing will ever report it live,
  * which is the honest answer, there is no run to ask about, and one still breathing a grace window later has
  * outlived every purpose it had. These are the ones actually caught in the wild: a dozen of them at a time,

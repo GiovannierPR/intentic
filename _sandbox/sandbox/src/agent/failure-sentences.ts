@@ -142,7 +142,7 @@ export const isSelfIdentityAnswer = (text: string): boolean => {
 /* A MODEL THAT REACHED FOR A TOOL IT DOES NOT HAVE and wrote the reach down as prose: the fourth kind of reply
  * that is not data, and the only one that arrives looking like an answer rather than like a failure.
  *
- * Every helper here runs with tools switched off (one-shot.ts, one-shot-gemini.ts), because a one-liner is a
+ * Every helper here runs with tools switched off (every adapter's oneShot), because a one-liner is a
  * rewrite of material already in the prompt and a tool call is a model wandering off. The runtime that carries a
  * Gemini rung does not honour that as an instruction, though: OpenCode PREPENDS its own coding-agent prompt to
  * whatever system text it is handed (measured on the wire: 27,445 characters of it, with our own one-liner

@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual, createHash } from "node:crypto";
-import type { WebchatChallenge, WebchatConfig, WebchatMessage } from "@intentic/sandbox-contract";
+import type { PowChallenge, WebchatConfig, WebchatMessage } from "@intentic/sandbox-contract";
 
 /* The bot ceiling for an ANONYMOUS endpoint, in two flavours, shared by the Front Desk widget and the bug
  * intake because both face the same caller: a browser with no credential on a page we do not control. It lives
@@ -26,7 +26,7 @@ const secret = randomBytes(32);
 const sign = (issuedAt: number, nonce: string, conversationId: string): string =>
     createHmac("sha256", secret).update(`${issuedAt}.${nonce}.${conversationId}`).digest("hex");
 
-export const mintChallenge = (conversationId: string, now: number): WebchatChallenge => {
+export const mintChallenge = (conversationId: string, now: number): PowChallenge => {
     const issuedAt = now;
     const nonce = randomBytes(9).toString("base64url");
     return { salt: `${issuedAt}.${nonce}.${sign(issuedAt, nonce, conversationId)}`, difficulty: POW_DIFFICULTY };

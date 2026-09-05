@@ -13,7 +13,7 @@ import { startTurnRun, turnRunOf } from "../agent/turn-runs.js";
 import { openingRows, openTurnTranscript, recordTurnTranscript } from "../sessions/turn-transcript.js";
 import type { TurnFn } from "../loops/loop-runner.js";
 import { credentialsTravel, placeFanOut } from "../runners/runner-scheduler.js";
-import { runnerSummaries } from "../runners/runner.routes.js";
+import { runnerSummaries } from "../runners/runner-peer.js";
 
 /* SPAWN, STEER AND ANSWER FULL AGENTS FROM INSIDE A TURN, on ANY connected provider — the daemon-side engine
  * behind every door the supervision surface has (the Claude loop's MCP tools, Cursor's custom tools, the

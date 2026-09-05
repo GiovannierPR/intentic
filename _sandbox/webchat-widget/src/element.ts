@@ -1,8 +1,9 @@
 import type { WebchatMessage, WebchatPublicConfig } from "@intentic/sandbox-contract";
-import { solveProofOfWork, solveTurnstile } from "./challenge.js";
+import { type EmbedEndpoint, EmbedError, solveProofOfWork } from "@intentic/sandbox-contract/embed";
+import { solveTurnstile } from "./challenge.js";
 import { renderGoogleSignIn, resetConversation, storeDisplayName, storedDisplayName, visitorConversationId } from "./identity.js";
 import { styles } from "./styles.js";
-import { type Endpoint, fetchChallenge, sendMessage, WebchatError } from "./transport.js";
+import { fetchChallenge, sendMessage } from "./transport.js";
 
 /* <intentic-front-desk>, the whole visible widget: a launcher in a corner, and a panel holding the thread.
  *
@@ -33,7 +34,7 @@ interface Turn {
 export class FrontDeskElement extends HTMLElement {
     // Assigned in connectedCallback, which the host calls immediately after `open()` sets these.
     private config!: WebchatPublicConfig;
-    private endpoint!: Endpoint;
+    private endpoint!: EmbedEndpoint;
 
     private root!: ShadowRoot;
     private panel!: HTMLElement;
@@ -55,7 +56,7 @@ export class FrontDeskElement extends HTMLElement {
     private open = false;
     private sending = false;
 
-    configure(config: WebchatPublicConfig, endpoint: Endpoint): void {
+    configure(config: WebchatPublicConfig, endpoint: EmbedEndpoint): void {
         this.config = config;
         this.endpoint = endpoint;
     }
@@ -191,7 +192,7 @@ export class FrontDeskElement extends HTMLElement {
         }
         this.showGate("Checking your browser…");
         const challenge = await fetchChallenge(this.endpoint, this.conversationId);
-        this.antiBotToken = { kind: "pow", value: await solveProofOfWork(challenge) };
+        this.antiBotToken = { kind: "pow", value: await solveProofOfWork(challenge, "This page must be served over HTTPS to start a chat.") };
     }
 
     private showGate(note: string): void {
@@ -327,7 +328,7 @@ export class FrontDeskElement extends HTMLElement {
             this.notice(messageOf(error), "failed");
             // A spent challenge can't be replayed: make the visitor re-clear the gate rather than letting every
             // retry fail the same way.
-            if (error instanceof WebchatError && error.status === 403) {
+            if (error instanceof EmbedError && error.status === 403) {
                 this.antiBotToken = undefined;
                 void this.openGates();
             }

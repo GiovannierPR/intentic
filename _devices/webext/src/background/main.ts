@@ -72,11 +72,11 @@ const pair = async (code: string): Promise<{ ok: boolean; message: string }> => 
     if (!response.ok) {
         return { ok: false, message: `That code has expired. Click Connect again in your sandbox for a fresh one.` };
     }
-    const enrolled = (await response.json()) as { extensionToken?: string };
-    if (typeof enrolled.extensionToken !== "string") {
+    const enrolled = (await response.json()) as { token?: string };
+    if (typeof enrolled.token !== "string") {
         return { ok: false, message: `The sandbox answered something this extension could not read.` };
     }
-    await store.setSandbox({ url: pairing.url, token: enrolled.extensionToken });
+    await store.setSandbox({ url: pairing.url, token: enrolled.token });
     await store.setInbox(undefined);
     await store.append({ at: Date.now(), tool: "connection", detail: `paired with ${pairing.url}`, ok: true });
     await ensureLink();

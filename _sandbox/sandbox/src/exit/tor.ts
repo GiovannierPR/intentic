@@ -4,7 +4,7 @@ import { connect } from "node:net";
 import { promisify } from "node:util";
 import { sleep } from "@intentic/base/async";
 import type { ExitPoint, IntenticLine } from "@intentic/sandbox-contract";
-import { logTail, processAlive, readPid, toolMissing } from "../vpn/net-probe.js";
+import { logTail, processAlive, readPid, toolMissing } from "../tunnel/net-probe.js";
 import { rankCountries, TOR_FALLBACK } from "./exit-countries.js";
 import type { ExitDriver, ExitProbe } from "./exit-driver.js";
 import { observeThroughSocks } from "./exit-observe.js";

@@ -1,3 +1,4 @@
+import { embedEndpointOf, embedScript } from "@intentic/sandbox-contract/embed";
 import { createClient, type InitOptions, type IssueClient } from "./client.js";
 import { openDialog } from "./dialog.js";
 
@@ -55,24 +56,16 @@ export const breadcrumb = async (kind: string, message: string): Promise<void> =
 
 /* ---- the <script> half ---- */
 
-// `document.currentScript` is only valid while the script body is executing, so it is read at module scope
-// rather than inside the async boot. The querySelector is the fallback for a bundler or tag manager that
-// re-executes this where currentScript is null.
-const ownScript = (): HTMLScriptElement | null =>
-    (document.currentScript as HTMLScriptElement | null) ?? document.querySelector<HTMLScriptElement>(`script[src*="/intake/sdk.js"]`);
-
 const boot = (script: HTMLScriptElement): void => {
-    const automationId = script.dataset["automation"];
-    if (automationId === undefined || automationId === "") {
+    const endpoint = embedEndpointOf(script);
+    if (endpoint === undefined) {
         // The one mistake worth a console line. Without it the reporter is silently absent and the site owner
         // has nothing at all to go on; every other failure is visible in the install panel instead.
         console.error(`[intentic] the bug reporter embed needs data-automation="<intake id>"`);
         return;
     }
-    const base = script.dataset["base"] ?? new URL(script.src, window.location.href).origin;
     void init({
-        automationId,
-        base,
+        ...endpoint,
         ...(script.dataset["release"] === undefined ? {} : { release: script.dataset["release"] }),
         ...(script.dataset["key"] === undefined ? {} : { key: script.dataset["key"] }),
     }).catch((error: unknown) => {
@@ -89,7 +82,8 @@ const boot = (script: HTMLScriptElement): void => {
 const globalTarget = window as unknown as { Intentic?: Record<string, unknown> };
 globalTarget.Intentic = { ...globalTarget.Intentic, init, openReportDialog, captureException, report, breadcrumb };
 
-const tag = ownScript();
+// Read at module scope, while the script body is executing (embedScript says why); absent under a bundler.
+const tag = embedScript("/intake/sdk.js");
 if (tag !== null) {
     boot(tag);
 }

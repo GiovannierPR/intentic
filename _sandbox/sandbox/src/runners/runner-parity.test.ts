@@ -4,7 +4,7 @@ import type { Services } from "../composition.js";
 import { adoptDefinitionSettings } from "../portability/apply-definition.js";
 import { emitDefinitionToml, parseDefinitionToml, settingsDefinition } from "../portability/definition.js";
 import { runnerParity } from "./runner-parity.js";
-import { runnerSummaries } from "./runner.routes.js";
+import { runnerSummaries } from "./runner-peer.js";
 
 /* What a runner's row is allowed to say about its build. Every case here decides a badge and an update button,
  * and the two wrong answers cost opposite things: a false "outdated" nags about a machine that is fine, and a
@@ -64,8 +64,12 @@ const summaryServices = (input: {
         sandboxSettings: { get: async () => ({ ...input.parentSettings }) },
         runners: { list: async () => [{ id: "rig" }] },
         runnerHub: {
-            state: () => ({ online: true, ...input.state }),
-            definitionToml: () => input.runnerToml,
+            // A runner that never connected has announced nothing; one that did carries its hello's claim,
+            // the settings-only definition included, beside the socket (runner-peer.ts).
+            state: () =>
+                input.state?.["image"] === undefined
+                    ? { online: false }
+                    : { online: true, announced: { version: "0.0.0", ...input.state, ...(input.runnerToml === undefined ? {} : { definitionToml: input.runnerToml }) } },
         },
     }) as unknown as Services;
 

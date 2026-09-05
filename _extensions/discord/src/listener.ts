@@ -1,11 +1,4 @@
-import {
-    createStreamingPainter,
-    failureNotice,
-    framePainter,
-    GatewayRefusal,
-    type GatewayCtx,
-    type ListenerMessage,
-} from "@intentic/connector-runtime";
+import { createStreamingPainter, failureNotice, framePainter, type GatewayCtx, GatewayRefusal, type ListenerMessage, recentKeys, typingHeartbeat } from "@intentic/connector-runtime";
 import type { Client, Message } from "discord.js";
 
 // The text side of the gateway: for every human-authored message a subscribed bot sees, build a normalized
@@ -82,34 +75,14 @@ export interface DiscordListener {
 }
 
 export const createDiscordListener = (ctx: GatewayCtx, subscribed: Map<string, Client>): DiscordListener => {
-    const recent = new Set<string>();
-    // Live "typing…" indicators keyed by channelId, started on a mention, cleared when our own reply lands or
-    // after TYPING_MAX_MS.
-    const typing = new Map<string, NodeJS.Timeout>();
-    const stopTyping = (channelId: string): void => {
-        const timer = typing.get(channelId);
-        if (timer !== undefined) {
-            clearInterval(timer);
-            typing.delete(channelId);
-        }
-    };
+    const recent = recentKeys(RECENT_MAX);
+    // Live "typing…" indicators keyed by channelId, started on a mention, cleared when our own reply lands.
+    const typing = typingHeartbeat({ intervalMs: TYPING_INTERVAL_MS, maxMs: TYPING_MAX_MS });
     const startTyping = (channel: Message["channel"]): void => {
         if (!("sendTyping" in channel)) {
             return;
         }
-        stopTyping(channel.id);
-        void channel.sendTyping().catch(() => undefined);
-        const startedAt = Date.now();
-        typing.set(
-            channel.id,
-            setInterval(() => {
-                if (Date.now() - startedAt > TYPING_MAX_MS) {
-                    stopTyping(channel.id);
-                    return;
-                }
-                void channel.sendTyping().catch(() => undefined);
-            }, TYPING_INTERVAL_MS),
-        );
+        typing.start(channel.id, () => void channel.sendTyping().catch(() => undefined));
     };
 
     const fetchHistory = async (message: Message): Promise<HistoryEntry[]> => {
@@ -125,19 +98,12 @@ export const createDiscordListener = (ctx: GatewayCtx, subscribed: Map<string, C
         for (const client of subscribed.values()) {
             if (client.user?.id === message.author.id) {
                 // Our own reply landed in this channel, stop the "typing…" heartbeat.
-                stopTyping(message.channelId);
+                typing.stop(message.channelId);
                 return;
             }
         }
-        if (recent.has(message.id)) {
+        if (recent.duplicate(message.id)) {
             return;
-        }
-        recent.add(message.id);
-        if (recent.size > RECENT_MAX) {
-            const oldest = recent.values().next().value;
-            if (oldest !== undefined) {
-                recent.delete(oldest);
-            }
         }
         // "Tagged": a direct @mention of any of our bots or a reply to one of their messages (roles/@everyone
         // excluded), checked against every subscribed bot because the recent-id dedup means only the first
@@ -199,18 +165,13 @@ export const createDiscordListener = (ctx: GatewayCtx, subscribed: Map<string, C
             } finally {
                 // The turn(s) ended (or the stream broke), drop the typing heartbeat if our own reply didn't
                 // already clear it.
-                stopTyping(message.channelId);
+                typing.stop(message.channelId);
             }
         })().catch((error: unknown) => ctx.log.error({ err: error }, "discord message dispatch failed"));
     };
 
     return {
         onMessage,
-        stopAll: () => {
-            for (const timer of typing.values()) {
-                clearInterval(timer);
-            }
-            typing.clear();
-        },
+        stopAll: typing.stopAll,
     };
 };

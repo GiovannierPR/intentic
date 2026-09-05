@@ -1,6 +1,5 @@
 import type { AgentEvent, ServiceOffer } from "@intentic/sandbox-contract";
-import { createRequest } from "../agent/agent-requests.js";
-import { DAEMON_OWNER, ONE_SHOT_OWNER } from "./leftovers.js";
+import { type CardDeps, cardRun, OFFER_DEADLINE_MS, raiseCard, whyOf } from "../agent/offer-card.js";
 import type { RelayedAnswer, RelayedRunAnswer } from "./pool-services.js";
 
 /* THE SPEND GATE, what turns the services skill's etiquette into a wall.
@@ -14,10 +13,8 @@ import type { RelayedAnswer, RelayedRunAnswer } from "./pool-services.js";
  * and became a property of the plumbing. A prompt-injected model can ask; it cannot spend.
  *
  * The card is raised from OUTSIDE the turn generator (the agent's CLI call arrives as an HTTP request while
- * the turn sits inside its Bash tool), so its frames are PUSHED into the live run's frame log and mirrored to
- * the registry by hand, the pump's own parked-card journalling never sees them, deliberately: the waiter here
- * is the CLI's held connection, which dies with the daemon, and a restored card would offer buttons nothing
- * waits behind (the browser_help reasoning, one door over).
+ * the turn sits inside its Bash tool): agent/offer-card.ts is that plumbing, shared with every other offer
+ * card, and argues why such a card is never journalled for restore.
  *
  * WHAT THE MODEL STILL OWNS is choosing the service, composing the request body, and one line of why, the
  * three things on the card that are judgment rather than arithmetic. */
@@ -42,26 +39,11 @@ interface CatalogAnswer {
     }[];
 }
 
-// How long an unanswered offer holds the agent's call before settling as "nobody answered". Long enough for an
-// owner who stepped away from a chat they are in; bounded so an unattended turn's offer cannot park forever.
-const OFFER_DEADLINE_MS = 10 * 60_000;
-
-// The agent's why, capped, one line of rationale is the card's design, not a second request body.
-const WHY_MAX = 280;
-
-export interface OfferDeps {
+export interface OfferDeps extends CardDeps {
     // The platform reads/writes, injected relay-shaped so tests drive the gate without a network
     // (pool-services.ts is the real pair behind both).
     readonly catalog: () => Promise<RelayedAnswer>;
     readonly run: (slug: string, body: string, onStatus: (text: string) => void) => Promise<RelayedRunAnswer>;
-    // The live turn the card lands in: the named conversation's run, or, when the caller could not name one,
-    // the sole live run (turn-runs.ts soleLiveConversation). Undefined refuses the spend outright.
-    readonly liveRun: (
-        conversationId: string | undefined,
-    ) => { readonly conversationId: string; readonly push: (event: AgentEvent) => void } | undefined;
-    // The registry's frame observer (agents-registry.ts), externally pushed frames bypass the turn pump that
-    // usually feeds it, so the gate mirrors its own frames there to light and clear the Attention lane.
-    readonly observe: (conversationId: string, event: AgentEvent) => void;
     // Test seam for the unanswered-offer deadline.
     readonly deadlineMs?: number;
 }
@@ -86,8 +68,7 @@ const refusal = (status: number, type: string, message: string): RelayedAnswer =
 });
 
 export const gatedServiceRun = async (deps: OfferDeps, offered: OfferedRun): Promise<RelayedAnswer> => {
-    const named = offered.conversationId === DAEMON_OWNER || offered.conversationId === ONE_SHOT_OWNER ? undefined : offered.conversationId;
-    const run = deps.liveRun(named);
+    const run = cardRun(deps, offered.conversationId);
     if (run === undefined) {
         return refusal(
             409,
@@ -121,20 +102,18 @@ export const gatedServiceRun = async (deps: OfferDeps, offered: OfferedRun): Pro
         ...(service.probation === true ? { probation: true } : {}),
         ...(parsed.credits !== undefined ? { credits: parsed.credits } : {}),
         request: offered.body,
-        ...(offered.why !== undefined && offered.why !== "" ? { why: offered.why.slice(0, WHY_MAX) } : {}),
+        ...whyOf(offered.why),
     };
-    const { id, wait } = createRequest("service_offer", { kind: "service_offer", requestId: "", approve: false }, run.conversationId);
-    const raised: AgentEvent = { kind: "service_offer", requestId: id, offer };
-    run.push(raised);
-    deps.observe(run.conversationId, raised);
-    const { reply, resolved } = await wait(AbortSignal.any([offered.signal, AbortSignal.timeout(deps.deadlineMs ?? OFFER_DEADLINE_MS)]));
-    run.push(resolved);
-    deps.observe(run.conversationId, resolved);
-    if (!reply.approve) {
-        /* Two different no's, told apart by whether a person actually answered: a resolved frame with no reply
-         * is the abort stand-in (the deadline fired, or the CLI died under the card), and reading that as "the
-         * owner declined" would put words in the mouth of somebody who never saw the card. */
-        return resolved.reply === undefined
+    const card = await raiseCard(deps, run, {
+        kind: "service_offer",
+        onAbort: { kind: "service_offer", requestId: "", approve: false },
+        raised: (requestId) => ({ kind: "service_offer", requestId, offer }),
+        signal: offered.signal,
+        deadlineMs: deps.deadlineMs ?? OFFER_DEADLINE_MS,
+    });
+    if (!card.reply.approve) {
+        // Two different no's, told apart by whether a person actually answered (offer-card.ts argues why).
+        return !card.answered
             ? refusal(
                   408,
                   "unanswered",
@@ -147,7 +126,7 @@ export const gatedServiceRun = async (deps: OfferDeps, offered: OfferedRun): Pro
      * living instead of a spinner of unknowable length. Not mirrored to the registry on purpose, progress
      * is not attention. */
     const outcome = await deps.run(offered.slug, offered.body, (text) => {
-        run.push({ kind: "service_event", requestId: id, event: { event: "status", text } });
+        run.push({ kind: "service_event", requestId: card.requestId, event: { event: "status", text } });
     });
     /* The receipt. A streamed run carries the platform's own trailer, the ledger's last word, used whole; a
      * stream that broke before its trailer gets NO receipt frame, because whether the charge stood is the
@@ -159,7 +138,7 @@ export const gatedServiceRun = async (deps: OfferDeps, offered: OfferedRun): Pro
         outcome.receipt !== undefined
             ? {
                   kind: "service_receipt",
-                  requestId: id,
+                  requestId: card.requestId,
                   outcome: outcome.receipt.outcome,
                   credits: outcome.receipt.credits,
                   ...(outcome.receipt.remaining !== undefined ? { remaining: outcome.receipt.remaining } : {}),
@@ -168,14 +147,13 @@ export const gatedServiceRun = async (deps: OfferDeps, offered: OfferedRun): Pro
               ? undefined
               : {
                     kind: "service_receipt",
-                    requestId: id,
+                    requestId: card.requestId,
                     outcome: outcome.remaining !== undefined ? "ok" : outcome.status === 502 ? "refunded" : "refused",
                     credits: service.creditsPerRun,
                     ...(outcome.remaining !== undefined ? { remaining: Number(outcome.remaining) } : {}),
                 };
     if (receipt !== undefined) {
-        run.push(receipt);
-        deps.observe(run.conversationId, receipt);
+        card.say(receipt);
     }
     return outcome;
 };

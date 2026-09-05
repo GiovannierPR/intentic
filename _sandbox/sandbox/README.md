@@ -150,6 +150,15 @@ reports the profile.
   edges (`deps.broken`/`deps.fixed`) that wake a fix chore the owner picked from the Automations templates: every
   step in a visible terminal panel and the activity feed (src/workspace/reconcile-deps.ts → verify-deps.ts →
   src/automations).
+- Open exactly two doors to callers with no identity at all, and open them through one substrate
+  (src/automations/public-door.ts): the Front Desk (src/webchat) and the bug intake (src/issues) are the
+  inbound-HTTP mirror of the gateway-process pattern, a `<script>` on somebody else's page instead of a process
+  holding a connection, so their routes ARE the source. The door owns what both need: which automation a public
+  id names and whether this origin (or this door's own key) may reach it, a fixed rate window per caller, the
+  proof-of-work puzzle, the day's ceiling spent last, the config route that doubles as the install probe, and
+  the thread that makes a series of arrivals one conversation. Each door adds its one verb: a message that
+  streams a reply, a report that is filed and only sometimes wakes anyone. The embeds' half of the same wire is
+  the contract's `embed` entry, shared by both bundles.
 - Take bug reports straight from the owner's own sites and apps (src/issues): a reporter SDK
   (`@intentic/issue-sdk`, served at `/intake/sdk.js`) POSTs crashes and written reports to a public ingest, and
   every one of them is FINGERPRINTED before anything else happens, so a crash loop on a popular page is one
@@ -299,7 +308,10 @@ reports the profile.
   additionally parked on an owner-approval card in the chat before anything is forwarded
   (src/platform/service-offer.ts): every number on the card is the platform's catalog answer, the owner's
   click is the only thing that releases the spend, and one click covers one run: consent is plumbing, not
-  the skill's etiquette. While the approved run streams, its status lines land under that card as
+  the skill's etiquette. The plumbing itself is src/agent/offer-card.ts, shared by every card a gate raises
+  from outside the turn generator (this one, a payment, a capability ask, a gated credential, a command headed
+  for somebody's machine): find the live run the caller may draw in, push the raised and resolved frames into
+  its log and the registry by hand, hold the call under a deadline, and tell an answer from the abort stand-in. While the approved run streams, its status lines land under that card as
   service_event frames, and the receipt frame is the platform's trailer verbatim. The agent reaches the
   priced catalog through the `services` CLI (bin/services + the baked services skill), scoped by the agent
   token's grant; `services wanted` files a "the catalog had nothing for this" onto the platform's public
@@ -382,7 +394,8 @@ reports the profile.
 
 - [src/app.ts](src/app.ts), the Hono HTTP API's composition root: the middleware stack (boot gate, CORS, the bearer check with its exemptions and role floor), `/health`, and every route the browser and the CLI reach the daemon through, mounted in one fixed order from the `*.routes.ts` module of the area that owns it. The order is behavior — Hono matches in registration order and the exemptions are keyed by path — so it stays in this one file while each handler lives beside the code it drives (`auth/members.routes.ts`, `environment/environment.routes.ts`, `portability/arrival.routes.ts`, `platform/sync.routes.ts`, `extensions/backend/backend-proxy.routes.ts`, …).
 - [src/agent](src/agent), **singular**: one conversation. The turn loop, its tools, steering, terminals and diagnostics.
-- [src/agent/provider-registry.ts](src/agent/provider-registry.ts): the provider list, once. Each native provider's directory exports one `ProviderModule` (its adapter row, turn arm, Services slice, catalog, readiness rung, boot tasks, pack wants and secrets rows — src/agent/provider-module.ts is the seam), and the shared surfaces DERIVE from the aggregation instead of each keeping its own enumeration. Adding a provider is its contract row (the one-row-per-provider table in `@intentic/sandbox-contract`'s provider-specs.ts), its directory, and one import line here; the registry throws at init on a missing or duplicate module, so forgetting the line fails every suite rather than shipping a provider whose secrets rows and readiness silently do not exist (which happened twice while these lists were hand-kept).
+- [src/agent/provider-registry.ts](src/agent/provider-registry.ts): the provider list, once. Each native provider's directory exports one `ProviderModule` (its adapter row, turn arm, Services slice, catalog, readiness rung, boot tasks, pack wants, secrets rows and its ACCOUNT DOOR — src/agent/provider-module.ts is the seam), and the shared surfaces DERIVE from the aggregation instead of each keeping its own enumeration. Adding a provider is its contract row (the one-row-per-provider table in `@intentic/sandbox-contract`'s provider-specs.ts), its directory, and one import line here; the registry throws at init on a missing or duplicate module, so forgetting the line fails every suite rather than shipping a provider whose secrets rows and readiness silently do not exist (which happened twice while these lists were hand-kept).
+- [src/agent/accounts.routes.ts](src/agent/accounts.routes.ts): the accounts this sandbox holds ITSELF, one route family with the provider in the path (`/accounts/{provider}`: start, complete, cancel, list, rename, disconnect). Four families used to serve this, each "the previous one's shape" with a verb renamed; the operations are the same six for every provider, so what differs is each module's `AccountDoor` (Anthropic's paste-back with the PKCE verifier now HELD in the door rather than round-tripped through the browser, Cursor's held verifier, xAI's device code through OpenCode, a minted key), and the route says the part no door owns: which provider was asked for and whether it has a door at all (a translator-only provider answers 404), how a door's own refusal reaches the wire (a 412 in its words), and the two answers a finishing call can give (the account, where the exchange ends there; nothing, where a mint follows and the row lands in the list).
 - [src/minted/](src/minted): the providers whose SIGN-IN MINTS their key (Meta's Muse Code, Z.ai's GLM Coding Plan). The token their sign-in issues is not an inference credential — either vendor's model endpoint refuses it — so the flow has a second half the user never sees: mint the vendor's own API key from it and store that, which is exactly what those vendors' own CLIs do. Nobody pastes a key; a raw key against somebody's own gateway is still an `endpoint` capability and always was. The key then points the Claude Code loop straight at the vendor's Anthropic Messages endpoint — no translator hop, no adapter, no new runtime, the same road an `anthropic`-protocol endpoint capability takes. One store, one login machine, one catalog per ESTATE and one module FACTORY serve all of them: what differs between two minted providers is a login driver and a seed list, and Z.ai's two estates (api.z.ai and open.bigmodel.cn, whose hosts refuse each other's keys) differ only in a pair of URLs on the spec row. A third provider is a contract row, a seed and a driver.
 - [src/agent/model-catalog.ts](src/agent/model-catalog.ts): "what can this account run", once, for all six providers that have to answer it (Claude, Codex, Cursor, Gemini, Kimi, Grok). The ladder is live discovery → the persisted last-known-good list → a compile-time seed floor, and the two properties each provider used to re-derive are true here instead: only a REAL answer is cached (so a seeded read retries on the next call, rather than pinning a placeholder row for a minute), and the file goes through [src/store/json-file.ts](src/store/json-file.ts), read via the caller's schema and written atomically (so a self-heal write cannot be caught half-done by the read that falls back on it). A provider brings its own `discover`, what it keeps on disk, its floor, and how each rung renders; Cursor also keeps the raw vendor items, because a turn needs their parameter definitions to translate an effort tier. [src/agent/model-discovery.ts](src/agent/model-discovery.ts) is the ASKING, shared by the four providers that ask an OpenAI-compatible endpoint: the bearer GET that answers `undefined` instead of throwing, the `{ data: [{ id }] }` unwrap, the id→label humanizer (one, where three had drifted over whether `gpt` is an acronym), and the "Did you mean: …" reader that is the only catalog some subscription accounts ever produce.
 - [src/agents](src/agents), **plural**: the fleet. The registry, `worktrees.ts`, `isolation.ts`, `land.ts`, `origins.ts`, `landed-presence.ts`, `landed-history.ts`, and `fleet-recall.ts` + `fleet.routes.ts` (what one conversation can learn about another, see below).
@@ -533,49 +546,63 @@ reports the profile.
   the baked `fileq` CLI (`_sandbox/fileq`) to keep a markdown shadow of every binary workspace file (docx,
   pdf, images, audio) converged under `.intentic/local/cache/derived/` — gated by the `sidecars` setting,
   serialized to one child at a time, and sweeping the whole tree when the setting flips on.
-- [src/hosts](src/hosts), the user's own computers: the socket each one holds open (`host.routes.ts`, which also
-  holds the owner's pairing, roster and revoke routes), the Devices view's data (`device-reports.ts`, served by `devices.routes.ts`), and `host-seed.ts`: the card the setup flow creates for the machine that installed
-  this sandbox, granted its sandboxes and nothing else. Acting on one of those sandboxes STREAMS, because the
-  slowest of those actions pulls an image for minutes; the scope behind it is checked on the machine and never
-  here. `device-commands.ts` is the other door: one of the machine's OWN CLI actions run from a button rather
-  than through an agent, answering with the sentence the CLI printed instead of a stream. Five of them, and they
-  are the two halves of one pairing plus its end — port mirroring off/on, file syncing paused/resumed, and
-  unpairing, which asks the agent to terminate its sessions and self-revoke rather than having the key pulled
-  from under it. The set is a closed enum and the argv is built here from the name — never sent by the caller —
-  because the socket underneath also carries `run_command`, and a route that forwarded caller-supplied text would
-  hand every browser session a shell on somebody's laptop. The one that destroys a pairing refuses to run
-  fleet-wide: bare, the agent's CLI acts on every sandbox that computer pairs, which is the honest "turn it off
-  entirely" for a switch and a trap for an unpair reachable by omitting a field. Reading them does NOT stream: a reading is
-  served from memory and refreshed behind the answer, because the
-  alternative is a page that waits on a round trip to every one of somebody's laptops before it can paint, and
-  a reading carries its own `capturedAt` for the view to age it by. Only a machine this daemon has never once
-  read is waited for, and only up to `PULL_TIMEOUT_MS`.
-- [src/webext](src/webext), the user's own BROWSERS, through the extension installed in one: the same three
-  pieces as `hosts` (enrollment on /history, live sockets in memory, an MCP bridge the agent's tools point at)
-  with two differences that are the whole feature. The bridge is NOT a pure pipe — every tool result that could
-  carry page text is sealed in the outside-content envelope on the way back, because a browser answers with
-  websites and an old or tampered extension must not be able to skip that. And `session-import.ts` is the one
-  door a credential comes IN through: a site's cookies, handed over by the owner's click, written into a
-  `browser` capability's Chromium profile by launching that profile headless — never a tool result, because a
-  tool result is something the model reads. The owner's pairing, roster and revoke routes sit beside the socket
-  in `webext.routes.ts`.
-- [src/runners](src/runners), this sandbox's own execution containers on other machines — both halves, since
-  a runner IS this daemon in another posture. Parent half: enrollment on /history (the pairing-and-enrollment
-  mechanic is one module, `store/enrollment.ts`, shared with hosts, webext and desktop sync — what is left
-  here is which id a pairing enrolls and which computer holds the container), live sockets in memory
-  (the hosts hub retold), a per-repo git door (stock smart HTTP off the real git dirs), and the turn
-  dispatch the remote arm of agent.routes drives, plus the credential doors: per-turn access tokens and
-  mid-turn re-mints resolved by the same code local turns use, and the translator re-served behind the
-  runner's own bearer, so a remote turn spends THIS sandbox's model providers and no refresh token or auth
-  file ever leaves. Runner half: identity, the outbound link serving the runner contract, a workspace
-  mirror moved by git both ways, and the parent-first credential source harness-credentials consults. A
-  dispatched turn re-enters `streamAgent` on the far side, which is the whole design: same code, different
-  machine. Parity is itemized through the definition surface: a runner's hello declares its settings as a
-  settings-only `sandbox.toml`, the parent diffs that (plus the overlay hashes) into per-line drift on the
-  runner's summary, and the sync door pushes this sandbox's settings down the live link (replace semantics —
-  the parent is a runner's whole authority). The owner's pairing, roster, revoke and settings-push routes are
-  `runner.routes.ts`, beside the socket. `docs/remote-runners-plan.md` at the workspace root says why
-  every seam sits where it does.
+- [src/peers](src/peers), the substrate under everything of the user's that DIALS this sandbox and then serves
+  a contract back over the socket it opened: their computer, their browser, one of this sandbox's own runners.
+  Three doors, one shape, written once: the hub (which peers hold a socket right now, the typed client for
+  each, a heartbeat that drops a lid that closed without a close frame, the facts a peer last reported kept for
+  its card after it goes), the store (a single-use pairing bound to ONE id, redeemed once for a durable token
+  whose digest lives on /history, over `store/enrollment.ts`), the routes (the socket authenticated by its
+  first frame, `enroll`, the owner's `pair`/roster/revoke, and the MCP bridge the agent's tools point at, a
+  PIPE that parses no tool schema so a peer learns a tool without a daemon release), the capability handler,
+  the tool builder and the one invariant (a live socket the store no longer vouches for). What a door declares
+  is the data that varies, in a `PeerDoor` beside the code that is genuinely its own:
+  - [src/hosts](src/hosts): `host-peer.ts` is the door (the grant is the capability's config, pushed down on
+    every connect; a `run_command` headed for somebody's laptop is judged against the owner's safety policy
+    before it crosses, `host-command-gate.ts`), `host-seed.ts` the card the setup flow creates for the machine
+    that installed this sandbox, granted its sandboxes and nothing else, and the Devices view's data
+    (`device-reports.ts`, served by `devices.routes.ts`). Acting on one of those sandboxes STREAMS, because the
+    slowest of those actions pulls an image for minutes; the scope behind it is checked on the machine and
+    never here. `device-commands.ts` is the other door: one of the machine's OWN CLI actions run from a button
+    rather than through an agent, a closed enum whose argv is built here from the name, never sent by the
+    caller, because the socket underneath also carries `run_command`. Readings are served from memory and
+    refreshed behind the answer, each carrying its own `capturedAt` for the view to age it by.
+  - [src/webext](src/webext): `webext-peer.ts` is the door, with the three differences a browser makes: a
+    tighter heartbeat (an MV3 service worker is killed after 30s of silence), facts re-asked when a card reads
+    them (a grant can be revoked in Chrome's own settings), and a bridge that is NOT a pure pipe: every tool
+    result that could carry page text is sealed in the outside-content envelope on the way back, because a
+    browser answers with websites and an old or tampered extension must not be able to skip that.
+    `webext.routes.ts` holds the two credential doors: `session-import.ts` is the one a credential comes IN
+    through (a site's cookies, handed over by the owner's click, written into a `browser` capability's
+    Chromium profile by launching it headless, never a tool result, because a tool result is something the
+    model reads), and `session-export.ts` the same door outbound, lending a sandbox account's session to the
+    person's own browser for a step no remote browser can do.
+  - [src/runners](src/runners), both halves, since a runner IS this daemon in another posture. Parent half:
+    `runner-peer.ts` is the door (every pairing burned on redemption because it always ends up in a
+    container's env; no grant and no bridge, the contract is typed end to end), a per-repo git door (stock
+    smart HTTP off the real git dirs), the turn dispatch the remote arm of agent.routes drives, plus the
+    credential doors: per-turn access tokens and mid-turn re-mints resolved by the same code local turns use,
+    and the translator re-served behind the runner's own bearer, so a remote turn spends THIS sandbox's model
+    providers and no refresh token or auth file ever leaves. Runner half: identity, the outbound link serving
+    the runner contract, a workspace mirror moved by git both ways, and the parent-first credential source
+    harness-credentials consults. A dispatched turn re-enters `streamAgent` on the far side, which is the
+    whole design: same code, different machine. Parity is itemized through the definition surface: a runner's
+    hello declares its settings as a settings-only `sandbox.toml`, the parent diffs that (plus the overlay
+    hashes) into per-line drift on the runner's summary, and the sync door (`runner.routes.ts`) pushes this
+    sandbox's settings down the live link (replace semantics — the parent is a runner's whole authority).
+    `docs/remote-runners-plan.md` at the workspace root says why every seam sits where it does.
+- [src/tunnel](src/tunnel), the substrate under the two things the sandbox holds a TUNNEL for: a VPN into
+  somewhere of the user's ([src/vpn](src/vpn)) and a geo exit out of somewhere else ([src/exit](src/exit)).
+  The second was written as the first one's shape retold and said so; what was retold is here once: the
+  interface-name rule (IFNAMSIZ, a hash fallback, an `x` prefix so the two kinds cannot meet in one netns),
+  the advisory up marker, the manifest join (`tunnelEntries`, `tunnelEntry`, the "not carried yet" sentence a
+  dial answers with before the rebuild), the one-move-per-id streaming route (`heldStream`: refuse the second
+  dial, end on the link's own state, surface a failure as both an error frame and a thrown error), the
+  capability handler both kinds are instances of (`tunnelHandler`: store first so the fragment lands, write
+  the shared skill, take the old one down, dial only when wanted and only when the client exists, drop the
+  skill with the last entry), wg-quick as both kinds drive it, and `net-probe.ts`, which reads a live tunnel
+  back off the machine. What a kind keeps is exactly what differs: its link's shape, its drivers' SPI, and
+  what a start owes before it counts (an exit must prove its country from the outside; a vpn's interface is
+  the whole answer).
 - [src/guard/guard.ts](src/guard/guard.ts): the one gate every gated action consults (fail-closed); [src/guard/actions.ts](src/guard/actions.ts) is the catalog of decisions, and [src/guard/command-gate.ts](src/guard/command-gate.ts) is the one that can park a running turn on a card. It runs four tiers and only the last interrupts anybody: TRIAGE (the classifier), the HARD RULE (`commandRun`, un-waivable, one class), the JUDGE (a model reading the owner's policy), and the PERSON. The last two are the owner's to decline (`settings.commandJudge`: `off` never calls the judge, `watch` calls it and records every verdict while holding nothing, `on` lets the verdict decide) — a tier that spends money and interrupts people has to be refusable, and the redesign had quietly made itself the one part of the sandbox you could only opt further into. The hard rule is outside all three, so no setting can leave a turn with nothing between it and a formatted disk, which is what makes the switch offerable. THE CARD'S TITLE IS THE JUDGE'S OWN SENTENCE, not a class: it used to be `This command would ${LABEL[matches[0]]}`, the first class the catalog matched, in the catalog's own order — so a command that cleaned a build directory and then published a package read "This command would delete files recursively" over a sentence about npm, with the `rm -rf` marked beneath it as the fragment it was stopped for. Every word of that card except the sentence was about the wrong half of the command, and it is how a gate comes to look like it is crying wolf about deletions when it never was. Only the hard rule still titles a consequence, because it alone is a typed verdict over a named class. `credentialUse` is the catalog's fifth action and the only one whose sole DENY is "there is nobody to ask": a gate is never a ban, so an unattended turn and a turn with no live conversation are refusals while everything else is a hold that asks a named person (src/secrets/credential-gate.ts). WHAT a command is, as opposed to what may be done about it, lives one package out in
   [sandbox-contract/src/command-classes.ts](../sandbox-contract/src/command-classes.ts): the same table the
   machine agent reads before running anything on somebody's own computer, so the two enforcement points cannot
@@ -618,6 +645,10 @@ reports the profile.
   a rung that answers unusably is a rung that refused and the next model down gets asked — where the old
   post-hoc checks ran after the chain was finished and left the helper with nothing however many working
   accounts sat below. It is the one refusal that earns no memo: wrong shape is a sample, not a condition.
+  WHICH LOOP RUNS A RUNG is the adapter's, not the walk's: each runtime's one-liner is its adapter's `oneShot`
+  ([src/agent/adapter.ts](src/agent/adapter.ts); `claude/claude-one-shot.ts` on the harness's own credentials,
+  `cursor/cursor-one-shot.ts`, `gemini/gemini-one-shot.ts`), so the walk asks the adapter the contract names for
+  the provider exactly as a turn does, and a runtime with no helper is a refusal it steps over.
 - [src/agent/command-judge.ts](src/agent/command-judge.ts): whether a flagged command should run, asked of a
   model that has read the owner's written policy. The layer that replaced a table of per-class regex verdicts,
   and the reason it had to: the classifier's match used to BE the card, so `echo "rm -rf /"` written into a

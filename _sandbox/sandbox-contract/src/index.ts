@@ -1,5 +1,6 @@
 import type { ContractRoute } from "./routes.js";
 import { contractRoutes, requestPathFor, routeForProcedure, routeNameForRequest, routeShapes } from "./routes.js";
+import { accountsContract } from "./contracts/accounts.contract.js";
 import { activityContract } from "./contracts/activity.contract.js";
 import { agentContract } from "./contracts/agent.contract.js";
 import { agentsContract } from "./contracts/agents.contract.js";
@@ -8,14 +9,11 @@ import { automationsContract } from "./contracts/automations.contract.js";
 import { capabilitiesContract } from "./contracts/capabilities.contract.js";
 import { choresContract } from "./contracts/chores.contract.js";
 import { ciContract } from "./contracts/ci.contract.js";
-import { claudeContract } from "./contracts/claude.contract.js";
-import { cursorContract } from "./contracts/cursor.contract.js";
 import { endpointsContract } from "./contracts/endpoints.contract.js";
 import { exitContract } from "./contracts/exit.contract.js";
 import { extensionsContract } from "./contracts/extensions.contract.js";
 import { personasContract } from "./contracts/personas.contract.js";
 import { gitContract } from "./contracts/git.contract.js";
-import { grokContract } from "./contracts/grok.contract.js";
 import { historyContract } from "./contracts/history.contract.js";
 import { intenticContract } from "./contracts/intentic.contract.js";
 import { inventoryContract } from "./contracts/inventory.contract.js";
@@ -26,7 +24,6 @@ import { panelsContract } from "./contracts/panels.contract.js";
 import { portsContract } from "./contracts/ports.contract.js";
 import { publicContract } from "./contracts/public.contract.js";
 import { prepushContract } from "./contracts/prepush.contract.js";
-import { mintedContract } from "./contracts/minted.contract.js";
 import { providersContract } from "./contracts/providers.contract.js";
 import { pushContract } from "./contracts/push.contract.js";
 import { safetyContract } from "./contracts/safety.contract.js";
@@ -42,6 +39,7 @@ import { vpnContract } from "./contracts/vpn.contract.js";
 import { workflowsContract } from "./contracts/workflows.contract.js";
 import { workspaceContract } from "./contracts/workspace.contract.js";
 
+export { accountsContract } from "./contracts/accounts.contract.js";
 export { activityContract } from "./contracts/activity.contract.js";
 export { agentContract } from "./contracts/agent.contract.js";
 export { agentsContract } from "./contracts/agents.contract.js";
@@ -50,14 +48,11 @@ export { automationsContract } from "./contracts/automations.contract.js";
 export { capabilitiesContract } from "./contracts/capabilities.contract.js";
 export { choresContract } from "./contracts/chores.contract.js";
 export { ciContract } from "./contracts/ci.contract.js";
-export { claudeContract } from "./contracts/claude.contract.js";
-export { cursorContract } from "./contracts/cursor.contract.js";
 export { endpointsContract, type TrialHealth, TrialStatusSchema, type TrialStatusResponse } from "./contracts/endpoints.contract.js";
 export { exitContract } from "./contracts/exit.contract.js";
 export { extensionsContract } from "./contracts/extensions.contract.js";
 export { personasContract } from "./contracts/personas.contract.js";
 export { gitContract } from "./contracts/git.contract.js";
-export { grokContract } from "./contracts/grok.contract.js";
 export { historyContract } from "./contracts/history.contract.js";
 /* Deliberately NOT part of `sandboxContract` below: that map is the daemon's own HTTP surface, and this one is
  * spoken the other way round, over a connected device's WebSocket, with the MACHINE implementing it. */
@@ -77,7 +72,6 @@ export { panelsContract } from "./contracts/panels.contract.js";
 export { portsContract } from "./contracts/ports.contract.js";
 export { publicContract } from "./contracts/public.contract.js";
 export { prepushContract } from "./contracts/prepush.contract.js";
-export { mintedContract } from "./contracts/minted.contract.js";
 export { providersContract } from "./contracts/providers.contract.js";
 export { pushContract } from "./contracts/push.contract.js";
 export { safetyContract } from "./contracts/safety.contract.js";
@@ -213,6 +207,7 @@ export * from "./workflow-faults.js";
 // browser's typed oRPC client (ContractRouterClient<typeof sandboxContract>). The wire paths it declares are
 // mounted at the sandbox root, so /health and /workspace/raw (plain Hono routes) sit alongside it.
 export const sandboxContract = {
+    accounts: accountsContract,
     activity: activityContract,
     agent: agentContract,
     agents: agentsContract,
@@ -221,8 +216,6 @@ export const sandboxContract = {
     capabilities: capabilitiesContract,
     chores: choresContract,
     ci: ciContract,
-    claude: claudeContract,
-    cursor: cursorContract,
     endpoints: endpointsContract,
     extensions: extensionsContract,
     personas: personasContract,
@@ -233,7 +226,6 @@ export const sandboxContract = {
     skills: skillsContract,
     intentic: intenticContract,
     git: gitContract,
-    grok: grokContract,
     history: historyContract,
     workspace: workspaceContract,
     inventory: inventoryContract,
@@ -244,7 +236,6 @@ export const sandboxContract = {
     ports: portsContract,
     public: publicContract,
     prepush: prepushContract,
-    keys: mintedContract,
     providers: providersContract,
     push: pushContract,
     secrets: secretsContract,

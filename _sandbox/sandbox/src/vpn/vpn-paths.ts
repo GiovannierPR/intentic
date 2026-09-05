@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { interfaceNameOf } from "../tunnel/tunnel-paths.js";
 
 // Where a VPN capability's on-disk state lives, and how a capability id becomes a network interface name.
 // One directory for every provider (0700, root-only) so "what has this sandbox been told to dial" is one `ls`.
@@ -8,17 +8,8 @@ import { join } from "node:path";
 
 export const vpnDir = (): string => join(homedir(), ".intentic-vpn");
 
-// Linux caps an interface name at IFNAMSIZ-1 = 15 bytes. An id short enough to be legal IS the interface name,
-// the readable, overwhelmingly common case, and a longer one falls back to a deterministic hash so two long
-// ids that share a prefix can never collide on one interface.
-const INTERFACE_MAX = 15;
-export const interfaceName = (id: string): string =>
-    id.length <= INTERFACE_MAX
-        ? id
-        : `vpn-${createHash("sha256")
-              .update(id)
-              .digest("hex")
-              .slice(0, INTERFACE_MAX - 4)}`;
+// The bare id is the interface name where it fits (tunnel/tunnel-paths.ts has the rule and the hash fallback).
+export const interfaceName = (id: string): string => interfaceNameOf(id, "vpn");
 
 // wg-quick derives the interface from the config's FILE NAME, so the wireguard conf is named for the interface
 // rather than the id, they differ only for an id too long to be an interface name.

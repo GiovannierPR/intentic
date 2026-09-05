@@ -27,7 +27,7 @@ import {
 } from "@intentic/ui";
 import { noticeFrom } from "@intentic/ui/async";
 import { type CapabilityField, contributionDiscriminator } from "@intentic/extension-manifest";
-import type { CapabilityKind, ForticlientConnection } from "@intentic/sandbox-contract";
+import type { CapabilityKind, ForticlientConnection, HostSummary, WebExtSummary } from "@intentic/sandbox-contract";
 import { type ComputedRef, computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import BrowserProfileDialog from "../components/BrowserProfileDialog.vue";
@@ -81,8 +81,7 @@ import { useExtensions } from "../composables/extensions/useExtensions";
 import { useRegistry } from "../composables/extensions/useRegistry";
 import { type BackgroundProcessRow, useBackgroundProcesses, viewProcessLogs } from "../composables/terminal/useBackgroundProcesses";
 import { useTerminalPanel } from "../composables/terminal/useTerminalPanel";
-import { useHostConnect } from "../composables/sandbox/useHostConnect";
-import { useWebExtConnect } from "../composables/sandbox/useWebExtConnect";
+import { HOST_DOOR, usePeerConnect, WEBEXT_DOOR } from "../composables/sandbox/usePeerConnect";
 import { useVpn } from "../composables/sandbox/useVpn";
 
 /* The rail's "+" → the /capabilities page. Capabilities give the agent tools (GitHub, MCP servers, SSH hosts,
@@ -610,7 +609,7 @@ const instanceEffects = (instance: CapabilitySummary): readonly CapabilityEffect
 /* Connecting a device of the user's own (host-kind): the machine can't be reached from here, so the flow is a
  * one-time command they run over there. This page owns the dialog's identity (which machine, which grant); the
  * live roster + revoke live in the composable, shared with the dialog. */
-const { hostFor, revoke: revokeHost, refresh: refreshHosts, start: startHosts, stop: stopHosts } = useHostConnect();
+const { peerFor: hostFor, revoke: revokeHost, refresh: refreshHosts, start: startHosts, stop: stopHosts } = usePeerConnect<HostSummary>(HOST_DOOR);
 const connectVisible = ref(false);
 const connectId = ref(``);
 const connectPlatform = ref(``);
@@ -632,7 +631,7 @@ const openConnect = (instance: CapabilitySummary): void => {
  * that may not even be this one, so the flow is a code they paste into the extension rather than a command.
  * `install` comes off the card itself, since where an extension is installed from is the one thing a browser
  * family genuinely differs in. */
-const { browserFor, revoke: revokeBrowser, refresh: refreshBrowsers, start: startBrowsers, stop: stopBrowsers } = useWebExtConnect();
+const { peerFor: browserFor, revoke: revokeBrowser, refresh: refreshBrowsers, start: startBrowsers, stop: stopBrowsers } = usePeerConnect<WebExtSummary>(WEBEXT_DOOR);
 const browserConnectVisible = ref(false);
 const browserConnectId = ref(``);
 const browserInstall = ref(``);

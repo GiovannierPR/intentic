@@ -4,7 +4,7 @@ import { z } from "zod";
 import { jsonFile } from "../store/json-file.js";
 import type { RunnerModeEnv } from "./runner-mode.js";
 
-/* WHO THIS RUNNER IS, the runner-side half of the pairing (the parent's half is runners-store.ts): which
+/* WHO THIS RUNNER IS, the runner-side half of the pairing (the parent's half is the peer store, runners/runner-peer.ts): which
  * sandbox it belongs to and the durable token every reconnect presents. On /history for the enrollment
  * files' reason: it outlives the container (a rebuilt runner must not need re-pairing), and it sits where no
  * tool the agent has can read it. The PAIRING in the container's env is single-use and burned at the parent
@@ -44,8 +44,8 @@ export const ensureRunnerIdentity = async (historyRoot: string, env: RunnerModeE
             `enrolling with the parent sandbox failed (${response.status}): the pairing expired or was already used. Mint a fresh one there and recreate this runner.`,
         );
     }
-    const enrolled = z.object({ id: z.string(), runnerToken: z.string() }).parse(await response.json());
-    const identity: RunnerIdentity = { parentUrl: env.parentUrl, id: enrolled.id, token: enrolled.runnerToken, enrolledAt: Date.now() };
+    const enrolled = z.object({ id: z.string(), token: z.string() }).parse(await response.json());
+    const identity: RunnerIdentity = { parentUrl: env.parentUrl, id: enrolled.id, token: enrolled.token, enrolledAt: Date.now() };
     const file = jsonFile<RunnerIdentity | undefined>(runnerIdentityPath(historyRoot), {
         parse: (raw) => RunnerIdentitySchema.safeParse(raw).data,
         fallback: () => undefined,

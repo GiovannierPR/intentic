@@ -45,8 +45,7 @@ import {
 import { personaScopeOf } from "../personas/persona-scope.js";
 import { jsExecutionPlanOf } from "../execution/js-runtime.js";
 import { resolveWithin } from "../workspace/workspace-files-paths.js";
-import { hostToolsOf } from "../capabilities/host-tools.js";
-import { webextToolsOf } from "../capabilities/webext-tools.js";
+import { peerToolsOf } from "../peers/peer-tools.js";
 import { mcpToolsOf } from "../capabilities/mcp-tools.js";
 import { pluginDirsOf } from "../capabilities/plugin-dirs.js";
 import type { Services } from "../composition.js";
@@ -782,8 +781,8 @@ export const planHarnessTurn = async (
     const tools = [
         ...services.tools,
         ...mcpToolsOf(granted),
-        ...hostToolsOf(granted, services.config.sandbox.port, services.hostBridgeToken, input.conversationId),
-        ...webextToolsOf(granted, services.config.sandbox.port, services.webextBridgeToken),
+        ...peerToolsOf("host", granted, services.config.sandbox.port, services.hostBridgeToken, input.conversationId),
+        ...peerToolsOf("webext", granted, services.config.sandbox.port, services.webextBridgeToken),
     ];
     const {
         hashlineEdits,

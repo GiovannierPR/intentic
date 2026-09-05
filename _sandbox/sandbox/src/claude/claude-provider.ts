@@ -5,8 +5,10 @@ import { authStateRelPath, type ProviderModule, providerAccountEntry } from "../
 import { planHarnessTurn } from "../agent/turn-plan.js";
 import type { Config } from "../env.config.js";
 import { type ClaudeStore, fileClaudeStore, startClaudeRefresh } from "./claude-credentials.js";
+import { claudeOneShot } from "./claude-one-shot.js";
 import { type ClaudeCatalog, createClaudeCatalog } from "./claude-models.js";
 import { type ClaudeSeatStore, fileClaudeSeatStore } from "./claude-seats.js";
+import { claudeAccountDoor } from "./claude-accounts.js";
 
 /* EVERYTHING CLAUDE CONTRIBUTES TO THE DAEMON, aggregated by the provider registry (agent/provider-module.ts
  * is the seam). Claude is the anchor module: its adapter is the Claude Code LOOP, which also serves Kimi (no
@@ -43,6 +45,7 @@ export const createClaudeSlice = (input: {
 
 const CLAUDE_CODE_ADAPTER: AgentAdapter<"claude-code"> = {
     runtime: "claude-code",
+    oneShot: claudeOneShot,
     preflight: (services, input, context, installed) => planHarnessTurn(services, input, context, installed),
     /* The Claude Code loop is in-process (the Agent SDK, not a CLI), so there is no binary to look for and the
      * only thing that can be missing is the credential. Which credential depends on where the turn is pointed,
@@ -63,6 +66,7 @@ const CLAUDE_CODE_ADAPTER: AgentAdapter<"claude-code"> = {
 
 export const claudeProvider: ProviderModule = {
     id: "claude",
+    accounts: claudeAccountDoor,
     adapters: [CLAUDE_CODE_ADAPTER],
     catalog: (services) => services.claudeModels.models(),
     // A stored account, else the container's own credential — the same two rungs the health probe takes,

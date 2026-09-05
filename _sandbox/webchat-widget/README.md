@@ -21,9 +21,11 @@ overrides it for a site that fronts the sandbox behind its own proxy.
 - **The reply is SSE over POST**, which `EventSource` cannot do: hence the hand-rolled reader in
   `transport.ts`. Hono splits a payload on newlines into one `data:` line each, so rejoining with `\n` is what
   restores an agent's multi-line text.
-- **Types come from `@intentic/sandbox-contract`, imported as types only.** That is why it is a
-  *devDependency*: the import is erased at build, so zod never reaches a visitor's browser. Keep it that way:
-  a value import from the contract would multiply the bundle size.
+- **Types come from `@intentic/sandbox-contract`, imported as types only**, and the one VALUE import is the
+  contract's `embed` entry, which has no imports of its own (the three calls every embed makes, the proof-of-work
+  solver, the localStorage id, the script-tag boot). That is why the contract is a *devDependency*: everything
+  is bundled in or erased, so zod never reaches a visitor's browser. Keep it that way: a value import from the
+  contract's barrel would multiply the bundle size.
 - **`crypto.subtle` needs a secure context.** The proof-of-work check cannot run on an `http://` site, and says
   so rather than hanging.
 
@@ -41,6 +43,6 @@ change. The other half of the wire is `_sandbox/sandbox/src/webchat/`.
 ## Key files
 
 - [src/element.ts](src/element.ts): the custom element a site embeds.
-- [src/transport.ts](src/transport.ts): the connection back to the sandbox.
-- [src/identity.ts](src/identity.ts) / [src/challenge.ts](src/challenge.ts): who a visitor is, and the abuse gate.
+- [src/transport.ts](src/transport.ts): the reply, SSE over POST; the config and challenge calls are the contract's embed helpers.
+- [src/identity.ts](src/identity.ts) / [src/challenge.ts](src/challenge.ts): who a visitor is, and the Turnstile half of the abuse gate (the proof of work is every embed's, in the contract).
 - [src/main.ts](src/main.ts): the entry the script tag loads.

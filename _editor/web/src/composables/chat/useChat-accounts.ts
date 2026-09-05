@@ -27,24 +27,11 @@ export const accountsOf = (target: AgentProvider): readonly OauthAccount[] => pr
 // The manage card's accounts, which follow the card's own provider rather than any conversation's.
 export const managedAccounts = computed<readonly OauthAccount[]>(() => accountsOf(managedProvider.value));
 
-// The route prefix a provider's ACCOUNT routes live under, and only Claude and Grok have any. Every other
-// provider authenticates through the subscription the translator holds, which is why refreshConnections filters
-// them out (subscriptionOnly) before anything here is reached.
-// Catalogs are deliberately NOT here: they are the one question every provider answers identically, so they
-// come off a single parameterized route (modelsPath below).
-/* Where a provider's ACCOUNT rows live. Every base below serves the same three paths (`/accounts`,
- * `/account/rename`, `/account/disconnect`), which is what lets one set of helpers read, rename and disconnect
- * an account without knowing whose it is.
- *
- * A minted provider's base is `/keys/<provider>`, one route family for all of them (minted.contract.ts), so
- * this is the last line that has to know they exist. Claude's is the fallback because it is the default
- * provider, and the two named bases are providers with a store of their own. */
-export const providerBase = (p: AgentProvider): string =>
-    providerSpec(p)?.auth.kind === `minted` ? `/keys/${p}` : p === `grok` ? `/grok` : p === `cursor` ? `/cursor` : `/claude`;
-
-// Whether this provider's sign-in ends with the daemon minting the vendor's key: the one fact the connect
-// helpers below branch on, read off the spec row rather than off a list of names here.
-export const isMinted = (p: AgentProvider): boolean => providerSpec(p)?.auth.kind === `minted`;
+/* Where a provider's ACCOUNT rows live: one route family with the provider in the path (accounts.contract.ts),
+ * which is what lets one set of helpers read, rename, disconnect and connect an account without knowing whose
+ * it is. A provider whose only credential is the translator's subscription has no door there (subscriptionOnly
+ * keeps those out of refreshConnections); catalogs are not here either, they come off /providers. */
+export const providerBase = (p: AgentProvider): string => `/accounts/${p}`;
 
 /* Providers whose ONLY credential is the translator subscription: they have no native account handshake, so the
  * card shows the routed row alone and there is nothing for `startConnect` to arm. Their turns authenticate
@@ -250,7 +237,7 @@ export const refreshAccounts = async (target: AgentProvider, force: boolean): Pr
      * background sweep and that read deliberately never blocks on upstream, it is the routed turn's credential
      * gate as much as it is a settings list, so a round-trip there would land on every routed turn's startup. */
     const forced = force && target === `claude` ? `?force=1` : ``;
-    const list = (await sandboxJson<{ accounts?: OauthAccount[] }>(`${providerBase(target)}/accounts${forced}`)).accounts ?? [];
+    const list = (await sandboxJson<{ accounts?: OauthAccount[] }>(`${providerBase(target)}${forced}`)).accounts ?? [];
     // The shared usage map is seeded from this list as it lands (providerAccounts.usageByAccount), so a fresh
     // page load shows each account's headroom immediately instead of staying blank until its next turn.
     providerAccounts.value = { ...providerAccounts.value, [target]: list };
@@ -367,7 +354,7 @@ export const renameAccount = async (id: string, label: string): Promise<void> =>
     }
     let response: Response;
     try {
-        response = await sandboxRequest(`${providerBase(target)}/account/rename`, jsonBody(`POST`, { id, label: typed }));
+        response = await sandboxRequest(`${providerBase(target)}/rename`, jsonBody(`POST`, { id, label: typed }));
     } catch (err) {
         error.value = errorMessage(err, `Could not rename that account: is your sandbox online?`);
         replaceAccount(target, current);
@@ -390,7 +377,7 @@ export const renameAccount = async (id: string, label: string): Promise<void> =>
 export const disconnect = async (id: string): Promise<void> => {
     const target = managedProvider.value;
     accountBusy.value = target;
-    await sandboxRequest(`${providerBase(target)}/account/disconnect`, jsonBody(`POST`, { id }))
+    await sandboxRequest(`${providerBase(target)}/disconnect`, jsonBody(`POST`, { id }))
         .catch(() => undefined)
         .finally(() => (accountBusy.value = undefined));
     const remaining = accountsOf(target).filter((entry) => entry.id !== id);

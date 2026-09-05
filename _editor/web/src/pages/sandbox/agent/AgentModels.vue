@@ -140,7 +140,7 @@ const quick = pinnedList({
  *
  * THE ONLY LIST WHOSE ENTRIES CARRY KNOBS, and the reason is what each list's job can actually honour: the
  * quick helpers are one-shot calls the daemon deliberately runs with thinking disabled and no effort at all
- * (agent/one-shot.ts), and the cheaper-tier list names a substitution the judge makes, which never touches an
+ * (claude/claude-one-shot.ts), and the cheaper-tier list names a substitution the judge makes, which never touches an
  * unattended run. A reasoning control on either would be a switch with nothing behind it. */
 const runs = pinnedList({
     read: () => agentRun.pinned.value,
@@ -155,7 +155,7 @@ const runs = pinnedList({
  * quick list above. Its floor is that list, which is why it sits under it.
  *
  * No knobs, for the same reason the quick row has none: a verdict is a one-shot the daemon runs with thinking
- * disabled and no effort at all (agent/one-shot.ts), so a reasoning control here would be a switch with nothing
+ * disabled and no effort at all (claude/claude-one-shot.ts), so a reasoning control here would be a switch with nothing
  * behind it. */
 const judge = pinnedList({
     read: () => settings.value?.commandJudgeModels ?? [],

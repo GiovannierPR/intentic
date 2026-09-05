@@ -1,6 +1,7 @@
 import { expect, test, vi } from "vitest";
 import type { WebchatMessage } from "@intentic/sandbox-contract";
-import { parseSseBlock, sendMessage, splitSseBlocks, WebchatError } from "./transport.js";
+import { EmbedError } from "@intentic/sandbox-contract/embed";
+import { parseSseBlock, sendMessage, splitSseBlocks } from "./transport.js";
 
 const ENDPOINT = { base: "https://sandbox-abc.example", automationId: "support" };
 const MESSAGE: WebchatMessage = { conversationId: "v-1", content: "hello" };
@@ -99,8 +100,8 @@ test(`a refusal with no JSON body still names its status`, async () => {
         vi.fn(async () => new Response(`<html>502</html>`, { status: 502 })),
     );
     const error = await sendMessage(ENDPOINT, MESSAGE, { delta: () => {}, pending: () => {}, failed: () => {} }).catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(WebchatError);
-    expect((error as WebchatError).message).toContain(`502`);
+    expect(error).toBeInstanceOf(EmbedError);
+    expect((error as EmbedError).message).toContain(`502`);
 });
 
 test(`the message posts to the automation's own path`, async () => {

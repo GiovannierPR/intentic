@@ -1,11 +1,4 @@
-import {
-    createStreamingPainter,
-    failureNotice,
-    framePainter,
-    GatewayRefusal,
-    type GatewayCtx,
-    type ListenerMessage,
-} from "@intentic/connector-runtime";
+import { createStreamingPainter, failureNotice, framePainter, type GatewayCtx, GatewayRefusal, type ListenerMessage, recentKeys } from "@intentic/connector-runtime";
 import type { SlackConnection } from "./client.js";
 
 /* The inbound half of the gateway: every Socket Mode envelope a connected app receives becomes a normalized
@@ -133,7 +126,7 @@ export interface SlackListener {
 }
 
 export const createSlackListener = (ctx: GatewayCtx, connections: () => ReadonlyMap<string, SlackConnection>): SlackListener => {
-    const recent = new Set<string>();
+    const recent = recentKeys(RECENT_MAX);
     // Slack events carry a user ID and nothing else; the model needs a name. One lookup per user, then cached
     // for the life of the process, display names change rarely enough that a restart is a fine refresh.
     const names = new Map<string, string>();
@@ -202,15 +195,8 @@ export const createSlackListener = (ctx: GatewayCtx, connections: () => Readonly
             return;
         }
         const key = `${channel}:${message.ts}`;
-        if (recent.has(key)) {
+        if (recent.duplicate(key)) {
             return;
-        }
-        recent.add(key);
-        if (recent.size > RECENT_MAX) {
-            const oldest = recent.values().next().value;
-            if (oldest !== undefined) {
-                recent.delete(oldest);
-            }
         }
 
         const text = message.text ?? "";

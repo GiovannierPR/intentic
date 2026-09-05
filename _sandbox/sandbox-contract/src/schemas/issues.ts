@@ -234,10 +234,6 @@ export const IssuePublicConfigSchema = z.object({
 });
 export type IssuePublicConfig = z.infer<typeof IssuePublicConfigSchema>;
 
-// The proof-of-work challenge, the same shape and the same solver as the Front Desk's.
-export const IssueChallengeSchema = z.object({ salt: z.string(), difficulty: z.number().int().positive() });
-export type IssueChallenge = z.infer<typeof IssueChallengeSchema>;
-
 /* What the intake answers with. A short reference the reporter can be shown ("we filed this as 4f3a…"), and
  * nothing else: whether this crash is new, how often it has happened and whether it woke anybody are the
  * owner's facts, and the caller is a stranger's browser. */

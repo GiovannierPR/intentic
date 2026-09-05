@@ -146,7 +146,7 @@ const releaseTierRankOf = (family: string): number => lastRankOf(family, RELEASE
  *
  * That is not a small mis-sort. Thinking is the difference between a commit message that is in the box before
  * the user has finished reading the file list and one that arrives half a minute later, measured at ~2s versus
- * ~27s on the same model and the same diff (agent/one-shot.ts, which disables thinking for the rungs where a
+ * ~27s on the same model and the same diff (claude/claude-one-shot.ts, which disables thinking for the rungs where a
  * request parameter can). For a routed rung there is no such parameter: the id IS the setting, so this ranking
  * is the only place the choice can be made.
  *

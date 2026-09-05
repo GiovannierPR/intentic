@@ -1,5 +1,5 @@
 import { errorMessage } from "@intentic/base/errors";
-import { MCP_PROTOCOL_VERSION } from "@intentic/sandbox-contract";
+import { createMcpServer, type McpTool, textResult, tool } from "@intentic/sandbox-contract/peer-mcp-server";
 import { z } from "zod";
 import { record } from "./audit.js";
 import { RefusedError } from "./policy.js";
@@ -9,48 +9,12 @@ import { lendSite } from "./tools/lend.js";
 import { connectSite } from "./tools/session.js";
 import { listTabs, selectTab } from "./tools/tabs.js";
 
-/* THE MCP SERVER, running HERE, in the browser — not in the sandbox.
- *
- * The daemon forwards JSON-RPC verbatim and interprets none of it (bar one envelope on the way back), so this
- * file is the entire tool surface: what a connected browser can do is decided by the extension installed in
- * it, and an extension that updates learns new tools without anything changing in the sandbox. Which matters
- * more here than it does for a connected device: this artifact ships through a store review, on its own
- * schedule, and a tool surface pinned to a daemon release would mean waiting for both.
- *
- * A FAILED TOOL IS NOT A FAILED CALL. A refused site, a stale ref, a person clicking No — all of it comes back
- * as an ordinary result with isError, because that is what a model can read and act on. A JSON-RPC error
- * surfaces as a transport fault and invites a retry loop against a browser that will refuse identically.
- *
- * EACH TOOL'S ARGUMENTS ARE DESCRIBED ONCE: the zod schema below is what the model is shown (`tools/list`
- * publishes it as JSON Schema) AND what an arriving call is checked against, so the advertised shape and the
- * accepted one cannot drift. */
-
-interface Tool {
-    readonly name: string;
-    readonly description: string;
-    readonly inputSchema: Record<string, unknown>;
-    readonly call: (args: unknown) => Promise<Record<string, unknown>>;
-}
-
-const textResult = (text: string, isError = false): Record<string, unknown> => ({ content: [{ type: "text", text }], isError });
-
-const tool = <Schema extends z.ZodType>(spec: {
-    name: string;
-    description: string;
-    input: Schema;
-    run: (args: z.output<Schema>) => Promise<Record<string, unknown>>;
-}): Tool => {
-    const { $schema: _dialect, ...inputSchema } = z.toJSONSchema(spec.input, { io: "input" });
-    return {
-        name: spec.name,
-        description: spec.description,
-        inputSchema,
-        call: async (args) => {
-            const parsed = spec.input.safeParse(args);
-            return parsed.success ? await spec.run(parsed.data) : textResult(z.prettifyError(parsed.error), true);
-        },
-    };
-};
+/* THE TOOL SURFACE of a connected browser, served by the peer MCP server (sandbox-contract's peer-mcp-server.ts:
+ * the dispatch, the "a failed tool is not a failed call" rule and the schema-once `tool()` builder are there).
+ * What is here is what this extension can DO, and it matters more that it lives in the extension than it does
+ * for a device: this artifact ships through a store review, on its own schedule, and a tool surface pinned to a
+ * daemon release would mean waiting for both. A browser hands its tools nothing beside their arguments: the
+ * grant is read from storage by the page tools themselves, because an MV3 worker holds no live state. */
 
 const NO_ARGS = z.object({});
 const required = z.string().min(1);
@@ -58,7 +22,7 @@ const required = z.string().min(1);
 // from `tabs`, and naming one is how the agent works somewhere that is not in front.
 const tab = z.number().int().optional().describe("Which tab, from `tabs`. Omit for the tab in front.");
 
-const TOOLS: readonly Tool[] = [
+const TOOLS: readonly McpTool<undefined>[] = [
     tool({
         name: "describe",
         description:
@@ -198,49 +162,12 @@ const TOOLS: readonly Tool[] = [
     }),
 ];
 
-const BY_NAME = new Map(TOOLS.map((entry) => [entry.name, entry]));
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
-
-// Handle one JSON-RPC message. Returns the response, or undefined for a notification (nothing to answer).
-export const handleMcpMessage = async (message: unknown, version: string): Promise<Record<string, unknown> | undefined> => {
-    if (!isRecord(message)) {
-        return { jsonrpc: "2.0", id: null, error: { code: -32600, message: "invalid request" } };
-    }
-    const id = message["id"];
-    if (id === undefined) {
-        return undefined;
-    }
-    const method = message["method"];
-    const reply = (result: Record<string, unknown>): Record<string, unknown> => ({ jsonrpc: "2.0", id, result });
-
-    if (method === "initialize") {
-        return reply({ protocolVersion: MCP_PROTOCOL_VERSION, capabilities: { tools: {} }, serverInfo: { name: "intentic-webext", version } });
-    }
-    if (method === "ping") {
-        return reply({});
-    }
-    if (method === "tools/list") {
-        return reply({ tools: TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) });
-    }
-    if (method === "tools/call") {
-        const params = isRecord(message["params"]) ? message["params"] : {};
-        const name = typeof params["name"] === "string" ? params["name"] : "";
-        const args = isRecord(params["arguments"]) ? params["arguments"] : {};
-        const found = BY_NAME.get(name);
-        if (found === undefined) {
-            return reply(textResult(`This browser has no tool called "${name}".`, true));
-        }
-        try {
-            const result = await found.call(args);
-            await record(name, args, result["isError"] !== true);
-            return reply(result);
-        } catch (error) {
-            const refused = error instanceof RefusedError;
-            const said = errorMessage(error);
-            await record(name, args, false, `${refused ? "refused" : "failed"}: ${said}`);
-            return reply(textResult(said, true));
-        }
-    }
-    return { jsonrpc: "2.0", id, error: { code: -32601, message: `method "${String(method)}" is not supported` } };
-};
+// Handle one JSON-RPC message. Nothing rides beside the arguments: the grant lives in storage, read per call.
+export const handleMcpMessage = createMcpServer<undefined>({
+    serverInfo: () => ({ name: "intentic-webext", version: chrome.runtime.getManifest().version }),
+    tools: TOOLS,
+    noSuchTool: (name) => `This browser has no tool called "${name}".`,
+    refused: (error) => error instanceof RefusedError,
+    errorMessage,
+    audit: ({ tool: name, args, ok, failure }) => record(name, args, ok, failure === undefined ? undefined : `${failure.refused ? "refused" : "failed"}: ${failure.message}`),
+});

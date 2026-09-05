@@ -1,8 +1,9 @@
-import type { WebchatChallenge, WebchatMessage, WebchatPublicConfig } from "@intentic/sandbox-contract";
+import type { WebchatMessage, WebchatPublicConfig } from "@intentic/sandbox-contract";
+import { embedFailure, type EmbedEndpoint, embedUrl, fetchEmbedChallenge, fetchEmbedJson, type PowChallenge } from "@intentic/sandbox-contract/embed";
 
-/* The widget's half of the wire. Four calls, all against the sandbox daemon's public /webchat routes, all
- * subject to its origin allowlist, a rejected origin is the FIRST thing a misconfigured embed hits, so every
- * failure here carries the server's own sentence rather than a status code. */
+/* The widget's half of the wire. Three calls against the sandbox daemon's public /webchat door, all subject to
+ * its origin allowlist, a rejected origin is the FIRST thing a misconfigured embed hits, so every failure here
+ * carries the server's own sentence rather than a status code (the contract's EmbedError). */
 
 // The daemon answers a message with SSE over POST, which EventSource cannot do (it only GETs). So the reply is
 // read off the fetch body directly, which is also what lets one function own the whole request/response pair.
@@ -40,48 +41,15 @@ export const splitSseBlocks = (buffer: string): { blocks: string[]; rest: string
     return { blocks: parts.slice(0, -1).filter((block) => block.trim() !== ""), rest: parts.at(-1) ?? "" };
 };
 
-// What the server said when it refused. The daemon answers every refusal as {"error": "..."}, the widget shows
-// that sentence verbatim, because "origin not allowed" tells the site owner exactly what to fix and any wording
-// invented here would not.
-export class WebchatError extends Error {
-    constructor(
-        message: string,
-        readonly status: number,
-    ) {
-        super(message);
-        this.name = "WebchatError";
-    }
-}
+// The three calls every embed makes are the contract's (embed.ts); what is this widget's own is the reply,
+// which is SSE over POST.
+const SLUG = "webchat";
 
-const failure = async (response: Response): Promise<WebchatError> => {
-    const body = (await response.json().catch(() => undefined)) as { error?: unknown } | undefined;
-    return new WebchatError(typeof body?.error === "string" ? body.error : `request failed (${response.status})`, response.status);
-};
-
-export interface Endpoint {
-    readonly base: string;
-    readonly automationId: string;
-}
-
-const url = ({ base, automationId }: Endpoint, path: string): string => `${base}/webchat/${encodeURIComponent(automationId)}/${path}`;
-
-export const fetchConfig = async (endpoint: Endpoint): Promise<WebchatPublicConfig> => {
-    const response = await fetch(url(endpoint, "config"));
-    if (!response.ok) {
-        throw await failure(response);
-    }
-    return (await response.json()) as WebchatPublicConfig;
-};
+export const fetchConfig = (endpoint: EmbedEndpoint): Promise<WebchatPublicConfig> => fetchEmbedJson<WebchatPublicConfig>(embedUrl(endpoint, SLUG, "config"));
 
 // The challenge is minted FOR one visitor thread, the daemon signs the conversation id into the salt, so a
-// solution can't be carried to another thread. Hence the id in the query rather than a bare GET.
-export const fetchChallenge = async (endpoint: Endpoint, conversationId: string): Promise<WebchatChallenge> => {
-    const response = await fetch(`${url(endpoint, "challenge")}?conversation=${encodeURIComponent(conversationId)}`);
-    if (!response.ok) {
-        throw await failure(response);
-    }
-    return (await response.json()) as WebchatChallenge;
-};
+// solution can't be carried to another thread.
+export const fetchChallenge = (endpoint: EmbedEndpoint, conversationId: string): Promise<PowChallenge> => fetchEmbedChallenge(endpoint, SLUG, "conversation", conversationId);
 
 export interface ReplySink {
     // One chunk of the agent's answer, as it is written.
@@ -92,22 +60,22 @@ export interface ReplySink {
      * as overlapping. Carries the server's own wording, which is deliberately generic here: the real reason is
      * about the site owner's credentials or scripts and is kept for them (see the daemon's sse-stream.ts).
      *
-     * Distinct from a thrown WebchatError, which means the message never reached an agent at all. Both end the
+     * Distinct from a thrown EmbedError, which means the message never reached an agent at all. Both end the
      * turn, and the difference is the difference between "we couldn't answer" and "we couldn't accept it". */
     readonly failed: (notice: string) => void;
 }
 
 /* Send one message and pump the reply into `sink` until the stream ends. Resolves when the turn is over, so
- * the caller can re-enable its composer on the same await, a thrown WebchatError means the message never
+ * the caller can re-enable its composer on the same await, a thrown EmbedError means the message never
  * reached an agent, which is a different thing to say than an empty reply. */
-export const sendMessage = async (endpoint: Endpoint, message: WebchatMessage, sink: ReplySink): Promise<void> => {
-    const response = await fetch(url(endpoint, "message"), {
+export const sendMessage = async (endpoint: EmbedEndpoint, message: WebchatMessage, sink: ReplySink): Promise<void> => {
+    const response = await fetch(embedUrl(endpoint, SLUG, "message"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(message),
     });
     if (!response.ok || response.body === null) {
-        throw await failure(response);
+        throw await embedFailure(response);
     }
     const reader = response.body.getReader();
     const decoder = new TextDecoder();

@@ -75,7 +75,7 @@ const live = new Map<string, TurnTaint>();
 /* WHETHER ANYBODY IS WATCHING THE LIVE TURN, published beside the bit and for the same reason: a consult site
  * outside the generator needs it and cannot derive it.
  *
- * There is exactly one such site, and it arrived with the host bridge (hosts/host.routes.ts): a `run_command`
+ * There is exactly one such site, and it arrived with the host bridge (hosts/host-peer.ts): a `run_command`
  * headed for the owner's own computer is judged in the daemon's HTTP layer, before it crosses the tunnel, while
  * the turn that asked for it sits inside an MCP tool call. The judge is told whether anyone is watching because
  * the owner's policy has a section about exactly that, and because a verdict of `ask` on an unattended turn

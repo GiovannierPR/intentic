@@ -198,7 +198,7 @@ export const createGrokRunner = (openCode: OpenCodeService, inactivityMs: number
              * ("You are a title generator…", carrying the user's prompt as material) whose answer is written to a
              * field nothing here reads, because intentic names its own conversations (agent/title-namer.ts).
              * Measured on a recording upstream: two requests for the first message of an unnamed session, one for
-             * a named one. Same reason the Gemini helper does it (agent/one-shot-gemini.ts). */
+             * a named one. Same reason the Gemini helper does it (gemini/gemini-one-shot.ts). */
             const created = await c.session.create({ query: { directory: turn.cwd }, body: { title: `intentic conversation` } });
             sessionId = created.data?.id;
             if (sessionId === undefined) {

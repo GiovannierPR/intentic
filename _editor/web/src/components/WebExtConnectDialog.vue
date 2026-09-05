@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { WEBEXT_PAIR_MESSAGE, WEBEXT_PAIRED_MESSAGE, type WebExtSummary, webextPairingCode } from "@intentic/sandbox-contract";
 import { Button, Code, Modal } from "@intentic/ui";
-import { computed, onBeforeUnmount, watch } from "vue";
-import { useWebExtConnect } from "../composables/sandbox/useWebExtConnect";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { usePeerConnect, WEBEXT_DOOR } from "../composables/sandbox/usePeerConnect";
+import { useSandbox } from "../composables/sandbox/useSandbox";
 
 /* "Connect this browser" for a `webext`-kind capability. The machine dialog's sibling: that one hands over a
  * command to run on a device this tab cannot reach, and this one hands over a code to paste into a browser
@@ -12,30 +14,73 @@ import { useWebExtConnect } from "../composables/sandbox/useWebExtConnect";
  * switches on this card decide what KIND of thing may happen, and which sites it may happen on is a separate
  * decision they make in the extension, in their browser, one site at a time — and can take back there.
  *
- * When the extension is already installed in THIS browser it answers the handoff and the code disappears: a
- * person connecting the browser they are reading this in copies nothing. */
+ * THE HANDOFF IS THE INTERESTING PART. The code is also posted on this window, where the extension's own
+ * content script picks it up (it is loaded on this origin and no other), so a person with the extension already
+ * installed never copies anything: their popup lights up with "a sandbox wants to connect". The page learns the
+ * extension is there from the answer, and says so. Everything still needs their click in the popup — a page
+ * must not be able to connect somebody's browser to a sandbox on its own, and Chrome would refuse anyway, since
+ * redeeming needs a permission only a user gesture can grant. */
 
 // `install` is empty when the card that declared this browser family named no store listing — an
 // unlisted build, or a family somebody added by hand. The link is then simply not offered.
 const props = defineProps<{ visible: boolean; id: string; install: string; permissions: string }>();
 const emit = defineEmits<{ (event: "update:visible", value: boolean): void; (event: "connected"): void }>();
 
-const { browserFor, code, minting, error, extensionHere, connect, start, stop, close } = useWebExtConnect();
+const { peerFor, pairToken, minting, error, connect, start, stop, close } = usePeerConnect<WebExtSummary>(WEBEXT_DOOR);
+const { daemonUrl } = useSandbox();
 
-const browser = computed(() => browserFor(props.id));
+const browser = computed(() => peerFor(props.id));
 const online = computed(() => browser.value?.online === true);
+const code = computed(() => {
+    const url = daemonUrl.value ?? ``;
+    return url === `` || pairToken.value === undefined ? `` : webextPairingCode({ url, token: pairToken.value });
+});
 
-// Opening mints; closing forgets. A pairing left live in a closed tab is a credential nobody is watching.
+// Whether an installed extension answered the handoff. Undefined until we have offered one: "we do not know
+// yet" and "nothing answered" are different things to say to somebody who is waiting.
+const extensionHere = ref<boolean | undefined>(undefined);
+// The extension answers on this same window when it has the code. One listener per offer, removed when the
+// dialog closes, so a stale one cannot mark a later attempt as answered.
+let listener: ((event: MessageEvent) => void) | undefined;
+const forgetOffer = (): void => {
+    extensionHere.value = undefined;
+    if (listener !== undefined) {
+        window.removeEventListener(`message`, listener);
+        listener = undefined;
+    }
+};
+const offer = (): void => {
+    if (code.value === ``) {
+        return;
+    }
+    forgetOffer();
+    listener = (event: MessageEvent) => {
+        if (event.source === window && (event.data as { type?: unknown } | undefined)?.type === WEBEXT_PAIRED_MESSAGE) {
+            extensionHere.value = true;
+        }
+    };
+    window.addEventListener(`message`, listener);
+    window.postMessage({ type: WEBEXT_PAIR_MESSAGE, code: code.value }, window.location.origin);
+    // Nothing answering within a moment means no extension on this browser, which is the ordinary case when
+    // the browser being connected is a different one from the one this page is open in.
+    setTimeout(() => {
+        extensionHere.value ??= false;
+    }, 1200);
+};
+
+// Opening mints, then offers; closing forgets. A pairing left live in a closed tab is a credential nobody is watching.
 watch(
     () => props.visible,
     async (visible) => {
         if (!visible) {
+            forgetOffer();
             close();
             stop();
             return;
         }
         start();
         await connect(props.id);
+        offer();
     },
 );
 
@@ -46,7 +91,10 @@ watch(online, (isOnline) => {
     }
 });
 
-onBeforeUnmount(stop);
+onBeforeUnmount(() => {
+    forgetOffer();
+    stop();
+});
 </script>
 
 <template>

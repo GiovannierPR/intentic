@@ -43,7 +43,7 @@ export const webextLendUrl = (sandboxUrl: string): string => `${sandboxUrl.repla
  * So both halves ride in one code. It is not encryption and does not pretend to be — base64url of two fields,
  * so that the thing on the clipboard is opaque enough not to be edited by hand, short enough to paste, and
  * carries its own sandbox address, which is the field a person could not possibly be expected to type. The
- * secret in it is the pairing token, which is single-use and expires in ten minutes (webext-store.ts).
+ * secret in it is the pairing token, which is single-use and expires in ten minutes (the daemon's peer store).
  *
  * The prefix is a version marker, and it is here so that a code from an older sandbox meets a clear "this code
  * is from a different version" in the extension rather than a JSON parse error. */

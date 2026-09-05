@@ -1,13 +1,5 @@
 import { sleep } from "@intentic/base/async";
-import {
-    createStreamingPainter,
-    failureNotice,
-    framePainter,
-    GatewayRefusal,
-    type GatewayCtx,
-    type ListenerMessage,
-    type StreamPoster,
-} from "@intentic/connector-runtime";
+import { chatRings, createStreamingPainter, failureNotice, framePainter, type GatewayCtx, GatewayRefusal, type ListenerMessage, recentKeys, type StreamPoster, typingHeartbeat } from "@intentic/connector-runtime";
 import { type TelegramConnection, TelegramApiError, type TelegramMessage, type TelegramUpdate } from "./client.js";
 
 /* The inbound half of the gateway: every update a connected bot long-polls becomes a normalized listener
@@ -143,56 +135,19 @@ export interface TelegramListener {
 }
 
 export const createTelegramListener = (ctx: GatewayCtx, connections: () => ReadonlyMap<string, TelegramConnection>): TelegramListener => {
-    const recent = new Set<string>();
-    // The stand-in for a history API: what this process has watched go by, per chat, oldest first. Insertion
-    // order is recency (a push re-inserts its chat), so evicting the first key drops the chat quiet longest.
-    const seen = new Map<string, HistoryEntry[]>();
-    // Live "typing…" indicators keyed by chatId, started on a mention, cleared when the turn ends or after
-    // TYPING_MAX_MS.
-    const typing = new Map<string, NodeJS.Timeout>();
-
-    const remember = (chatId: string, entry: HistoryEntry): void => {
-        const ring = seen.get(chatId) ?? [];
-        ring.push(entry);
-        seen.delete(chatId);
-        seen.set(chatId, ring.slice(-HISTORY_LIMIT));
-        if (seen.size > HISTORY_CHATS_MAX) {
-            const quietest = seen.keys().next().value;
-            if (quietest !== undefined) {
-                seen.delete(quietest);
-            }
-        }
-    };
-
-    const stopTyping = (chatId: string): void => {
-        const timer = typing.get(chatId);
-        if (timer !== undefined) {
-            clearInterval(timer);
-            typing.delete(chatId);
-        }
-    };
+    const recent = recentKeys(RECENT_MAX);
+    // The stand-in for a history API: what this process has watched go by, per chat (listener-memory.ts).
+    const seen = chatRings<HistoryEntry>({ perChat: HISTORY_LIMIT, chats: HISTORY_CHATS_MAX });
+    // Live "typing…" indicators keyed by chatId, started on a mention, cleared when the turn ends.
+    const typing = typingHeartbeat({ intervalMs: TYPING_INTERVAL_MS, maxMs: TYPING_MAX_MS });
 
     const startTyping = (connection: TelegramConnection, message: TelegramMessage): void => {
-        const chatId = String(message.chat.id);
         const action = {
             chat_id: message.chat.id,
             action: "typing",
             ...(message.message_thread_id === undefined ? {} : { message_thread_id: message.message_thread_id }),
         };
-        const send = (): void => void connection.call("sendChatAction", action).catch(() => undefined);
-        stopTyping(chatId);
-        send();
-        const startedAt = Date.now();
-        typing.set(
-            chatId,
-            setInterval(() => {
-                if (Date.now() - startedAt > TYPING_MAX_MS) {
-                    stopTyping(chatId);
-                    return;
-                }
-                send();
-            }, TYPING_INTERVAL_MS),
-        );
+        typing.start(String(message.chat.id), () => void connection.call("sendChatAction", action).catch(() => undefined));
     };
 
     /* The two Bot API calls the painter makes, with the two failures that are not failures folded in: an edit
@@ -238,15 +193,8 @@ export const createTelegramListener = (ctx: GatewayCtx, connections: () => Reado
     const onMessage = async (connection: TelegramConnection, message: TelegramMessage): Promise<void> => {
         const chatId = String(message.chat.id);
         const key = `${chatId}:${message.message_id}`;
-        if (recent.has(key)) {
+        if (recent.duplicate(key)) {
             return;
-        }
-        recent.add(key);
-        if (recent.size > RECENT_MAX) {
-            const oldest = recent.values().next().value;
-            if (oldest !== undefined) {
-                recent.delete(oldest);
-            }
         }
         const live = [...connections().values()];
         const selfIds = new Set(live.map((each) => each.selfId));
@@ -261,8 +209,8 @@ export const createTelegramListener = (ctx: GatewayCtx, connections: () => Reado
         const author = { id: String(message.from?.id ?? message.chat.id), name: authorNameOf(message) };
         // The ring is context for the NEXT mention, so this message goes in whether or not it wakes anything,
         // that is the whole point of keeping one.
-        const history = [...(seen.get(chatId) ?? [])];
-        remember(chatId, { author, content, timestamp });
+        const history = seen.of(chatId);
+        seen.remember(chatId, { author, content, timestamp });
 
         const usernames = new Set(live.map((each) => each.username));
         const mentioned = message.chat.type === "private" || addressesUs(message, usernames, selfIds);
@@ -308,7 +256,7 @@ export const createTelegramListener = (ctx: GatewayCtx, connections: () => Reado
             );
         } finally {
             // The turn(s) ended (or the stream broke), the reply is there, so retire the indicator.
-            stopTyping(chatId);
+            typing.stop(chatId);
         }
     };
 
@@ -320,12 +268,7 @@ export const createTelegramListener = (ctx: GatewayCtx, connections: () => Reado
             }
             void onMessage(connection, message).catch((error: unknown) => ctx.log.error({ err: error }, "telegram update dispatch failed"));
         },
-        stopAll: () => {
-            for (const timer of typing.values()) {
-                clearInterval(timer);
-            }
-            typing.clear();
-        },
+        stopAll: typing.stopAll,
     };
 };
 

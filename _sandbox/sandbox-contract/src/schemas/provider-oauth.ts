@@ -64,68 +64,65 @@ export const AccountListQuerySchema = z.object({
 });
 // Address one account of a provider (disconnect, and the turn's `account`).
 export const AccountIdSchema = z.object({ id: z.string().min(1).describe("Which account.") });
-// Rename one account of a provider whose credential the sandbox owns (Claude, Kimi). Blank ⇒ the daemon falls
-// back to the derived name, so clearing a label restores the sign-in identity rather than leaving a nameless
-// row. Grok is absent for the same reason it holds one account: OpenCode owns that credential, not this store.
+// Rename one account of a provider whose credential the sandbox owns. Blank ⇒ the daemon falls back to the
+// derived name, so clearing a label restores the sign-in identity rather than leaving a nameless row.
 export const AccountRenameSchema = z.object({
     id: z.string().min(1).describe("Which account."),
     label: z.string().max(80).describe("The new name. Blank restores the one derived from the sign-in, rather than leaving a nameless row."),
 });
-// The completing calls carry the user-chosen label (blank ⇒ the daemon derives one from the sign-in identity
-// or a provider default).
-export const OauthExchangeSchema = z.object({
-    code: z.string().min(1).describe("The code the sign-in handed back."),
-    verifier: z.string().min(1).describe("The proof from the start of the handshake, which is what stops somebody else's code being redeemed here."),
-    state: z.string().min(1).describe("The handshake this belongs to. A mismatch is refused."),
-    label: z.string().optional().describe("What to call the account. Blank derives one from the sign-in."),
-});
-export const AuthorizeChallengeSchema = z.object({
-    authorizeUrl: z.string().describe("Where to send somebody to sign in."),
-    verifier: z.string().describe("Keep this and send it back when finishing. It is what proves the code that comes back belongs to this handshake."),
-    state: z.string().describe("The handshake's own id, sent back with it."),
-});
-/* CURSOR'S SIGN-IN START. A third login shape, and the reason it is not one of the two above is where the
- * SECRET lives during the handshake.
+/* ONE SIGN-IN SHAPE FOR EVERY ACCOUNT THE SANDBOX ITSELF HOLDS, whatever the vendor's mechanism underneath.
  *
- * Claude's is paste-back: the browser receives a code and the caller hands it plus its verifier to `exchange`,
- * so the handshake's proof has to travel on the wire and AuthorizeChallengeSchema carries it. Cursor's PKCE
- * verifier must never leave the process that generated it, anyone holding it can redeem the login and mint a
- * durable key, so the daemon starts the whole flow, keeps the verifier in memory, polls Cursor itself, and
- * writes the account when it lands. Nothing redeemable is on this shape at all.
- *
- * Which makes it behave like a DEVICE flow from the caller's side (open the page, then watch the account list),
- * except that there is no one-time code to display: the login page is addressed to this handshake already. So
- * DeviceStartSchema's `code` would be a permanently blank field on every card, and TranslatorStartSchema's
- * `state` a value nothing sends back. `handshake` is neither, it is a cancellation handle. */
-export const CursorLoginStartSchema = z.object({
-    url: z.string().describe("The page to open and sign in on. It is already addressed to this attempt, so there is no code to type."),
+ * Four handshakes used to answer four shapes, and the shapes differed in where the SECRET lived during the
+ * handshake. Anthropic's is paste-back: the browser shows a code and the user brings it here. Cursor's PKCE
+ * verifier must never leave the process that generated it (anyone holding it can redeem the login and mint a
+ * durable key), so the daemon runs the whole flow and the caller only watches the account list. xAI's is a
+ * device code. Meta's and Z.ai's mint the vendor's own key, by a device poll or by a redirect that dead-ends in
+ * the user's address bar. Every one of them is now the daemon's to hold: nothing redeemable is on this shape,
+ * and the one thing the caller can hand back (a code off a page, or the address a redirect landed on) goes to
+ * `complete` with the attempt's handshake. `flow` says how the attempt ENDS, which is the only thing a card
+ * cannot infer from the fields: a device sign-in finishes upstream and the account appears on its own; a
+ * redirect needs the landing address brought back; a paste needs the code the page showed. */
+export const LoginFlowSchema = z.enum(["device", "redirect", "paste"]);
+export type LoginFlow = z.infer<typeof LoginFlowSchema>;
+export const LoginStartSchema = z.object({
+    url: z.string().describe("The page to open and sign in on."),
+    code: z.string().describe("The one-time code the page will ask for, where the vendor issues one. Blank when the page is already addressed to this attempt."),
+    state: z
+        .string()
+        .describe("For a redirect sign-in, the marker in the address the browser lands on, so a pasted URL can be recognised as this attempt's. Blank otherwise."),
+    flow: LoginFlowSchema.describe(
+        "How this attempt ends. A device sign-in finishes by itself and you watch the account list; a redirect needs the address it landed on handed back; a paste needs the code the page showed.",
+    ),
+    variant: z.string().describe("Which of the provider's estates this attempt signs in to. Blank for a provider with one."),
     handshake: z
         .string()
-        .describe(
-            "This attempt's id, for abandoning it. Not a credential and not redeemable: the proof that finishes the sign-in never leaves the sandbox.",
-        ),
+        .describe("This attempt's id, for finishing or abandoning it. Not a credential and not redeemable: the proof that completes the sign-in never leaves the sandbox."),
     expiresAt: z.number().describe("When this attempt stops being answerable, in milliseconds, so a card can stop waiting instead of spinning."),
 });
-export type CursorLoginStart = z.infer<typeof CursorLoginStartSchema>;
-// Abandon a sign-in nobody completed, so the daemon stops polling Cursor for it. Ordinary tidiness rather than
-// a security boundary: an unanswered attempt also times out on its own (see `expiresAt`).
-export const CursorLoginCancelSchema = z.object({ handshake: z.string().min(1).describe("Which attempt to stop waiting on.") });
-// xAI Grok (via OpenCode) uses subscription OAuth via the headless device-code method. `start` returns the
-// `url` the user opens (xAI's verification_uri_complete, which pre-fills the code) and `code`, the same
-// one-time code, surfaced so the card matches x.ai exactly. There is no paste-back: OpenCode polls to
-// completion and the UI polls `/grok/accounts`.
-// ponytail: OpenCode holds one xAI auth per data dir, so Grok stays single-account, the list is 0 or 1. Per
-// account would need an OpenCode server per data dir; add when there's demand.
-// A device-code login start: the verification URL + the one-time code the user enters there. The native Grok
-// flow (via OpenCode), see TranslatorStartSchema for the routed-provider connect, which adds `state`.
-export const DeviceStartSchema = z.object({
-    url: z.string().describe("The page to open, which already has the code in it."),
-    code: z
-        .string()
-        .describe(
-            "The one-time code, shown as well so the page and the card say the same thing. Nothing is pasted back: the sandbox waits for the sign-in to complete on its own.",
-        ),
+export type LoginStart = z.infer<typeof LoginStartSchema>;
+// The estate to sign in to, where a provider has more than one (Z.ai's international and mainland plans). Absent
+// takes the provider's default, which is what a provider with a single estate always sends.
+export const LoginRequestSchema = z.object({
+    variant: z.string().min(1).optional().describe("Which estate to sign in to. Absent takes the provider's default."),
 });
+/* The half a person brings back, for the two flows that have one: the code the page showed (a paste), or the
+ * whole address a redirect landed on. Not the handshake's state, unlike the translator's version below: that
+ * one addresses a session CLIProxyAPI holds, so the state has to travel, while this handshake is held right
+ * here and taking the caller's word for its own state would be checking a claim against itself. */
+export const LoginCompleteSchema = z.object({
+    handshake: z.string().min(1).describe("Which attempt this belongs to."),
+    code: z.string().optional().describe("The code the sign-in page showed, for a paste sign-in."),
+    redirectUrl: z.string().optional().describe("The address the browser was sent to, whole, for a redirect sign-in. The grant is inside it."),
+    label: z.string().optional().describe("What to call the account. Blank derives one from the sign-in."),
+});
+// What finishing hands back: the account, where the exchange answers with one at once (a paste); absent where
+// the daemon still has a mint to do behind the answer and the row lands in the account list minutes later.
+export const LoginCompletedSchema = z.object({
+    account: OauthAccountSchema.optional().describe("The account it connected, where the sign-in ends here. Absent means keep watching the account list."),
+});
+// Abandon a sign-in nobody completed, so the daemon stops polling the vendor for it. Ordinary tidiness rather
+// than a security boundary: an unanswered attempt also times out on its own (see `expiresAt`).
+export const LoginCancelSchema = z.object({ handshake: z.string().min(1).describe("Which attempt to stop waiting on.") });
 // A routed-provider subscription login start (codex/grok/kimi/gemini via CLIProxyAPI). Device flows poll to
 // completion after the user approves upstream; redirect flows need the browser's landing URL pasted back. The
 // explicit flow discriminator matters even when a provider's verification URL already embeds its optional code.
@@ -138,52 +135,6 @@ export const TranslatorStartSchema = z.object({
         .describe(
             "Which shape this is. A device sign-in finishes by itself and you poll the account list; a redirect needs the address it landed on handed back. Said outright rather than guessed at from whether a code happens to exist.",
         ),
-});
-/* A MINTED PROVIDER'S SIGN-IN START (Meta's Muse Code device flow, Z.ai's ZCode flow on either estate). The
- * fields of the three shapes above that this mechanism actually has, and no more.
- *
- * It is Cursor's bargain — the daemon runs the whole handshake and nothing redeemable travels — with two
- * additions Cursor has no use for. `code` is the one-time code where the vendor issues one (Meta does, Z.ai does
- * not), so the card can show what the page will ask for. `state` is present ONLY for a redirect flow, and it is
- * not a credential: the grant dead-ends in the user's address bar, so this is what lets the panel recognise the
- * URL they bring back as the one this handshake is waiting for. The daemon still matches the pasted URL against
- * its OWN copy of the state, so an altered one is refused rather than trusted.
- *
- * `variant` is echoed back because the card offered a choice of estate and this says which one it started, so a
- * panel re-rendered mid-handshake shows the estate the user picked rather than the default. */
-export const MintedLoginStartSchema = z.object({
-    url: z.string().describe("The page to open and sign in on."),
-    code: z.string().describe("The one-time code the page will ask for, where the vendor issues one. Blank when the page is already addressed to this attempt."),
-    state: z
-        .string()
-        .describe("For a redirect sign-in, the marker in the address the browser lands on, so a pasted URL can be recognised as this attempt's. Blank otherwise."),
-    flow: z
-        .enum(["device", "redirect"])
-        .describe(
-            "Which shape this is. A device sign-in finishes by itself and you watch the account list; a redirect needs the address it landed on handed back.",
-        ),
-    variant: z.string().describe("Which of the provider's estates this attempt signs in to."),
-    handshake: z
-        .string()
-        .describe("This attempt's id, for finishing or abandoning it. Not a credential and not redeemable: the proof that completes the sign-in never leaves the sandbox."),
-    expiresAt: z.number().describe("When this attempt stops being answerable, in milliseconds, so a card can stop waiting instead of spinning."),
-});
-export type MintedLoginStart = z.infer<typeof MintedLoginStartSchema>;
-/* The paste-back half of a minted provider's redirect sign-in. The whole landing address, and the handshake it
- * belongs to — and NOT the state, unlike the translator's version below: that one addresses a session
- * CLIProxyAPI holds, so the state has to travel, while this handshake is held right here and taking the
- * caller's word for its own state would be checking a claim against itself. */
-export const MintedLoginCompleteSchema = z.object({
-    handshake: z.string().min(1).describe("Which attempt this address belongs to."),
-    redirectUrl: z.string().min(1).describe("The address the browser was sent to, whole. The grant is inside it."),
-});
-// Abandon a minted sign-in nobody completed, so the daemon stops polling for it. Ordinary tidiness rather than a
-// security boundary: an unanswered attempt also times out on its own (see `expiresAt`).
-export const MintedLoginCancelSchema = z.object({ handshake: z.string().min(1).describe("Which attempt to stop waiting on.") });
-// The estate to sign in to, where a provider has more than one (Z.ai's international and mainland plans). Absent
-// takes the provider's default, which is what a provider with a single estate always sends.
-export const MintedLoginRequestSchema = z.object({
-    variant: z.string().min(1).optional().describe("Which estate to sign in to. Absent takes the provider's default."),
 });
 // The paste-back half of a redirect login: the URL the provider sent the browser to, carrying the grant as
 // ?code=&state=. `state` ties it to the handshake that issued it, the translator rejects a mismatch.

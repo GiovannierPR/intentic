@@ -19,6 +19,15 @@ mismatch is a type error rather than a runtime surprise.
   a phone say the same thing about the same push.
 - Define workflow designs and immutable run snapshots, including full model/account/harness pins, per-step spend
   ceilings, pinned repository bases, bounded report previews, and complete-report artifact paths.
+- Hold the embeds' half of the public doors (the daemon's `automations/public-door.ts`): `src/embed.ts`, its
+  own entry point and import-free on purpose, is what the Front Desk widget and the bug reporter both do before
+  they do anything of their own — the door's three calls, the proof-of-work solver, the localStorage id, the
+  script-tag boot.
+- Hold the far end of the peer doors (the daemon's `peers/`): the hello each peer sends (`host-protocol.ts`,
+  `webext-protocol.ts`, `runner-protocol.ts`), the one outbound socket loop every peer runs
+  (`src/peer-dial.ts`, its own entry point) and the MCP tool server a device or a browser answers over it
+  (`src/peer-mcp-server.ts`, its own entry point). Runtime-neutral by construction, since one of those peers is
+  an MV3 service worker.
 
 ## Key files
 
@@ -77,6 +86,11 @@ mismatch is a type error rather than a runtime surprise.
     compile. **Adding a provider is a row here**, its brand path, and (daemon-side) one line in the provider
     registry; `provider-specs.test.ts` walks the table rather than a list, so the guard covers a provider the
     day it is added.
+  - [src/contracts/accounts.contract.ts](src/contracts/accounts.contract.ts): the accounts the sandbox holds
+    itself, one route family with the provider as a parameter (`/accounts/{provider}`), the lesson the
+    catalog route learned applied to sign-ins: start, complete, cancel, list, rename, disconnect are the same
+    six verbs for every provider, and `LoginStart` (schemas/provider-oauth.ts) is the one sign-in shape,
+    whose `flow` says how an attempt ENDS (device, redirect, paste). Nothing redeemable is on any answer.
   - [src/agent-catalog.ts](src/agent-catalog.ts): the shapes each surface reads that table in, plus the rules
     that are about something other than a provider (the trial, the endpoint namespace, the effort and fast-mode
     gates). Shared because both sides act on it: the daemon composes a turn's instructions and skill discovery

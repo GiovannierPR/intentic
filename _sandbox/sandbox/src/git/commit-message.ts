@@ -266,7 +266,7 @@ const TYPES = [`feat`, `fix`, `refactor`, `perf`, `docs`, `test`, `build`, `ci`,
 export const MAX_NOTE_LENGTH = 160;
 
 // The prompt. Written flat rather than as a system/user pair because the one-shot sends no system prompt at all
-// (see one-shot.ts): the instruction, the style examples and the material are one message, in the order the
+// (see claude/claude-one-shot.ts): the instruction, the style examples and the material are one message, in the order the
 // model should weigh them.
 export const commitMessagePrompt = (diffs: readonly RepoDiff[], wantsNote = false, removedSurfaces: readonly string[] = []): string => {
     const budget = Math.floor(MAX_PATCH_BYTES / Math.max(1, diffs.length));

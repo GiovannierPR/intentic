@@ -3,6 +3,11 @@ import { join } from "node:path";
 import type {
     AcpAgentConfig,
     AgentEvent,
+    HostFacts,
+    HostScopes,
+    RunnerFacts,
+    WebExtFacts,
+    WebExtScopes,
     FileDiff,
     GitBranch,
     GitChange,
@@ -95,13 +100,12 @@ import { fileProviderRefusalStore, type ProviderRefusalStore } from "./usage/pro
 import { type ApprovalsStore, fileApprovalsStore } from "./approvals/approvals-store.js";
 import { fileIssuesStore, type IssuesStore } from "./issues/issues-store.js";
 import { fileInstallsStore, type InstallsStore } from "./store/installs.js";
-import { createHostHub, type HostHub } from "./hosts/host-hub.js";
-import { fileHostsStore, type HostsStore } from "./hosts/hosts-store.js";
-import { createWebExtHub, type WebExtHub } from "./webext/webext-hub.js";
-import { fileWebExtStore, type WebExtStore } from "./webext/webext-store.js";
-import { createRunnerHub, type RunnerHub } from "./runners/runner-hub.js";
+import { HOST_PEER, type HostAnnounced, type HostClient, type HostHub, type HostStore } from "./hosts/host-peer.js";
+import { WEBEXT_PEER, type WebExtAnnounced, type WebExtClient, type WebExtHub, type WebExtStore } from "./webext/webext-peer.js";
+import { RUNNER_PEER, type RunnerAnnounced, type RunnerClient, type RunnerHub, type RunnerStore } from "./runners/runner-peer.js";
 import type { ParentCredentials } from "./runners/runner-credentials.js";
-import { fileRunnersStore, type RunnersStore } from "./runners/runners-store.js";
+import { createPeerHub } from "./peers/peer-hub.js";
+import { filePeerStore } from "./peers/peer-store.js";
 import { syncPairBurnPath, type SyncMode } from "./platform/sync.js";
 import { pairings, type Pairings } from "./store/enrollment.js";
 import { fileTurnJournal, type TurnJournal } from "./agent/turn-journal.js";
@@ -190,7 +194,8 @@ import { type RuleFiringsStore, fileRuleFiringsStore } from "./rules/rule-firing
 import { type DriftSweep, createDriftSweep } from "./environment/drift-sweep.js";
 import { type RuntimeInstallsStore, fileRuntimeInstallsStore } from "./environment/runtime-installs.js";
 import { agentSessionName } from "@intentic/sandbox-contract/session-names";
-import { onTurnSettled, soleLiveConversation, turnRunOf } from "./agent/turn-runs.js";
+import { liveCardRun } from "./agent/offer-card.js";
+import { onTurnSettled, turnRunOf } from "./agent/turn-runs.js";
 import { clearTurnTaint } from "./guard/turn-taint.js";
 import { type Announcer, createAnnouncer } from "./platform/announce.js";
 import { type ReachReporter, createReachReporter } from "./platform/reach-report.js";
@@ -329,9 +334,9 @@ export interface Services extends ClaudeSlice, CodexSlice, CursorSlice, GrokSlic
     // lives on /history where the agent cannot read it, and this one dies with the daemon and works only from
     // inside the container. What it opens is still bounded by the scopes that machine enforces (hosts/).
     readonly hostBridgeToken: string;
-    // The user's own computers: enrollment (a durable per-machine token, digests on /history) …
-    readonly hosts: HostsStore;
-    // … and who is actually holding a socket right now, with the JSON-RPC correlation over it.
+    // The user's own computers, a peer door (peers/): enrollment (a durable per-machine token, digests on
+    // /history) and who is actually holding a socket right now.
+    readonly hosts: HostStore;
     readonly hostHub: HostHub;
     // The same pair one layer in, for the user's own BROWSERS (webext/): the extension's enrollment, and which
     // browsers are holding a socket. A separate bridge token from the machines' for the ordinary reason two
@@ -340,9 +345,8 @@ export interface Services extends ClaudeSlice, CodexSlice, CursorSlice, GrokSlic
     readonly webexts: WebExtStore;
     readonly webextHub: WebExtHub;
     // This sandbox's RUNNERS, its own execution containers on other machines (docs/remote-runners-plan.md,
-    // workspace root): enrollment on /history (store/enrollment.ts's mechanic, shared with hosts and webext
-    // above) and the live sockets in memory, which is the hosts hub retold.
-    readonly runners: RunnersStore;
+    // workspace root), the third peer door: same enrollment mechanic, same hub, no grant and no MCP bridge.
+    readonly runners: RunnerStore;
     readonly runnerHub: RunnerHub;
     /* The fourth door that enrolls this way, and the odd one out: desktop sync's pairing (platform/sync.ts).
      * Only the PAIRING is here — its enrollment half is keyed by SSH key rather than by a capability id, has a
@@ -1326,13 +1330,13 @@ export const createServices = (config: Config, logger: Logger): Services => {
         panelToken: randomBytes(32).toString("hex"),
         agentToken: randomBytes(32).toString("hex"),
         hostBridgeToken: randomBytes(32).toString("hex"),
-        hosts: fileHostsStore(config.historyRoot),
-        hostHub: createHostHub(logger),
+        hosts: filePeerStore(config.historyRoot, HOST_PEER.store),
+        hostHub: createPeerHub<HostClient, HostAnnounced, HostFacts, HostScopes>(HOST_PEER.hub, logger),
         webextBridgeToken: randomBytes(32).toString("hex"),
-        webexts: fileWebExtStore(config.historyRoot),
-        webextHub: createWebExtHub(logger),
-        runners: fileRunnersStore(config.historyRoot),
-        runnerHub: createRunnerHub(logger),
+        webexts: filePeerStore(config.historyRoot, WEBEXT_PEER.store),
+        webextHub: createPeerHub<WebExtClient, WebExtAnnounced, WebExtFacts, WebExtScopes>(WEBEXT_PEER.hub, logger),
+        runners: filePeerStore(config.historyRoot, RUNNER_PEER.store),
+        runnerHub: createPeerHub<RunnerClient, RunnerAnnounced, RunnerFacts, never>(RUNNER_PEER.hub, logger),
         syncPairings: pairings<SyncMode>(syncPairBurnPath(config.historyRoot)),
         runnerParent: {},
         info,
@@ -1350,20 +1354,14 @@ export const createServices = (config: Config, logger: Logger): Services => {
          * release clicked at the shell exit has to be the same release the browser mount reads next turn, and
          * two gates built at two routes would be two maps that agree about nothing.
          *
-         * `liveRun` and `observe` are the payment gate's own seams, verbatim (wallet/wallet.routes.ts): the
-         * card is raised from code deep inside a turn rather than from the turn generator, so it is pushed
-         * into the live run's frame log and mirrored to the registry by hand. `soleLiveConversation` covers
-         * the door where the caller could not name a conversation and exactly one is running, and refuses to
-         * guess between two. */
+         * `liveRun` and `observe` are the seams every offer card takes (agent/offer-card.ts): the card is
+         * raised from code deep inside a turn rather than from the turn generator, so it is pushed into the
+         * live run's frame log and mirrored to the registry by hand. */
         credentialGate: createCredentialGate({
             gates: credentialGates,
             grants: credentialGrants,
-            liveRun: (conversationId) => {
-                const id = conversationId ?? soleLiveConversation();
-                const run = id === undefined ? undefined : turnRunOf(id);
-                return id === undefined || run === undefined || run.done ? undefined : { conversationId: id, push: (event) => run.push(event) };
-            },
-            observe: (conversationId, event) => agents.observe(conversationId, event),
+            liveRun: liveCardRun,
+            observe: agents.observe,
             notify: (conversationId) => void pushSender.notifyIfAway(turnAwaiting(conversationId, "credential_offer")),
         }),
         walletLedger: fileWalletLedger(statePath(workspace.root, ".intentic/records/wallet-ledger.json")),
@@ -1616,6 +1614,8 @@ export const createServices = (config: Config, logger: Logger): Services => {
         // The DECORATED store for the exit checks: they read `kind` and a country code, never a credential, so
         // the rehydrating read is the right one and the raw store would only hide vault markers from them.
         capabilities: services.capabilities,
+        hosts: services.hosts,
+        hostHub: services.hostHub,
         runners: services.runners,
         runnerHub: services.runnerHub,
         webexts: services.webexts,

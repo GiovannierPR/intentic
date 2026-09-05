@@ -1,9 +1,8 @@
 import type { CapabilityCatalogEntry } from "@intentic-app/capability-catalog";
 import { instancesOf } from "@intentic-app/capability-catalog";
 import { sleep } from "@intentic/base/async";
-import type { AgentEvent, CapabilityOffer, CapabilityStatus } from "@intentic/sandbox-contract";
-import { createRequest } from "../agent/agent-requests.js";
-import { DAEMON_OWNER, ONE_SHOT_OWNER } from "../platform/leftovers.js";
+import type { CapabilityOffer, CapabilityStatus } from "@intentic/sandbox-contract";
+import { type CardDeps, cardRun, OFFER_DEADLINE_MS, raiseCard, whyOf } from "../agent/offer-card.js";
 
 /* THE SETUP GATE, how an agent asks the owner to connect a capability it is missing, mid-task, in chat.
  *
@@ -26,18 +25,12 @@ import { DAEMON_OWNER, ONE_SHOT_OWNER } from "../platform/leftovers.js";
  * hand, like the spend gate, and for the same reason the card is not journalled for restore: the waiter is
  * the CLI's held connection, which dies with the daemon. */
 
-// How long an unanswered ask holds the agent's call before settling as "nobody answered", the spend gate's
-// window, for the spend gate's reason.
-const ASK_DEADLINE_MS = 10 * 60_000;
 // How long a YES keeps the call parked waiting for the connection to come live. Longer than the ask window on
 // purpose: the owner is now actively setting something up (finding a token, signing in, maybe a 2FA round
 // trip), and expiring under them turns their work into a message nobody was waiting for.
 const SETUP_DEADLINE_MS = 15 * 60_000;
 // How often the watcher re-reads the manifest while a setup is underway.
 const POLL_MS = 3_000;
-
-// The agent's why, capped, one line of rationale is the card's design, not a second prompt.
-const WHY_MAX = 280;
 
 // What the ask answers with, the same terminal-shaped triple the platform relays use, so the CLI prints it
 // the same way `services` prints the platform's.
@@ -56,7 +49,7 @@ export interface AskInstance {
     readonly config: Record<string, string | number | boolean | undefined>;
 }
 
-export interface AskDeps {
+export interface AskDeps extends CardDeps {
     // Every card that can be connected here, the static catalog merged with the enabled extensions'
     // contributed cards (connectable.ts). What the ask is validated against, and where the card's title
     // comes from.
@@ -65,14 +58,6 @@ export interface AskDeps {
     readonly list: () => Promise<readonly AskInstance[]>;
     // One instance's live status, probed only for instances of the asked card.
     readonly status: (instance: AskInstance) => Promise<CapabilityStatus>;
-    // The live turn the card lands in: the named conversation's run, or, when the caller could not name one,
-    // the sole live run. Undefined refuses the ask outright.
-    readonly liveRun: (
-        conversationId: string | undefined,
-    ) => { readonly conversationId: string; readonly push: (event: AgentEvent) => void } | undefined;
-    // The registry's frame observer, externally pushed frames bypass the turn pump that usually feeds it, so
-    // the gate mirrors its own frames there to light and clear the Attention lane.
-    readonly observe: (conversationId: string, event: AgentEvent) => void;
     // Test seams for the three clocks.
     readonly deadlineMs?: number;
     readonly setupDeadlineMs?: number;
@@ -141,8 +126,7 @@ export const createCapabilityGate = (deps: AskDeps): CapabilityGate => {
     };
 
     const ask = async (asked: AskedCapability): Promise<AskAnswer> => {
-        const named = asked.conversationId === DAEMON_OWNER || asked.conversationId === ONE_SHOT_OWNER ? undefined : asked.conversationId;
-        const run = deps.liveRun(named);
+        const run = cardRun(deps, asked.conversationId);
         if (run === undefined) {
             return refusal(
                 409,
@@ -181,21 +165,19 @@ export const createCapabilityGate = (deps: AskDeps): CapabilityGate => {
         const offer: CapabilityOffer = {
             card: entry.id,
             name: entry.name,
-            ...(asked.why !== undefined && asked.why !== "" ? { why: asked.why.slice(0, WHY_MAX) } : {}),
+            ...whyOf(asked.why),
         };
-        const { id, wait } = createRequest("capability_offer", { kind: "capability_offer", requestId: "", connect: false }, run.conversationId);
         remember(run.conversationId, entry.id, "parked");
-        const raised: AgentEvent = { kind: "capability_offer", requestId: id, offer };
-        run.push(raised);
-        deps.observe(run.conversationId, raised);
-        const { reply, resolved } = await wait(AbortSignal.any([asked.signal, AbortSignal.timeout(deps.deadlineMs ?? ASK_DEADLINE_MS)]));
-        run.push(resolved);
-        deps.observe(run.conversationId, resolved);
-        if (!reply.connect) {
-            /* Two different no's, told apart by whether a person actually answered: a resolved frame with no
-             * reply is the abort stand-in (the deadline fired, or the CLI died under the card), and reading
-             * that as "the owner declined" would put words in the mouth of somebody who never saw the card. */
-            if (resolved.reply === undefined) {
+        const card = await raiseCard(deps, run, {
+            kind: "capability_offer",
+            onAbort: { kind: "capability_offer", requestId: "", connect: false },
+            raised: (requestId) => ({ kind: "capability_offer", requestId, offer }),
+            signal: asked.signal,
+            deadlineMs: deps.deadlineMs ?? OFFER_DEADLINE_MS,
+        });
+        if (!card.reply.connect) {
+            // Two different no's, told apart by whether a person actually answered (offer-card.ts argues why).
+            if (!card.answered) {
                 remember(run.conversationId, entry.id, undefined);
                 return refusal(
                     408,
@@ -215,12 +197,11 @@ export const createCapabilityGate = (deps: AskDeps): CapabilityGate => {
          * surface and every other one. */
         const connected = await watchForConnection(entry, asked.signal);
         remember(run.conversationId, entry.id, undefined);
-        const outcome: AgentEvent =
+        card.say(
             connected !== undefined
-                ? { kind: "capability_outcome", requestId: id, outcome: "connected", id: connected.id }
-                : { kind: "capability_outcome", requestId: id, outcome: "unfinished" };
-        run.push(outcome);
-        deps.observe(run.conversationId, outcome);
+                ? { kind: "capability_outcome", requestId: card.requestId, outcome: "connected", id: connected.id }
+                : { kind: "capability_outcome", requestId: card.requestId, outcome: "unfinished" },
+        );
         if (connected === undefined) {
             return refusal(
                 408,

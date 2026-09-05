@@ -7,6 +7,7 @@ import type { Services } from "../composition.js";
 import { createGrokAgent, createGrokRunner } from "./grok-agent.js";
 import { engineBinary } from "../engines/engine-resolve.js";
 import { openCodeBinaryMissing, type OpenCodeService } from "./opencode.js";
+import { grokAccountDoor } from "./grok-accounts.js";
 
 /* EVERYTHING GROK CONTRIBUTES TO THE DAEMON, aggregated by the provider registry (agent/provider-module.ts is
  * the seam). The slice is one member because OpenCode is deliberately NOT Grok's: one warm `opencode serve`
@@ -41,7 +42,7 @@ export const planGrokTurn = async (services: Services, input: AgentTurn, context
     return {
         ok: true,
         run: services.grokAgent,
-        // OpenCode holds one xAI auth, so the single Grok account is "xai" (see grok.routes.ts).
+        // OpenCode holds one xAI auth, so the single Grok account is "xai" (see grok-accounts.ts).
         account: "xai",
         // Override base's input.model with the validated id; the adapter folds attachment paths into the prompt
         // (OpenCode's tools read them from disk).
@@ -70,6 +71,7 @@ const OPENCODE_ADAPTER: AgentAdapter<"opencode"> = {
 
 export const grokProvider: ProviderModule = {
     id: "grok",
+    accounts: grokAccountDoor,
     adapters: [OPENCODE_ADAPTER],
     catalog: (services) => services.openCode.xaiModels(),
     // The rung feeds the ROUTED pickers (Grok under the Claude Code harness), so it is the translator's

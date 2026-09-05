@@ -25,7 +25,7 @@ const enroll = async (
     sandboxUrl: string,
     pairToken: string,
     { attempts = 10, delayMs = 3000 }: { attempts?: number; delayMs?: number } = {},
-): Promise<{ id: string; hostToken: string }> => {
+): Promise<{ id: string; token: string }> => {
     for (let attempt = 1; ; attempt++) {
         /* Redeemed wherever the daemon answers, by the same resolution every later dial makes (../daemon-base.ts):
          * the container on this machine's loopback when it proves to be this sandbox, the public URL otherwise.
@@ -57,7 +57,7 @@ const enroll = async (
         if (!response.ok) {
             throw new Error(`connecting this device failed (${response.status}): ${await response.text()}`);
         }
-        return (await response.json()) as { id: string; hostToken: string };
+        return (await response.json()) as { id: string; token: string };
     }
 };
 
@@ -105,7 +105,7 @@ const SETUP_PLAN: readonly PlanStep[] = [
 
 const runSetup = async (ui: Ui, out: Log, flags: SetupFlags): Promise<void> => {
     ui.step("device-enrolling", "enrolling this device with your sandbox…");
-    const { id, hostToken } = await enroll(flags.url, flags.pair);
+    const { id, token } = await enroll(flags.url, flags.pair);
     /* The cached grant starts at NOTHING. The sandbox pushes the real scopes within a second of connecting,
      * so this only governs the window before that, and an agent that assumed "allowed" for that window
      * would be deciding on somebody's device using a default nobody chose. Refusing until told is the only
@@ -113,7 +113,7 @@ const runSetup = async (ui: Ui, out: Log, flags: SetupFlags): Promise<void> => {
     const link: HostLink = {
         sandboxUrl: flags.url,
         id,
-        token: hostToken,
+        token,
         scopes: { shell: "off", write: "off", screen: "off", control: "off", sandboxes: "off", sandboxRemove: "off", destructive: "off" },
     };
     /* ADDED TO THE LIST, NOT WRITTEN OVER IT. This line used to be `writeHostConfig(link)` against a

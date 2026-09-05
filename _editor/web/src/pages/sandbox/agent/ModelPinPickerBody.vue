@@ -42,7 +42,7 @@ import { useChat } from "../../../composables/chat/useChat";
  *
  * A KNOB IS DRAWN ONLY WHERE IT WOULD BE HONOURED. The quick-model and cheaper-tier lists get the list and no
  * footer at all: their jobs are one-shot calls the daemon deliberately runs with thinking disabled and no
- * effort (agent/one-shot.ts), and automatic tier selection never touches an unattended run, so a control there
+ * effort (claude/claude-one-shot.ts), and automatic tier selection never touches an unattended run, so a control there
  * would be a switch with nothing behind it. */
 
 const emit = defineEmits<{ pick: [AgentRunPin]; configure: [AgentRunPin]; close: [] }>();

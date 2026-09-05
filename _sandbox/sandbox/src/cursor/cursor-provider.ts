@@ -15,6 +15,8 @@ import { type CursorStore, fileCursorStore, readCursorCredentials, usableCursorA
 import { createCursorHookService, type CursorHookService } from "./cursor-hooks.js";
 import { cursorReadiness } from "./cursor-readiness.js";
 import { cursorSdk } from "./cursor-sdk.js";
+import { cursorAccountDoor } from "./cursor-accounts.js";
+import { cursorOneShot } from "./cursor-one-shot.js";
 
 /* EVERYTHING CURSOR CONTRIBUTES TO THE DAEMON, in one module the provider registry aggregates
  * (agent/provider-module.ts is the seam and the reasoning; this file is the first instance of it, written by
@@ -137,6 +139,7 @@ export const planCursorTurn = async (
  * cursorReadiness answers both in the order that names the right fix. */
 const CURSOR_ADAPTER: AgentAdapter<"cursor"> = {
     runtime: "cursor",
+    oneShot: cursorOneShot,
     preflight: (services, input, context, granted) => planCursorTurn(services, input, context, granted),
     health: async (services) => {
         const readiness = await attemptProbe(() => cursorReadiness(services.cursorStore));
@@ -168,6 +171,7 @@ const CURSOR_ADAPTER: AgentAdapter<"cursor"> = {
 
 export const cursorProvider: ProviderModule = {
     id: "cursor",
+    accounts: cursorAccountDoor,
     adapters: [CURSOR_ADAPTER],
     catalog: (services) => services.cursorModels.models(),
     /* The only ready rung that is NOT a translator question, because there is no translator route to Cursor at

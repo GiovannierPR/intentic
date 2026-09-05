@@ -1,8 +1,9 @@
-import { errorMessage } from "@intentic/base/errors";
 import { vpnContract } from "@intentic/sandbox-contract";
 import { implement, ORPCError } from "@orpc/server";
 import type { Services } from "../composition.js";
 import type { OrpcContext } from "../context.js";
+import { tunnelEntry } from "../tunnel/tunnel-links.js";
+import { heldStream } from "../tunnel/tunnel-route.js";
 import { parseForticlientConfig } from "./forticlient-config.js";
 import { connectVpn, disconnectVpn, vpnLink, vpnLinks } from "./vpn-links.js";
 
@@ -14,40 +15,30 @@ export type VpnRoutesDeps = Pick<Services, "capabilities">;
 
 export const createVpnRoutes = (services: VpnRoutesDeps) => {
     const i = implement(vpnContract).$context<OrpcContext>();
-    // One dial per id at a time: two concurrent connects would race the same interface and leave a half-built
-    // tunnel behind. Rejecting the second is honest, the first is already streaming its progress.
     const dialling = new Set<string>();
 
     const entryOf = async (id: string) => {
-        const capability = await services.capabilities.get(id);
-        if (capability === undefined || capability.kind !== "vpn") {
+        const entry = await tunnelEntry(services.capabilities, "vpn", id);
+        if (entry === undefined) {
             throw new ORPCError("NOT_FOUND", { message: `no vpn capability with that id` });
         }
-        return { id: capability.id, config: capability.config };
+        return entry;
     };
 
     return {
         list: i.list.handler(async () => ({ links: await vpnLinks(services.capabilities) })),
         connect: i.connect.handler(async function* ({ input }) {
             const entry = await entryOf(input.id);
-            if (dialling.has(entry.id)) {
-                throw new ORPCError("CONFLICT", { message: `"${entry.id}" is already connecting, wait for it to finish` });
-            }
-            dialling.add(entry.id);
-            try {
-                yield* connectVpn(entry, { otp: input.otp });
-                // The link's own state is the useful terminal frame: the caller (VPN card or CLI) renders the
-                // assigned address and routes without a second round-trip.
-                const link = await vpnLink(entry);
-                yield { kind: "log", message: `${link.id}: ${link.state}${link.address === undefined ? "" : ` · ${link.address}`}` };
-                yield { kind: "result", ok: true };
-            } catch (error) {
-                const message = errorMessage(error);
-                yield { kind: "error", message };
-                throw new ORPCError("INTERNAL_SERVER_ERROR", { message });
-            } finally {
-                dialling.delete(entry.id);
-            }
+            yield* heldStream(
+                dialling,
+                entry.id,
+                "connecting",
+                () => connectVpn(entry, { otp: input.otp }),
+                async () => {
+                    const link = await vpnLink(entry);
+                    return `${link.id}: ${link.state}${link.address === undefined ? "" : ` · ${link.address}`}`;
+                },
+            );
         }),
         disconnect: i.disconnect.handler(async ({ input }) => {
             await disconnectVpn(await entryOf(input.id));

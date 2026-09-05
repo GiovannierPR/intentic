@@ -233,10 +233,12 @@ export const WebchatPublicConfigSchema = z.object({
     googleClientId: z.string().optional(),
 });
 export type WebchatPublicConfig = z.infer<typeof WebchatPublicConfigSchema>;
-// A proof-of-work challenge: find a nonce whose SHA-256 of `${salt}:${nonce}` starts with `difficulty` zero
-// bits. Issued per visitor conversation, spent on its first message.
-export const WebchatChallengeSchema = z.object({ salt: z.string(), difficulty: z.number().int().positive() });
-export type WebchatChallenge = z.infer<typeof WebchatChallengeSchema>;
+/* A proof-of-work challenge: find a nonce whose SHA-256 of `${salt}:${nonce}` starts with `difficulty` zero
+ * bits. ONE shape for every public door (the Front Desk issues it per visitor conversation and spends it on the
+ * first message; the bug intake per reporter, on a written report), and one solver on the embeds' side
+ * (embed.ts, which declares the same two fields without zod). */
+export const PowChallengeSchema = z.object({ salt: z.string(), difficulty: z.number().int().positive() });
+export type PowChallenge = z.infer<typeof PowChallengeSchema>;
 // One visitor message. `conversationId` is the widget's own localStorage id, it threads the visitor's messages
 // into ONE sandbox conversation, so it is the thread key, not a secret (anyone can mint one; the origin
 // allowlist, the challenge and the rate limit are the gate).

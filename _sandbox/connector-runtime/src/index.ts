@@ -11,6 +11,7 @@ export {
     runConnectorGateway,
     type SlotView,
 } from "./gateway.js";
+export { type ChatRings, chatRings, type RecentKeys, recentKeys, type TypingHeartbeat, typingHeartbeat } from "./listener-memory.js";
 export { createLog, type Logger } from "./log.js";
 export {
     createBufferedPainter,

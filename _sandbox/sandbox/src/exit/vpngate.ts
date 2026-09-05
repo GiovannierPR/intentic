@@ -2,7 +2,7 @@ import { execFile, spawn } from "node:child_process";
 import { mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import type { IntenticLine } from "@intentic/sandbox-contract";
-import { logTail, processAlive, readPid, toolMissing } from "../vpn/net-probe.js";
+import { logTail, processAlive, readPid, toolMissing } from "../tunnel/net-probe.js";
 import { rankCountries, VPNGATE_FALLBACK } from "./exit-countries.js";
 import type { ExitDriver, ExitProbe } from "./exit-driver.js";
 import { observeThroughAddress } from "./exit-observe.js";

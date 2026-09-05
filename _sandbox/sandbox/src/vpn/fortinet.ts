@@ -2,7 +2,7 @@ import { execFile, spawn } from "node:child_process";
 import { open, mkdir, rm } from "node:fs/promises";
 import { promisify } from "node:util";
 import type { FortinetVpnConfig, VpnConfig } from "@intentic/sandbox-contract";
-import { activeResolvers, interfaceAddress, interfaceRoutes, logTail, processAlive, readPid, toolMissing } from "./net-probe.js";
+import { activeResolvers, interfaceAddress, interfaceRoutes, logTail, processAlive, readPid, toolMissing } from "../tunnel/net-probe.js";
 import type { VpnDialOptions, VpnDriver, VpnProbe } from "./vpn-driver.js";
 import { interfaceName, logPath, pidPath, vpnDir } from "./vpn-paths.js";
 

@@ -17,7 +17,7 @@ import type { Services } from "../composition.js";
 import { approvedPath } from "../environment/environment.js";
 import { enrolledFleet, type SyncEnrollmentRow } from "../platform/sync.js";
 import { emitDefinitionToml, settingsDefinition } from "../portability/definition.js";
-import { hostSummaries } from "./host.routes.js";
+import { hostSummaries } from "./host-peer.js";
 
 /* THE DEVICES VIEW'S DATA, every machine on the other end of this sandbox, however it is reachable.
  *
@@ -47,7 +47,7 @@ const PULL_TTL_MS = 30_000;
 /* THE DEADLINE ON ONE READING, and it is a real one now.
  *
  * This number used to be handed to the machine as its own `run_command` budget and nowhere else, so the only
- * deadline this side had was the hub's fifteen-MINUTE backstop (host-hub.ts CALL_TIMEOUT_MS), which is sized for
+ * deadline this side had was the hub's fifteen-MINUTE backstop (host-peer.ts callTimeoutMs), which is sized for
  * a tool call an agent meant to make. A socket that was gone but not closed therefore held the whole HTTP
  * response: the observed tail on this route ran to 45, 65, 91 seconds. Now the call carries the signal.
  *
@@ -468,7 +468,7 @@ export async function* manageDeviceSandbox(services: Services, id: string, input
                   return {
                       ...input,
                       parentUrl,
-                      pair: services.runners.mintPairing(input.slug, id).token,
+                      pair: services.runners.mintPairing(input.slug, { host: id }).token,
                       ...(definition !== undefined ? { definition } : {}),
                       ...(overlay !== undefined && overlay !== "" ? { overlay, overlayHash: sha256Hex(overlay) } : {}),
                   };

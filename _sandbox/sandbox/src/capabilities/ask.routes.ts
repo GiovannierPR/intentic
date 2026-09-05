@@ -1,7 +1,7 @@
 import { instancesOf } from "@intentic-app/capability-catalog";
 import type { CapabilityStatus } from "@intentic/sandbox-contract";
 import type { Context } from "hono";
-import { soleLiveConversation, turnRunOf } from "../agent/turn-runs.js";
+import { liveCardRun } from "../agent/offer-card.js";
 import type { Services } from "../composition.js";
 import type { AppEnv } from "../context.js";
 import { capabilityCtx } from "./capability.js";
@@ -34,12 +34,8 @@ export const createCapabilityAskRoutes = (services: Services) => {
         cards: () => connectableCards(services),
         list: () => services.capabilities.list(),
         status: statusOf,
-        liveRun: (conversationId) => {
-            const id = conversationId ?? soleLiveConversation();
-            const run = id === undefined ? undefined : turnRunOf(id);
-            return id === undefined || run === undefined || run.done ? undefined : { conversationId: id, push: (event) => run.push(event) };
-        },
-        observe: (conversationId, event) => services.agents.observe(conversationId, event),
+        liveRun: liveCardRun,
+        observe: services.agents.observe,
     });
     return {
         connectable: async (c: Context<AppEnv>): Promise<Response> => {

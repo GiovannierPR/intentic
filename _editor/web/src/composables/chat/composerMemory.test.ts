@@ -71,7 +71,7 @@ const mockDaemon = (claudeModels = [`claude-fable-5`, `claude-opus-4-6`]): void 
         Promise.resolve(
             path === `/translator/accounts`
                 ? { codex: [], grok: [], kimi: [], gemini: [] }
-                : { accounts: path.startsWith(`/claude`) ? TWO : path.startsWith(`/cursor`) ? [{ id: `cur`, label: `Cursor`, connectedAt: 1 }] : [] },
+                : { accounts: path.startsWith(`/accounts/claude`) ? TWO : path.startsWith(`/accounts/cursor`) ? [{ id: `cur`, label: `Cursor`, connectedAt: 1 }] : [] },
         ),
     );
     sandboxRequestMock.mockImplementation((path: string) =>

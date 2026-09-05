@@ -52,14 +52,12 @@ const fakeServices = (over: Partial<SandboxSettings> = {}, fleet: readonly FakeR
                     ? { online: false }
                     : {
                           online: true,
-                          image: "ghcr.io/intentic/sandbox:2",
-                          channel: "stable",
+                          // No definitionToml: these runners never declared a shape, which is a real state (a
+                          // hand-started runner) and costs nothing the placement tests care about.
+                          announced: { version: "0.0.0", image: "ghcr.io/intentic/sandbox:2", channel: "stable" },
                           facts: { cpus: found.cpus ?? 8, memoryMb: 32_768, freeDiskMb: 100_000, load: 0.1 },
                       };
             },
-            // The summaries the scheduler reads also carry drift lines; these runners never declared a shape,
-            // which is a real state (a hand-started runner) and costs nothing the placement tests care about.
-            definitionToml: () => undefined,
         }),
         agents: unstubbed<Services["agents"]>("agents", {
             inFlightByRunner: () => new Map(fleet.flatMap((runner) => (runner.inFlight === undefined ? [] : [[runner.id, runner.inFlight] as const]))),

@@ -55,7 +55,6 @@ const UNAUDITED = new Set([
     "guard",
     "hashline",
     "history",
-    "hosts",
     "intentic",
     "inventory",
     "kimi",

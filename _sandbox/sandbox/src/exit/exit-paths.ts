@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { interfaceNameOf } from "../tunnel/tunnel-paths.js";
 
 // Where a geo exit's on-disk state lives, what its tunnel interface is called, and which local port its SOCKS
 // proxy answers on. One directory per sandbox (0700, root-only) so "what has this sandbox been told to come
@@ -14,20 +15,9 @@ export const exitDir = (): string => join(homedir(), ".intentic-exit");
 // reach into another's files.
 export const exitStateDir = (id: string): string => join(exitDir(), id);
 
-// Linux caps an interface name at IFNAMSIZ-1 = 15 bytes, and an exit's interface must not collide with a vpn's
-// (both live in the same netns), hence the `x` prefix rather than the vpn subsystem's bare id. A short id keeps
-// a readable name; a long one falls back to a deterministic hash so two long ids sharing a prefix cannot land
-// on one interface.
-const INTERFACE_MAX = 15;
-export const exitInterface = (id: string): string => {
-    const candidate = `x${id}`;
-    return candidate.length <= INTERFACE_MAX
-        ? candidate
-        : `x-${createHash("sha256")
-              .update(id)
-              .digest("hex")
-              .slice(0, INTERFACE_MAX - 2)}`;
-};
+// An exit's interface must not collide with a vpn's (both live in the same netns), hence the `x` prefix
+// rather than the vpn kind's bare id; the IFNAMSIZ rule and the hash fallback are tunnel/tunnel-paths.ts.
+export const exitInterface = (id: string): string => interfaceNameOf(`x${id}`, "x");
 
 /* THE PROXY PORT IS DERIVED, NOT ALLOCATED, and that is the whole contract this feature rests on: callers
  * point at a port and keep pointing at it while the exit moves between countries under them. A port handed out

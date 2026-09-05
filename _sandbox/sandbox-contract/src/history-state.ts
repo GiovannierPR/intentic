@@ -152,15 +152,18 @@ export const HISTORY_STATE_FILES: readonly StateFile[] = [
     { path: "sync-enrollments.json", portability: "identity", note: "Re-pair desktop sync from the Sync tab." },
     { path: "sync-pair-consumed.json", portability: "identity" },
     { path: "host-enrollments.json", portability: "identity" },
-    /* A connected BROWSER's enrollment (webext/webext-store.ts). Identity for the hosts file's reason and one
+    /* A connected BROWSER's enrollment (webext/webext-peer.ts). Identity for the hosts file's reason and one
      * more of its own: the token admits a socket into somebody's signed-in browser, and that browser was paired
      * with THIS sandbox — carried into another one it would either be dead weight or, worse, a second sandbox
      * holding a live key to a browser its owner never connected it to. Re-pairing is a code and one click. */
     { path: "webext-enrollments.json", portability: "identity", note: "Pair your browser again from its card: the extension is still installed." },
+    // The browser door's burn list: every peer door keeps one (peers/peer-store.ts), and a browser pairing
+    // redeemed here must not read as fresh in a sandbox this file travelled to. Identity, hosts' reason.
+    { path: "webext-pair-consumed.json", portability: "identity" },
     // The burn list for setup-time device pairings. Identity, like sync's beside it, and for a sharper reason:
     // carrying it into another sandbox would mark that sandbox's own fresh pairing as already spent.
     { path: "host-pair-consumed.json", portability: "identity" },
-    // A runner's enrollment names THIS sandbox as its parent (runners/runners-store.ts): in another sandbox the
+    // A runner's enrollment names THIS sandbox as its parent (runners/runner-peer.ts): in another sandbox the
     // digest would admit a socket whose runner still dials the old parent. Identity, both files, hosts' reasons.
     { path: "runner-enrollments.json", portability: "identity" },
     { path: "runner-pair-consumed.json", portability: "identity" },

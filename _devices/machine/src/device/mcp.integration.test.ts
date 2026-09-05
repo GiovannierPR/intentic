@@ -21,14 +21,14 @@ const scopes = (overrides: Partial<HostScopes> = {}): HostScopes => ({
 afterEach(() => vi.unstubAllEnvs());
 
 const call = async (name: string, args: Record<string, unknown>, grant: HostScopes): Promise<{ text: string; isError: boolean }> => {
-    const response = (await handleMcpMessage({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }, () => grant)) as {
+    const response = (await handleMcpMessage({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }, grant)) as {
         result: { content: { text?: string }[]; isError: boolean };
     };
     return { text: response.result.content[0]?.text ?? "", isError: response.result.isError };
 };
 
 test("initialize advertises tools and identifies the agent", async () => {
-    const response = (await handleMcpMessage({ jsonrpc: "2.0", id: 1, method: "initialize" }, scopes)) as {
+    const response = (await handleMcpMessage({ jsonrpc: "2.0", id: 1, method: "initialize" }, scopes())) as {
         result: { capabilities: Record<string, unknown>; serverInfo: { name: string } };
     };
     expect(response.result.capabilities).toHaveProperty("tools");
@@ -36,7 +36,7 @@ test("initialize advertises tools and identifies the agent", async () => {
 });
 
 test("tools/list is the machine's whole surface, and there is no delete", async () => {
-    const response = (await handleMcpMessage({ jsonrpc: "2.0", id: 2, method: "tools/list" }, scopes)) as { result: { tools: { name: string }[] } };
+    const response = (await handleMcpMessage({ jsonrpc: "2.0", id: 2, method: "tools/list" }, scopes())) as { result: { tools: { name: string }[] } };
     const names = response.result.tools.map((tool) => tool.name);
     expect(names).toEqual([
         "describe",
@@ -75,7 +75,7 @@ test("tools/list is the machine's whole surface, and there is no delete", async 
  * of them. Asserted structurally rather than tool by tool, so a tool added without a schema fails here instead
  * of being advertised as taking anything. */
 test("tools/list publishes each tool's argument schema, which is the one an arriving call is held to", async () => {
-    const response = (await handleMcpMessage({ jsonrpc: "2.0", id: 2, method: "tools/list" }, scopes)) as {
+    const response = (await handleMcpMessage({ jsonrpc: "2.0", id: 2, method: "tools/list" }, scopes())) as {
         result: { tools: { name: string; description: string; inputSchema: Record<string, unknown> }[] };
     };
     for (const entry of response.result.tools) {
@@ -107,11 +107,11 @@ test("an argument the schema does not accept is a readable result, and nothing i
 
 // A notification expects no answer; replying to one is a protocol violation the client reports as noise.
 test("a notification is handled and answered with nothing", async () => {
-    expect(await handleMcpMessage({ jsonrpc: "2.0", method: "notifications/initialized" }, scopes)).toBeUndefined();
+    expect(await handleMcpMessage({ jsonrpc: "2.0", method: "notifications/initialized" }, scopes())).toBeUndefined();
 });
 
 test("an unsupported method is a JSON-RPC error, not a crash", async () => {
-    const response = (await handleMcpMessage({ jsonrpc: "2.0", id: 3, method: "resources/list" }, scopes)) as { error: { code: number } };
+    const response = (await handleMcpMessage({ jsonrpc: "2.0", id: 3, method: "resources/list" }, scopes())) as { error: { code: number } };
     expect(response.error.code).toBe(-32601);
 });
 

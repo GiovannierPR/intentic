@@ -8,9 +8,12 @@ import { checks as derivedChecks, owner as derivedOwner } from "../derived/invar
 import { checks as engineChecks, owner as engineOwner } from "../engines/invariant.js";
 import { checks as exitChecks, type ExitInvariantDeps, owner as exitOwner } from "../exit/invariant.js";
 import { checks as issueChecks, type IssuesInboxDeps, owner as issueOwner } from "../issues/invariant.js";
-import { checks as runnerChecks, owner as runnerOwner, type RunnerRegistryDeps } from "../runners/invariant.js";
+import { checks as hostChecks, owner as hostOwner } from "../hosts/invariant.js";
+import { checks as peerChecks, owner as peerOwner, type PeerRegistryDeps } from "../peers/invariant.js";
+import { checks as runnerChecks, owner as runnerOwner } from "../runners/invariant.js";
 import { checks as testingChecks, owner as testingOwner } from "../testing/invariant.js";
-import { checks as webextChecks, type BrowserRegistryDeps, owner as webextOwner } from "../webext/invariant.js";
+import { checks as tunnelChecks, owner as tunnelOwner } from "../tunnel/invariant.js";
+import { checks as webextChecks, owner as webextOwner } from "../webext/invariant.js";
 import type { InvariantRegistry } from "./invariants.js";
 
 /* WHERE THE COMPANIONS ARE WIRED, the one list, so a companion that is written and never registered is a file
@@ -28,8 +31,7 @@ export type DaemonInvariantDeps = TurnJournalDeps &
     FleetRegistryDeps &
     ManifestSecretDeps &
     ExitInvariantDeps &
-    RunnerRegistryDeps &
-    BrowserRegistryDeps &
+    PeerRegistryDeps &
     IssuesInboxDeps &
     CommandGateDeps;
 
@@ -38,14 +40,17 @@ export const registerDaemonInvariants = (registry: InvariantRegistry, deps: Daem
     registry.register(agentsOwner, agentsChecks(deps));
     registry.register(capabilityOwner, capabilityChecks(deps));
     registry.register(exitOwner, exitChecks(deps));
-    registry.register(runnerOwner, runnerChecks(deps));
-    registry.register(webextOwner, webextChecks(deps));
+    registry.register(peerOwner, peerChecks(deps));
     registry.register(issueOwner, issueChecks(deps));
     registry.register(cursorOwner, cursorChecks(deps));
     // Read their subjects off module state and the volume rather than off a service.
     registry.register(childrenOwner, childrenChecks());
+    registry.register(hostOwner, hostChecks());
+    registry.register(webextOwner, webextChecks());
+    registry.register(runnerOwner, runnerChecks());
     registry.register(engineOwner, engineChecks());
     registry.register(dependenciesOwner, dependenciesChecks());
     registry.register(derivedOwner, derivedChecks());
     registry.register(testingOwner, testingChecks());
+    registry.register(tunnelOwner, tunnelChecks());
 };

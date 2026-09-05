@@ -159,7 +159,7 @@ describe(`useChat provider reconciliation`, () => {
         resetChat();
         const chat = useChat();
         // Grok's native account is connected, but the translator holds no SuperGrok subscription yet.
-        mockConnections({ accounts: (path) => (path.startsWith(`/grok`) ? [{ id: `xai`, label: `Grok`, connectedAt: 0 }] : []) });
+        mockConnections({ accounts: (path) => (path.startsWith(`/accounts/grok`) ? [{ id: `xai`, label: `Grok`, connectedAt: 0 }] : []) });
         await loadAccountStatus();
         await nextTick();
 
@@ -170,7 +170,7 @@ describe(`useChat provider reconciliation`, () => {
 
         // The subscription connects (via the Agent tab's "Under Claude Code" row): the same gate opens.
         mockConnections({
-            accounts: (path) => (path.startsWith(`/grok`) ? [{ id: `xai`, label: `Grok`, connectedAt: 0 }] : []),
+            accounts: (path) => (path.startsWith(`/accounts/grok`) ? [{ id: `xai`, label: `Grok`, connectedAt: 0 }] : []),
             subscriptions: { codex: [], grok: [{ name: `xai-user.json`, label: `user@x.ai` }], kimi: [], gemini: [] },
         });
         await loadAccountStatus();
@@ -193,7 +193,7 @@ describe(`useChat provider reconciliation`, () => {
             if (path === `/translator/accounts`) {
                 return Promise.resolve({ codex: [{ name: `codex-user.json`, label: `user@example.com` }], grok: [], kimi: [], gemini: [] });
             }
-            if (path.startsWith(`/claude/accounts`)) {
+            if (path.startsWith(`/accounts/claude`)) {
                 return new Promise((resolve) => setTimeout(() => resolve({ accounts: [{ id: `a1`, label: `Personal`, connectedAt: 0 }] }), 20));
             }
             return Promise.resolve({ accounts: [] });
@@ -270,7 +270,7 @@ describe(`account usage hydration`, () => {
     it(`seeds the usage map from the persisted snapshots on the account list`, async () => {
         mockConnections({
             accounts: (path) =>
-                path.startsWith(`/claude`)
+                path.startsWith(`/accounts/claude`)
                     ? [
                           {
                               id: `a1`,
@@ -293,7 +293,7 @@ describe(`account usage hydration`, () => {
         usageByAccount.value = { "claude:a1": { windows: [{ kind: `seven_day`, utilization: 80, gates: `all` }], measuredAt: 9_000 } };
         mockConnections({
             accounts: (path) =>
-                path.startsWith(`/claude`)
+                path.startsWith(`/accounts/claude`)
                     ? [
                           {
                               id: `a1`,
@@ -334,7 +334,7 @@ describe(`native account connection`, () => {
 
         await chat.startConnect();
 
-        expect(sandboxRequestMock).toHaveBeenCalledWith(`/cursor/login/start`, { method: `POST` });
+        expect(sandboxRequestMock).toHaveBeenCalledWith(`/accounts/cursor/login/start`, expect.objectContaining({ method: `POST` }));
         expect(chat.error.value).toBe(daemonMessage);
         expect(chat.accountBusy.value).toBeUndefined();
     });
@@ -346,7 +346,7 @@ describe(`native account connection`, () => {
  * sandbox's store), while an already-open chat keeps the account it was actually running on. */
 describe(`the remembered account`, () => {
     const TWO = (path: string): unknown[] =>
-        path.startsWith(`/claude`)
+        path.startsWith(`/accounts/claude`)
             ? [
                   { id: `first`, label: `Claude`, connectedAt: 1 },
                   { id: `second`, label: `Claude`, connectedAt: 2 },
@@ -418,7 +418,7 @@ describe(`the remembered account`, () => {
         // Away, the user disconnects it elsewhere. The remembered pin would otherwise fail every turn with
         // "No Claude account connected": about an account that is connected, naming a fix already done.
         await nextTick();
-        mockConnections({ accounts: (path) => (path.startsWith(`/claude`) ? [{ id: `first`, label: `Claude`, connectedAt: 1 }] : []) });
+        mockConnections({ accounts: (path) => (path.startsWith(`/accounts/claude`) ? [{ id: `first`, label: `Claude`, connectedAt: 1 }] : []) });
         resetChat();
         await loadAccountStatus();
 
@@ -477,7 +477,7 @@ describe(`the remembered account`, () => {
 
         // `second` is gone (disconnected elsewhere): the open chat cannot keep sending against it, so it moves:
         // and, being what that chat now runs on, `first` is what its own tab comes back wearing after this.
-        mockConnections({ accounts: (path) => (path.startsWith(`/claude`) ? [{ id: `first`, label: `Claude`, connectedAt: 1 }] : []) });
+        mockConnections({ accounts: (path) => (path.startsWith(`/accounts/claude`) ? [{ id: `first`, label: `Claude`, connectedAt: 1 }] : []) });
         resetChat();
         await loadAccountStatus();
         expect(chat.account.value).toBe(`first`);
@@ -2082,7 +2082,7 @@ describe(`unsent drafts keep their own picks`, () => {
     const bothConnected = (): void => {
         mockConnections({
             accounts: (path) =>
-                path.startsWith(`/claude`) || path.startsWith(`/cursor`) ? [{ id: `a-${path.slice(1, 7)}`, label: `Personal`, connectedAt: 0 }] : [],
+                path.startsWith(`/accounts/claude`) || path.startsWith(`/accounts/cursor`) ? [{ id: `a-${path.split(`/`)[2]}`, label: `Personal`, connectedAt: 0 }] : [],
         });
     };
 
@@ -2179,7 +2179,7 @@ describe(`unsent drafts keep their own picks`, () => {
         beside.selectModel({ provider: `cursor`, value: `composer-2.5` });
 
         // Only Cursor answers: the Claude draft cannot send, so the app parks it there.
-        mockConnections({ accounts: (path) => (path.startsWith(`/cursor`) ? [{ id: `cur`, label: `Cursor`, connectedAt: 0 }] : []) });
+        mockConnections({ accounts: (path) => (path.startsWith(`/accounts/cursor`) ? [{ id: `cur`, label: `Cursor`, connectedAt: 0 }] : []) });
         await loadAccountStatus();
         endpointsLoaded.value = true;
         await nextTick();
@@ -2237,7 +2237,7 @@ describe(`unsent drafts keep their own picks`, () => {
         sonnet.draft.value = `the sonnet task`;
         sonnet.selectModel({ provider: `claude`, value: `claude-sonnet-4-5-20250929` });
 
-        mockConnections({ accounts: (path) => (path.startsWith(`/cursor`) ? [{ id: `cur`, label: `Cursor`, connectedAt: 0 }] : []) });
+        mockConnections({ accounts: (path) => (path.startsWith(`/accounts/cursor`) ? [{ id: `cur`, label: `Cursor`, connectedAt: 0 }] : []) });
         await loadAccountStatus();
         endpointsLoaded.value = true;
         await nextTick();
@@ -2256,7 +2256,7 @@ describe(`unsent drafts keep their own picks`, () => {
     it(`returns a chat that OPENED on a substitute once its own provider is back`, async () => {
         const chat = useChat();
         chat.active.value.selectModel({ provider: `claude`, value: `claude-opus-5` });
-        mockConnections({ accounts: (path) => (path.startsWith(`/cursor`) ? [{ id: `cur`, label: `Cursor`, connectedAt: 0 }] : []) });
+        mockConnections({ accounts: (path) => (path.startsWith(`/accounts/cursor`) ? [{ id: `cur`, label: `Cursor`, connectedAt: 0 }] : []) });
         await loadAccountStatus();
         endpointsLoaded.value = true;
         await nextTick();

@@ -1,13 +1,12 @@
 import {
-    type AgentEvent,
     COMMAND_CLASS_LABELS,
     type CommandJudgeMode,
     type CommandLocus,
     matchCommand,
     type SafetyVerdict,
 } from "@intentic/sandbox-contract";
-import { createRequest } from "../agent/agent-requests.js";
 import { judgeCommand } from "../agent/command-judge.js";
+import { raiseCard } from "../agent/offer-card.js";
 import { turnRunOf } from "../agent/turn-runs.js";
 import type { Services } from "../composition.js";
 import { commandRun } from "../guard/actions.js";
@@ -26,7 +25,7 @@ import { conversationTaintSource, conversationUnattended } from "../guard/turn-t
  * reported a refusal every time the job actually needed it.
  *
  * The daemon can ask, and the daemon is the one thing on the path that sees the call before it leaves
- * (hosts/host.routes.ts forwards every `tools/call`). So triage → judge → card runs HERE, against the machines
+ * (the peer bridge, peers/peer-routes.ts, forwards every `tools/call`). So triage → judge → card runs HERE, against the machines
  * section of the policy, and the scope on the machine stays underneath as the hard floor. Two consequences worth
  * stating plainly:
  *
@@ -38,7 +37,7 @@ import { conversationTaintSource, conversationUnattended } from "../guard/turn-t
  *
  * WHY IT NEEDS A CONVERSATION. A card has to be drawn somewhere, and this code runs in the HTTP layer while the
  * turn that called the tool is parked inside an MCP request. The conversation id rides on the bridge URL
- * (capabilities/host-tools.ts says why that is a routing hint and not a credential), and everything else about
+ * (peers/peer-tools.ts says why that is a routing hint and not a credential), and everything else about
  * the turn is read from the published live-turn state rather than taken on the caller's word.
  */
 
@@ -217,35 +216,32 @@ export const judgeHostCommand = async (
                 `Do not retry: carry on with what you can do without it, and say plainly what you left undone.`,
         );
     }
-    const { id, wait } = createRequest(
-        "permission",
-        { kind: "permission", requestId: "", decision: "deny", feedback: "The turn ended before you answered." },
-        conversationId,
-    );
     record("asked");
-    /* The card names the MACHINE in its title, because that is the fact that changes the answer: the same
-     * command is ordinary in a disposable container and irreversible on somebody's laptop, and a card that read
-     * like every other command card would be asking the owner the wrong question. */
-    const raised: AgentEvent = {
-        kind: "permission",
-        requestId: id,
-        toolName: `${input.machine}__${RUN_COMMAND}`,
-        title: `Run this on ${input.machine}?`,
-        displayName: `Run on ${input.machine}`,
-        /* No marked spans. Triage found the fragments, but the card's marks exist to say WHICH part of four
-         * hundred characters stopped it, and this card's title already says the answer the owner is weighing:
-         * that it runs on their laptop rather than in the container. */
-        program: { text: excerptProgram(input.command), language: "bash", truncated: false, spans: [] },
-        // `explain` and not `reason`: they would be the same sentence, printed twice on one card.
-        explain: verdict.sentence,
-    };
-    run.push(raised);
-    services.agents.observe(conversationId, raised);
-    const { reply, resolved } = await wait(AbortSignal.timeout(DEADLINE_MS));
-    // Every parked card owes the stream its resolution frame: it is what stops a client rendering the card as
-    // live, and the only honest account of how long the call was parked.
-    run.push(resolved);
-    services.agents.observe(conversationId, resolved);
+    const { reply } = await raiseCard(
+        { observe: services.agents.observe },
+        { conversationId, push: (event) => run.push(event) },
+        {
+            kind: "permission",
+            onAbort: { kind: "permission", requestId: "", decision: "deny", feedback: "The turn ended before you answered." },
+            /* The card names the MACHINE in its title, because that is the fact that changes the answer: the
+             * same command is ordinary in a disposable container and irreversible on somebody's laptop, and a
+             * card that read like every other command card would be asking the owner the wrong question. */
+            raised: (requestId) => ({
+                kind: "permission",
+                requestId,
+                toolName: `${input.machine}__${RUN_COMMAND}`,
+                title: `Run this on ${input.machine}?`,
+                displayName: `Run on ${input.machine}`,
+                /* No marked spans. Triage found the fragments, but the card's marks exist to say WHICH part of
+                 * four hundred characters stopped it, and this card's title already says the answer the owner
+                 * is weighing: that it runs on their laptop rather than in the container. */
+                program: { text: excerptProgram(input.command), language: "bash", truncated: false, spans: [] },
+                // `explain` and not `reason`: they would be the same sentence, printed twice on one card.
+                explain: verdict.sentence,
+            }),
+            deadlineMs: DEADLINE_MS,
+        },
+    );
     if (reply.decision === "deny") {
         void services.safetyLog.answered(at, "declined", "refused").catch(() => undefined);
         return refusal(

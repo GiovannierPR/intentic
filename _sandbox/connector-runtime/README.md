@@ -26,6 +26,10 @@ that ext-discord, ext-slack, ext-telegram, ext-whatsapp and ext-imap used to eac
   `GatewayHooks` seam a connector fills in (open, close, alive, fatal, phase, deliver).
 - [src/daemon.ts](src/daemon.ts): the client for `/listeners/<provider>/{state,dispatch,failure,status}`.
 - [src/painter.ts](src/painter.ts): the streaming and buffered painters, and the per-automation fan-out.
+- [src/listener-memory.ts](src/listener-memory.ts): what a listener remembers between messages, in memory and
+  best-effort, bounded: the recent-key set that drops the duplicate delivery two of our bots receive in one
+  room, the per-chat ring that stands in for a history API where the platform has none, and the "typing…"
+  heartbeat that re-sends an expiring indicator for the length of a turn.
 - [src/context.ts](src/context.ts): what a connector's own modules get from the process (daemon, log,
   workspace root).
 

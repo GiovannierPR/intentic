@@ -78,7 +78,7 @@ vi.mocked(sandboxJson).mockImplementation((path: string) =>
         path === `/translator/accounts`
             ? { codex: [], grok: [], kimi: [], gemini: [] }
             : {
-                  accounts: path.startsWith(`/claude`)
+                  accounts: path.startsWith(`/accounts/claude`)
                       ? [
                             { id: `first`, label: `Claude`, connectedAt: 1 },
                             { id: `second`, label: `Claude`, connectedAt: 2 },

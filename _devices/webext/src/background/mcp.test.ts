@@ -58,7 +58,7 @@ const install = (options: { tabs: FakeTab[]; origins: string[] }): void => {
 };
 
 const call = async (name: string, args: Record<string, unknown> = {}): Promise<{ text: string; isError: boolean }> => {
-    const answer = (await handleMcpMessage({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }, "0.1.0")) as {
+    const answer = (await handleMcpMessage({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }, undefined)) as {
         result: { content: { text: string }[]; isError: boolean };
     };
     return { text: answer.result.content[0]?.text ?? "", isError: answer.result.isError };
@@ -69,7 +69,7 @@ beforeEach(() => {
 });
 
 test("the tool list is what the model is shown, and every tool describes its own arguments", async () => {
-    const answer = (await handleMcpMessage({ jsonrpc: "2.0", id: 1, method: "tools/list" }, "0.1.0")) as {
+    const answer = (await handleMcpMessage({ jsonrpc: "2.0", id: 1, method: "tools/list" }, undefined)) as {
         result: { tools: { name: string; description: string; inputSchema: { type?: string } }[] };
     };
     const names = answer.result.tools.map((tool) => tool.name);
@@ -116,8 +116,8 @@ test("bad arguments come back readable enough for the model to fix its own call"
 });
 
 test("a notification is not answered, and a malformed message does not throw", async () => {
-    expect(await handleMcpMessage({ jsonrpc: "2.0", method: "notifications/initialized" }, "0.1.0")).toBeUndefined();
-    expect(await handleMcpMessage("not a message", "0.1.0")).toMatchObject({ error: { code: -32600 } });
+    expect(await handleMcpMessage({ jsonrpc: "2.0", method: "notifications/initialized" }, undefined)).toBeUndefined();
+    expect(await handleMcpMessage("not a message", undefined)).toMatchObject({ error: { code: -32600 } });
 });
 
 /* Each switch on the card is enforced HERE, in the browser, and the refusal names the control to flip. The

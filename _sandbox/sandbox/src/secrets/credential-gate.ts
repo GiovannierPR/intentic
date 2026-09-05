@@ -1,8 +1,7 @@
-import type { AgentEvent, CredentialGateKind, CredentialLane, CredentialOffer } from "@intentic/sandbox-contract";
-import { createRequest } from "../agent/agent-requests.js";
+import type { CredentialGateKind, CredentialLane, CredentialOffer } from "@intentic/sandbox-contract";
+import { type CardDeps, cardRun, OFFER_DEADLINE_MS, raiseCard, whyOf } from "../agent/offer-card.js";
 import { credentialUse } from "../guard/actions.js";
 import { guard } from "../guard/guard.js";
-import { DAEMON_OWNER, ONE_SHOT_OWNER } from "../platform/leftovers.js";
 import type { CredentialGatesStore } from "./credential-gates.js";
 import type { CredentialGrants } from "./credential-grants.js";
 
@@ -37,20 +36,13 @@ import type { CredentialGrants } from "./credential-grants.js";
  * shell here runs as the owner of both the vault and the policy (SECURITY.md). It is a wall against the
  * AGENT's own judgment being the last word on WHEN a credential is spent. */
 
-const OFFER_DEADLINE_MS = 10 * 60_000;
-const WHY_MAX = 280;
 // The card's "where it would go" line. Long enough to recognize a command or a host, short enough that the
 // card stays a card; the use ledger's own DETAIL_MAX, for the same reason.
 const DETAIL_MAX = 80;
 
-export interface CredentialGateDeps {
+export interface CredentialGateDeps extends CardDeps {
     readonly gates: CredentialGatesStore;
     readonly grants: CredentialGrants;
-    // The live turn the card lands in, the payment gate's own seam, verbatim.
-    readonly liveRun: (
-        conversationId: string | undefined,
-    ) => { readonly conversationId: string; readonly push: (event: AgentEvent) => void } | undefined;
-    readonly observe: (conversationId: string, event: AgentEvent) => void;
     /* Buzz the owner's devices when the card goes up, the one offer card that does (push/notifications.ts
      * argues why: this one waits for somebody who may not know a turn is running). Optional so the gate's
      * tests need no push stack, and fire-and-forget for the observer's reason — a notification that fails
@@ -128,8 +120,7 @@ export const createCredentialGate = (deps: CredentialGateDeps): CredentialGate =
          * safe and says the rule once: a grant is a grant. */
         const held = input.conversationId === undefined ? undefined : deps.grants.has(input.conversationId, gate.subject);
 
-        const named = input.conversationId === DAEMON_OWNER || input.conversationId === ONE_SHOT_OWNER ? undefined : input.conversationId;
-        const card = deps.liveRun(named);
+        const card = cardRun(deps, input.conversationId);
         const verdict = guard(credentialUse, {
             gated: true,
             granted: held !== undefined,
@@ -152,19 +143,21 @@ export const createCredentialGate = (deps: CredentialGateDeps): CredentialGate =
             };
         }
 
-        /* THE CARD. `requestId: ""` in the abort stand-in is the registry's convention (it fills in the real
-         * id), and `approve: false` is what makes an aborted turn read as "not released" rather than as a
-         * release nobody gave. */
+        // THE CARD. `approve: false` in the abort stand-in is what makes an aborted turn read as "not released"
+        // rather than as a release nobody gave.
         const offer: CredentialOffer = {
             subject: gate.subject,
             kind: gate.kind,
             lane: input.lane,
             ...(clipped(input.detail) !== undefined ? { detail: clipped(input.detail) as string } : {}),
-            ...(input.why !== undefined && input.why !== "" ? { why: input.why.slice(0, WHY_MAX) } : {}),
+            ...whyOf(input.why),
             approvers: gate.approvers,
             scope: gate.scope,
         };
-        const { id, wait } = createRequest("credential_offer", { kind: "credential_offer", requestId: "", approve: false }, card.conversationId, {
+        const raised = await raiseCard(deps, card, {
+            kind: "credential_offer",
+            onAbort: { kind: "credential_offer", requestId: "", approve: false },
+            raised: (requestId) => ({ kind: "credential_offer", requestId, offer }),
             /* WHO MAY CLICK, checked server-side against the identity the daemon verified on the reply's own
              * request. Lowercased both sides for the roster's own reason (auth/auth.ts): a Google `email`
              * claim is not guaranteed lowercase and every write to the roster normalizes, so an exact match
@@ -177,25 +170,18 @@ export const createCredentialGate = (deps: CredentialGateDeps): CredentialGate =
                     ? undefined
                     : `Only ${approvers} can release "${gate.subject}".`;
             },
+            ...(deps.notify === undefined ? {} : { notify: deps.notify }),
+            signal: input.signal,
+            deadlineMs: deps.deadlineMs ?? OFFER_DEADLINE_MS,
         });
-        const raised: AgentEvent = { kind: "credential_offer", requestId: id, offer };
-        card.push(raised);
-        deps.observe(card.conversationId, raised);
-        deps.notify?.(card.conversationId);
-        const { reply, resolved, caller } = await wait(AbortSignal.any([input.signal, AbortSignal.timeout(deps.deadlineMs ?? OFFER_DEADLINE_MS)]));
-        card.push(resolved);
-        deps.observe(card.conversationId, resolved);
-        const receipt = (outcome: "released" | "refused", approvedBy?: string): void => {
-            const frame: AgentEvent = { kind: "credential_receipt", requestId: id, outcome, ...(approvedBy !== undefined ? { approvedBy } : {}) };
-            card.push(frame);
-            deps.observe(card.conversationId, frame);
-        };
+        const { reply, caller } = raised;
+        const receipt = (outcome: "released" | "refused", approvedBy?: string): void =>
+            raised.say({ kind: "credential_receipt", requestId: raised.requestId, outcome, ...(approvedBy !== undefined ? { approvedBy } : {}) });
         if (!reply.approve) {
-            /* TWO DIFFERENT NO'S, told apart the payment gate's way: a resolved frame with no reply is the
-             * deadline or a dead turn, and reading that as "declined" would put words in an approver's mouth
-             * — which matters more here than anywhere else, because the whole feature is about attributing a
-             * decision to a person. So only a real decline writes a receipt. */
-            if (resolved.reply === undefined) {
+            /* TWO DIFFERENT NO'S, told apart by whether a person answered (offer-card.ts), which matters more
+             * here than anywhere else, because the whole feature is about attributing a decision to a person.
+             * So only a real decline writes a receipt. */
+            if (!raised.answered) {
                 return {
                     allow: false,
                     reason:

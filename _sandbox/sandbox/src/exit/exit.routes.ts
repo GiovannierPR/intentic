@@ -1,10 +1,11 @@
-import { errorMessage } from "@intentic/base/errors";
 import { exitContract, type IntenticLine } from "@intentic/sandbox-contract";
 import { implement, ORPCError } from "@orpc/server";
 import type { Services } from "../composition.js";
 import type { OrpcContext } from "../context.js";
+import { tunnelEntry } from "../tunnel/tunnel-links.js";
+import { heldStream } from "../tunnel/tunnel-route.js";
 import { exitDrivers } from "./exit-drivers.js";
-import { checkExit, type ExitEntry, exitEntry, exitLink, exitLinks, rotateExit, startExit, stopExit } from "./exit-links.js";
+import { checkExit, type ExitEntry, exitLink, exitLinks, rotateExit, startExit, stopExit } from "./exit-links.js";
 
 // The live geo-exit routes. Adding an exit is a capability add; STARTING, MOVING and ROTATING one is here,
 // because switching country is a runtime operation performed many times over one stored pool, by the operator
@@ -15,43 +16,32 @@ export type ExitRoutesDeps = Pick<Services, "capabilities">;
 
 export const createExitRoutes = (services: ExitRoutesDeps) => {
     const i = implement(exitContract).$context<OrpcContext>();
-    /* One move per exit at a time. Two concurrent starts would race the same interface, the same derived proxy
-     * port and the same routing table and leave a half-built exit behind; worse, the loser's verification would
-     * observe the winner's country and report a switch that never happened. Rejecting the second is honest,
-     * the first is already streaming its progress. */
+    // One move per exit at a time (tunnel-route.ts): here the loser's verification would additionally observe
+    // the winner's country and report a switch that never happened.
     const moving = new Set<string>();
 
     const entryOf = async (id: string): Promise<ExitEntry> => {
-        const entry = await exitEntry(services.capabilities, id);
+        const entry = await tunnelEntry(services.capabilities, "exit", id);
         if (entry === undefined) {
             throw new ORPCError("NOT_FOUND", { message: `no exit capability with that id` });
         }
         return entry;
     };
 
-    /* start / use / rotate are one shape: hold the lock, stream the driver's progress, end with the link's own
-     * state so the caller renders the verified address without a second round-trip, and surface a failure as
-     * both an error frame and a thrown ORPCError, the stream's reader sees the message, the caller sees the
-     * failure. Written once because the three differ only in which generator they run. */
+    // start / use / rotate differ only in which generator they run.
     async function* move(id: string, run: (entry: ExitEntry) => AsyncGenerator<IntenticLine>): AsyncGenerator<IntenticLine> {
         const entry = await entryOf(id);
-        if (moving.has(entry.id)) {
-            throw new ORPCError("CONFLICT", { message: `"${entry.id}" is already moving, wait for it to finish` });
-        }
-        moving.add(entry.id);
-        try {
-            yield* run(entry);
-            const link = await exitLink(entry);
-            const where = [link.ip, link.observedCountry].filter((part) => part !== undefined).join(" · ");
-            yield { kind: "log", message: `${link.id}: ${link.state}${where === "" ? "" : ` · ${where}`}` };
-            yield { kind: "result", ok: true };
-        } catch (error) {
-            const message = errorMessage(error);
-            yield { kind: "error", message };
-            throw new ORPCError("INTERNAL_SERVER_ERROR", { message });
-        } finally {
-            moving.delete(entry.id);
-        }
+        yield* heldStream(
+            moving,
+            entry.id,
+            "moving",
+            () => run(entry),
+            async () => {
+                const link = await exitLink(entry);
+                const where = [link.ip, link.observedCountry].filter((part) => part !== undefined).join(" · ");
+                return `${link.id}: ${link.state}${where === "" ? "" : ` · ${where}`}`;
+            },
+        );
     }
 
     return {

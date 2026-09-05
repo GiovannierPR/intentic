@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import type { HostHub } from "../hosts/host-hub.js";
+import type { HostHub } from "../hosts/host-peer.js";
 import { detectOpenclaw } from "./openclaw.js";
 import { probeHost, scanHost } from "./host-scan.js";
 import { planHermes, detectHermes } from "./hermes.js";

@@ -1,7 +1,9 @@
-import { mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { errorMessage } from "@intentic/base/errors";
-import type { Capability, IntenticLine, VpnConfig, VpnLink } from "@intentic/sandbox-contract";
+import type { IntenticLine, VpnConfig, VpnLink } from "@intentic/sandbox-contract";
 import type { CapabilitiesStore } from "../capabilities/capabilities-store.js";
+import { notCarriedYet, type TunnelEntry, tunnelEntries } from "../tunnel/tunnel-links.js";
+import { markUp, upSince } from "../tunnel/tunnel-state.js";
 import { vpnDrivers } from "./vpn-drivers.js";
 import { upMarkerPath, vpnDir } from "./vpn-paths.js";
 
@@ -10,27 +12,7 @@ import { upMarkerPath, vpnDir } from "./vpn-paths.js";
 // apply, and the boot restore, goes through these three functions, so there is exactly one definition of what
 // connecting means and no surface can drift from another.
 
-// A vpn-kind capability, narrowed. The manifest is a discriminated union over `kind`, so this is the one cast
-// the module needs and every driver below can take a VpnConfig without re-checking.
-export interface VpnEntry {
-    readonly id: string;
-    readonly config: VpnConfig;
-}
-
-const vpnEntries = (capabilities: readonly Capability[]): VpnEntry[] =>
-    capabilities.flatMap((capability) => (capability.kind === "vpn" ? [{ id: capability.id, config: capability.config }] : []));
-
-// Epoch ms this tunnel came up, from the marker written on a successful dial. ADVISORY: liveness always comes
-// from the driver's probe, so a tunnel raised outside the daemon shows no uptime rather than a wrong state.
-const upSince = async (id: string): Promise<number | undefined> => {
-    const info = await stat(upMarkerPath(id)).catch(() => undefined);
-    return info?.mtimeMs;
-};
-
-const markUp = async (id: string): Promise<void> => {
-    await mkdir(vpnDir(), { recursive: true, mode: 0o700 });
-    await writeFile(upMarkerPath(id), "", { mode: 0o600 });
-};
+export type VpnEntry = TunnelEntry<VpnConfig>;
 
 // One configured VPN as the UI and the CLI see it: manifest intent plus whatever the OS reports right now.
 export const vpnLink = async (entry: VpnEntry): Promise<VpnLink> => {
@@ -50,13 +32,13 @@ export const vpnLink = async (entry: VpnEntry): Promise<VpnLink> => {
         ...(probe.interface === undefined ? {} : { interface: probe.interface }),
         ...(probe.address === undefined ? {} : { address: probe.address }),
         ...(probe.detail === undefined ? {} : { detail: probe.detail }),
-        ...(probe.state === "connected" ? { since: await upSince(entry.id) } : {}),
+        ...(probe.state === "connected" ? { since: await upSince(upMarkerPath(entry.id)) } : {}),
     };
 };
 
 // Every configured VPN with its live state, probed concurrently (the capabilities list's precedent).
 export const vpnLinks = async (capabilities: CapabilitiesStore): Promise<VpnLink[]> =>
-    Promise.all(vpnEntries(await capabilities.list()).map((entry) => vpnLink(entry)));
+    Promise.all(tunnelEntries(await capabilities.list(), "vpn").map((entry) => vpnLink(entry)));
 
 // Dial one tunnel, streaming the client's progress. The up marker is written only after the driver reports
 // success, so its presence never contradicts a probe.
@@ -64,12 +46,10 @@ export async function* connectVpn(entry: VpnEntry, options: { readonly otp?: str
     const driver = vpnDrivers[entry.config.provider];
     const missing = await driver.missingTool();
     if (missing !== undefined) {
-        throw new Error(
-            `This sandbox doesn't carry ${missing} yet. Rebuild it from the Sandbox ▸ Environment card: the VPN capability's image fragment installs it, and an auto-connect tunnel dials itself once the sandbox restarts.`,
-        );
+        throw notCarriedYet(missing, "vpn");
     }
     yield* driver.connect(entry.id, entry.config, options);
-    await markUp(entry.id);
+    await markUp(vpnDir(), upMarkerPath(entry.id));
 }
 
 // Drop one tunnel. Tolerant by contract: the goal state is "not up", so an already-down tunnel is a success.
@@ -85,7 +65,7 @@ export const reconnectVpns = async (
     capabilities: CapabilitiesStore,
     logger: { info: (message: string) => void; warn: (message: string) => void },
 ): Promise<void> => {
-    for (const entry of vpnEntries(await capabilities.list())) {
+    for (const entry of tunnelEntries(await capabilities.list(), "vpn")) {
         if (entry.config.autoConnect !== "on") {
             continue;
         }

@@ -12,7 +12,7 @@ import { z } from "zod";
  * wire is oRPC. Anything arriving before the link exists is either this frame or a closed socket. */
 
 // The MCP protocol revision the machine's tool server implements. Shared because the daemon answers the
-// handshake ITSELF when the machine is asleep (hosts/host.routes.ts), two spellings of this would mean an
+// handshake ITSELF when the machine is asleep (the daemon's peer bridge), two spellings of this would mean an
 // offline machine negotiating a different protocol than the same machine awake.
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 

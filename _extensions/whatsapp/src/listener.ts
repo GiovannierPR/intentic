@@ -1,4 +1,4 @@
-import { createBufferedPainter, failureNotice, framePainter, type GatewayCtx, type ListenerMessage } from "@intentic/connector-runtime";
+import { chatRings, createBufferedPainter, failureNotice, framePainter, type GatewayCtx, type ListenerMessage, recentKeys, typingHeartbeat } from "@intentic/connector-runtime";
 import type { WhatsAppConnection } from "./client.js";
 import type { WaMessageContent, WaRawMessage } from "./types.js";
 
@@ -140,52 +140,17 @@ export interface WhatsAppListener {
 }
 
 export const createWhatsAppListener = (ctx: GatewayCtx, connections: () => ReadonlyMap<string, WhatsAppConnection>): WhatsAppListener => {
-    const recent = new Set<string>();
-    // The stand-in for a history API: what this process has watched go by, per chat, oldest first. Insertion
-    // order is recency (a push re-inserts its chat), so evicting the first key drops the chat quiet longest.
-    const seen = new Map<string, HistoryEntry[]>();
-    // Live "typing…" indicators keyed by chat JID.
-    const typing = new Map<string, NodeJS.Timeout>();
-
-    const remember = (chat: string, entry: HistoryEntry): void => {
-        const ring = seen.get(chat) ?? [];
-        ring.push(entry);
-        seen.delete(chat);
-        seen.set(chat, ring.slice(-HISTORY_LIMIT));
-        if (seen.size > HISTORY_CHATS_MAX) {
-            const quietest = seen.keys().next().value;
-            if (quietest !== undefined) {
-                seen.delete(quietest);
-            }
-        }
-    };
-
-    const stopTyping = (connection: WhatsAppConnection, chat: string): void => {
-        const timer = typing.get(chat);
-        if (timer !== undefined) {
-            clearInterval(timer);
-            typing.delete(chat);
-            void connection.presence(chat, "paused").catch(() => undefined);
-        }
-    };
+    const recent = recentKeys(RECENT_MAX);
+    // The stand-in for a history API: what this process has watched go by, per chat (listener-memory.ts).
+    const seen = chatRings<HistoryEntry>({ perChat: HISTORY_LIMIT, chats: HISTORY_CHATS_MAX });
+    // Live "typing…" indicators keyed by chat JID; stopping one says "paused", which is what WhatsApp shows.
+    const typing = typingHeartbeat({ intervalMs: TYPING_INTERVAL_MS, maxMs: TYPING_MAX_MS });
 
     const startTyping = (connection: WhatsAppConnection, chat: string): void => {
-        const send = (): void => void connection.presence(chat, "composing").catch(() => undefined);
-        const timer = typing.get(chat);
-        if (timer !== undefined) {
-            clearInterval(timer);
-        }
-        send();
-        const startedAt = Date.now();
-        typing.set(
+        typing.start(
             chat,
-            setInterval(() => {
-                if (Date.now() - startedAt > TYPING_MAX_MS) {
-                    stopTyping(connection, chat);
-                    return;
-                }
-                send();
-            }, TYPING_INTERVAL_MS),
+            () => void connection.presence(chat, "composing").catch(() => undefined),
+            () => void connection.presence(chat, "paused").catch(() => undefined),
         );
     };
 
@@ -200,15 +165,8 @@ export const createWhatsAppListener = (ctx: GatewayCtx, connections: () => Reado
             return;
         }
         const key = `${chat}:${id}`;
-        if (recent.has(key)) {
+        if (recent.duplicate(key)) {
             return;
-        }
-        recent.add(key);
-        if (recent.size > RECENT_MAX) {
-            const oldest = recent.values().next().value;
-            if (oldest !== undefined) {
-                recent.delete(oldest);
-            }
         }
 
         const content = unwrap(raw.message);
@@ -224,8 +182,8 @@ export const createWhatsAppListener = (ctx: GatewayCtx, connections: () => Reado
         const author = { id: jidUser(senderJid), name: raw.pushName ?? jidUser(senderJid) };
         const timestamp = timestampOf(raw);
         // The ring is context for the NEXT mention, so this message goes in whether or not it wakes anything.
-        const history = [...(seen.get(chat) ?? [])];
-        remember(chat, { author, content: text, timestamp });
+        const history = seen.of(chat);
+        seen.remember(chat, { author, content: text, timestamp });
 
         const selves = new Set(
             [...connections().values()]
@@ -270,7 +228,7 @@ export const createWhatsAppListener = (ctx: GatewayCtx, connections: () => Reado
                 ),
             );
         } finally {
-            stopTyping(connection, chat);
+            typing.stop(chat);
         }
     };
 
@@ -278,11 +236,6 @@ export const createWhatsAppListener = (ctx: GatewayCtx, connections: () => Reado
         onMessage: (connection, raw) => {
             void onMessage(connection, raw).catch((error: unknown) => ctx.log.error({ err: error }, "whatsapp message dispatch failed"));
         },
-        stopAll: () => {
-            for (const timer of typing.values()) {
-                clearInterval(timer);
-            }
-            typing.clear();
-        },
+        stopAll: typing.stopAll,
     };
 };

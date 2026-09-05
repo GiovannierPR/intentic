@@ -1,26 +1,34 @@
+import type { AgentHarness, AgentProvider } from "@intentic/sandbox-contract";
 import { unstubbed } from "@intentic/testing";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { Services } from "../composition.js";
 import type { PerfFields } from "../platform/perf.js";
 
 const ready = vi.fn<() => Promise<Record<string, boolean>>>();
-const credentials = vi.fn<(services: Services, target: { agent: string; model: string }) => Promise<{ ok: boolean; message?: string }>>();
-vi.mock("./harness-credentials.js", () => ({
-    harnessReadyProviders: () => ready(),
-    resolveHarnessCredentials: (services: Services, target: { agent: string; model: string }) => credentials(services, target),
-}));
+vi.mock("./harness-credentials.js", () => ({ harnessReadyProviders: () => ready() }));
 
-const oneShot = vi.fn<(params: { model: string }) => Promise<string>>();
-vi.mock("./one-shot.js", () => ({ runOneShot: (params: { model: string }) => oneShot(params) }));
-
-/* THE OTHER ROAD TO A MODEL, mocked separately from the one above precisely so the tests can tell which one a
- * rung took. Google refuses the Claude Code harness outright (see askRung), so "which loop ran this" is a
- * correctness property of the walk here, not an implementation detail. */
-const geminiOneShot = vi.fn<(params: { model: string }) => Promise<string>>();
-vi.mock("./one-shot-gemini.js", () => ({ runGeminiOneShot: (params: { model: string }) => geminiOneShot(params) }));
-
-const cursorOneShot = vi.fn<(params: { model: string }) => Promise<string>>();
-vi.mock("./one-shot-cursor.js", () => ({ runCursorOneShot: (params: { model: string }) => cursorOneShot(params) }));
+/* THE THREE ROADS TO A MODEL, mocked at the seam the walk asks them through (askRung asks the adapter the
+ * contract names for the provider), keyed by RUNTIME precisely so the tests can tell which loop a rung took.
+ * Google refuses the Claude Code harness outright, so "which loop ran this" is a correctness property of the
+ * walk here, not an implementation detail. */
+const oneShot = vi.fn<(ask: { model: string }) => Promise<string>>();
+const geminiOneShot = vi.fn<(ask: { model: string }) => Promise<string>>();
+const cursorOneShot = vi.fn<(ask: { model: string }) => Promise<string>>();
+vi.mock("./adapter-registry.js", async () => {
+    const { capabilitiesOf } = await import("@intentic/sandbox-contract");
+    const runners: Record<string, (ask: { model: string }) => Promise<string>> = {
+        "claude-code": (ask) => oneShot(ask),
+        "opencode-gemini": (ask) => geminiOneShot(ask),
+        cursor: (ask) => cursorOneShot(ask),
+    };
+    return {
+        adapterFor: (provider: AgentProvider, harness: AgentHarness) => {
+            const runtime = capabilitiesOf(provider, harness).runtime;
+            const run = runners[runtime];
+            return { runtime, ...(run === undefined ? {} : { oneShot: (_services: Services, ask: { model: string }) => run(ask) }) };
+        },
+    };
+});
 
 const { askQuickModel, REFUSED_FOR_MS } = await import("./quick-model.js");
 const { sentenceAnswer } = await import("./quick-answer.js");
@@ -106,7 +114,6 @@ beforeEach(() => {
     vi.resetAllMocks();
     timed.length = 0;
     ready.mockResolvedValue({ claude: true, gemini: true, codex: true, cursor: true });
-    credentials.mockResolvedValue({ ok: true });
     oneShot.mockResolvedValue(`fix: tree truncation`);
     geminiOneShot.mockResolvedValue(`fix: tree truncation`);
     cursorOneShot.mockResolvedValue(`fix: tree truncation`);
@@ -137,9 +144,10 @@ test("steps over a spent allowance and answers on the next model down", async ()
 });
 
 test("treats a credential that fails on the way in as one more refusal to step over", async () => {
-    // A token that no longer refreshes passes the cheap readiness check and dies at resolution. From the user's
-    // side that is the same dead end as a spent allowance, and the next account answers both.
-    credentials.mockResolvedValueOnce({ ok: false, message: `Reconnect your ChatGPT account.` });
+    // A token that no longer refreshes passes the cheap readiness check and dies at resolution, which the
+    // Claude Code adapter's one-shot throws in the credential's own sentence (claude/claude-one-shot.ts). From
+    // the user's side that is the same dead end as a spent allowance, and the next account answers both.
+    oneShot.mockRejectedValueOnce(new Error(`Reconnect your ChatGPT account.`));
 
     const answer = await askQuickModel(fakeServices([`codex:gpt-5.6`, `claude:claude-haiku-4-5`]), DRAFT, signal());
 

@@ -49,7 +49,6 @@ const src = join(root, "_sandbox/sandbox/src");
 const NARROW_TAKERS = new Set([
     "activity/outbound.ts",
     "agent/adapter.ts",
-    "agent/one-shot-gemini.ts",
     "agent/provider-module.ts",
     "agent/turn-interactions.ts",
     "chores/chore-signals.ts",
@@ -114,7 +113,6 @@ const MUTUAL_PAIRS = new Set([
     "environment <-> extensions",
     "git <-> history",
     "history <-> workspace",
-    "hosts <-> system",
     "personas <-> settings",
     "platform <-> system",
     "processes <-> system",

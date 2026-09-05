@@ -1,6 +1,5 @@
-import type { AgentEvent, PaymentOffer, WalletConfig } from "@intentic/sandbox-contract";
-import { createRequest } from "../agent/agent-requests.js";
-import { DAEMON_OWNER, ONE_SHOT_OWNER } from "../platform/leftovers.js";
+import type { PaymentOffer, WalletConfig } from "@intentic/sandbox-contract";
+import { type CardDeps, cardRun, OFFER_DEADLINE_MS, raiseCard, type SettledCard, whyOf } from "../agent/offer-card.js";
 import type { RelayedAnswer } from "../platform/pool-services.js";
 import type { SignRequest } from "./wallet-signer.js";
 import { type OpenedPayment, spentTodayAtomic, type WalletLedgerStore } from "./wallet-ledger.js";
@@ -33,8 +32,6 @@ import {
  * this container) and settled by the merchant's own side. A payment that fails after signing spends nothing
  *, the authorization simply expires unused, which is why `failed` receipts can honestly say so. */
 
-const OFFER_DEADLINE_MS = 10 * 60_000;
-const WHY_MAX = 280;
 // The unpaid probe's budget: enough for a slow endpoint's challenge, short enough that a dead one doesn't
 // hold the CLI hostage.
 const PROBE_TIMEOUT_MS = 60_000;
@@ -54,18 +51,13 @@ export interface PaidAnswer extends RelayedAnswer {
     readonly transaction?: string;
 }
 
-export interface PaymentGateDeps {
+export interface PaymentGateDeps extends CardDeps {
     // The wallet capability's live config, read fresh per call so a policy edit applies to the next payment.
     readonly wallet: () => Promise<WalletConfig | undefined>;
     readonly ledger: WalletLedgerStore;
     // The platform signer relay (wallet-signer.ts), injected so tests drive the gate without a platform.
     readonly sign: (request: SignRequest) => Promise<RelayedAnswer>;
     readonly fetchFn?: typeof fetch;
-    // The live turn the card lands in, the service gate's own seam, verbatim.
-    readonly liveRun: (
-        conversationId: string | undefined,
-    ) => { readonly conversationId: string; readonly push: (event: AgentEvent) => void } | undefined;
-    readonly observe: (conversationId: string, event: AgentEvent) => void;
     // Whether the live turn in this conversation has taken in outside content (guard/turn-taint.ts), the
     // one input to the auto-approve decision that is not the owner's policy. Injected like every other seam
     // so the gate's tests state the rule rather than reaching into a module registry.
@@ -228,13 +220,10 @@ export const gatedPaidFetch = async (deps: PaymentGateDeps, request: PaidFetchRe
         !tainted &&
         quote.amountAtomic <= usdToAtomic(config.autoApproveUnderUsd) &&
         (allow.length === 0 || allow.some((entry) => hostMatches(host, entry)));
-    let requestId: string | undefined;
-    let card: { readonly conversationId: string; readonly push: (event: AgentEvent) => void } | undefined;
+    let card: SettledCard<"payment_offer"> | undefined;
     if (!auto) {
-        const named =
-            request.conversationId === DAEMON_OWNER || request.conversationId === ONE_SHOT_OWNER ? undefined : request.conversationId;
-        card = deps.liveRun(named);
-        if (card === undefined) {
+        const run = cardRun(deps, request.conversationId);
+        if (run === undefined) {
             return refusal(
                 409,
                 "no_conversation",
@@ -251,20 +240,18 @@ export const gatedPaidFetch = async (deps: PaymentGateDeps, request: PaidFetchRe
             amountUsd,
             spentTodayUsd: atomicToUsd(spentToday),
             dailyCapUsd: config.dailyCapUsd,
-            ...(request.why !== undefined && request.why !== "" ? { why: request.why.slice(0, WHY_MAX) } : {}),
+            ...whyOf(request.why),
         };
-        const { id, wait } = createRequest("payment_offer", { kind: "payment_offer", requestId: "", approve: false }, card.conversationId);
-        requestId = id;
-        const raised: AgentEvent = { kind: "payment_offer", requestId: id, offer };
-        card.push(raised);
-        deps.observe(card.conversationId, raised);
-        const { reply, resolved } = await wait(AbortSignal.any([request.signal, AbortSignal.timeout(deps.deadlineMs ?? OFFER_DEADLINE_MS)]));
-        card.push(resolved);
-        deps.observe(card.conversationId, resolved);
-        if (!reply.approve) {
-            // Two different no's, told apart the service gate's way: a resolved frame with no reply is the
-            // deadline or a dead CLI, and reading it as "declined" would put words in the owner's mouth.
-            if (resolved.reply === undefined) {
+        card = await raiseCard(deps, run, {
+            kind: "payment_offer",
+            onAbort: { kind: "payment_offer", requestId: "", approve: false },
+            raised: (requestId) => ({ kind: "payment_offer", requestId, offer }),
+            signal: request.signal,
+            deadlineMs: deps.deadlineMs ?? OFFER_DEADLINE_MS,
+        });
+        if (!card.reply.approve) {
+            // Two different no's, told apart by whether a person actually answered (offer-card.ts argues why).
+            if (!card.answered) {
                 await deps.ledger.record(opened, "unanswered");
                 return refusal(408, "unanswered", "The payment offer went unanswered and expired: nothing was spent. Continue without it; offer again only if the owner shows up.");
             }
@@ -284,19 +271,17 @@ export const gatedPaidFetch = async (deps: PaymentGateDeps, request: PaidFetchRe
         return refusal(500, "ledger_unwritable", "The wallet ledger could not be written, so the payment was refused: no spend without a record.");
     }
     const receipt = (outcome: "paid" | "failed", transaction?: string): void => {
-        if (requestId === undefined || card === undefined) {
+        if (card === undefined) {
             return;
         }
-        const frame: AgentEvent = {
+        card.say({
             kind: "payment_receipt",
-            requestId,
+            requestId: card.requestId,
             outcome,
             amountUsd,
             ...(transaction !== undefined ? { transaction } : {}),
             network: config.network,
-        };
-        card.push(frame);
-        deps.observe(card.conversationId, frame);
+        });
     };
     const authorization = mintAuthorization(quote, config.address, now());
     const signed = await deps.sign({

@@ -1,4 +1,4 @@
-import type { AgentCapabilities, AgentTurn } from "@intentic/sandbox-contract";
+import type { AgentProvider, AgentCapabilities, AgentTurn } from "@intentic/sandbox-contract";
 import type { Services } from "../composition.js";
 import type { TurnContext, TurnPlan } from "./turn-plan.js";
 
@@ -98,4 +98,24 @@ export interface AgentAdapter<R extends AgentCapabilities["runtime"] = AgentCapa
      * out seconds later, so a turn stopped in its opening seconds leaves a live-looking id behind that nothing
      * was ever saved under. */
     readonly holdsSession: (services: Services, sessionId: string, cwd: string) => Promise<boolean>;
+    /* ONE PROMPT IN, ONE STRING OUT, on this runtime: no tools, no session, no transcript, no events, its own
+     * deadline, and every failure thrown as the provider's own sentence. The shape a helper needs (draft me a
+     * commit message) as opposed to the shape a chat needs, which is `preflight`. The quick-model walk
+     * (quick-model.ts) asks the adapter the contract names for the provider rather than choosing a loop of its
+     * own, so a provider that refuses the Claude Code harness (Google does, on its identity line; Cursor has no
+     * such road at all) is served on its own runtime for one-liners exactly as it is for turns. Absent for a
+     * runtime nothing asks one line of, which the walk reports as a refusal and steps over. */
+    readonly oneShot?: (services: Services, ask: OneShotAsk) => Promise<string>;
+}
+
+export interface OneShotAsk {
+    // Whose credential and catalog this runs on: a routed provider's helper is billed to that vendor.
+    readonly provider: AgentProvider;
+    readonly prompt: string;
+    // The tree the model runs in. Nothing is read from it (no tools), but a runtime spawns or scopes there and
+    // a path that doesn't exist fails the spawn.
+    readonly cwd: string;
+    readonly model: string;
+    // The caller's cancel (a second click, a closed panel).
+    readonly signal: AbortSignal;
 }

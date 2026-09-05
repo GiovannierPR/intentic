@@ -40,16 +40,14 @@ import { createBackendProxyRoute } from "./extensions/backend/backend-proxy.rout
 import { createExtensionBundleRoute } from "./extensions/extension-bundle.routes.js";
 import { createListenerRoutes } from "./extensions/listener.routes.js";
 import { createBrowserProfileRoute } from "./browser/browser-profile.js";
-import { createHostConnectRoute, createHostMcpRoute, createHostRoutes } from "./hosts/host.routes.js";
 import { createDevicesRoute } from "./hosts/devices.routes.js";
-import {
-    createWebExtConnectRoute,
-    createWebExtLendRoute,
-    createWebExtMcpRoute,
-    createWebExtRoutes,
-    createWebExtSessionRoute,
-} from "./webext/webext.routes.js";
-import { createRunnerConnectRoute, createRunnerRoutes } from "./runners/runner.routes.js";
+import { HOST_PEER, hostPeerRoutes } from "./hosts/host-peer.js";
+import { peerConnectPath, peerEnrollPath, peerMcpPath } from "./peers/peer.js";
+import { mountPeerRoutes } from "./peers/peer-routes.js";
+import { RUNNER_PEER, runnerPeerRoutes } from "./runners/runner-peer.js";
+import { WEBEXT_PEER, webextPeerRoutes } from "./webext/webext-peer.js";
+import { createWebExtLendRoute, createWebExtSessionRoute } from "./webext/webext.routes.js";
+import { createRunnerDefinitionSyncRoute } from "./runners/runner.routes.js";
 import {
     createRunnerCredentialRefreshRoute,
     createRunnerCredentialsRoute,
@@ -122,35 +120,24 @@ const ciWebhookPath = /^\/ci\/webhook\/[^/]+$/;
 // own minted gate token instead (see workflows/gate.routes.ts).
 const gatePath = /^\/workflows\/[^/]+\/gate$/;
 
-/* The two doors a connected device opens, both exempt from the bearer middleware because neither caller has a
- * Google identity to present:
- *
- *   /system/hosts/connect  the machine's WebSocket, it authenticates in its first frame instead of the URL
- *                          (host-protocol.ts explains why), and /system/hosts/enroll redeems its one-time pairing.
- *   /mcp/hosts/<id>        the AGENT's MCP door onto that machine, carrying the per-boot host bridge token.
- *
- * Anchored per segment so neither admits a route that merely starts the same way. */
-const hostPublicPath = (path: string): boolean => path === "/system/hosts/connect" || path === "/system/hosts/enroll";
-const hostMcpPath = /^\/mcp\/hosts\/[^/]+$/;
+/* THE PEER DOORS (peers/), each exempt from the bearer middleware because none of their callers has a Google
+ * identity to present: a connected device, a connected browser and a runner all dial in with their enrollment
+ * token in the first frame (`connect`) and redeem a one-time pairing at `enroll`; the MCP bridges carry the
+ * per-boot bridge token instead. Anchored per segment so none admits a route that merely starts the same way. */
+const PEER_DOORS = [HOST_PEER, WEBEXT_PEER, RUNNER_PEER];
+const peerPublicPath = (path: string): boolean => PEER_DOORS.some((door) => path === peerConnectPath(door.slug) || path === peerEnrollPath(door.slug));
+const peerMcpPaths = PEER_DOORS.flatMap((door) => (door.mcp === undefined ? [] : [peerMcpPath(door.slug)]));
 
-/* A connected BROWSER's four doors, exempt for the same reason: an extension has no Google identity to present.
- * `connect` authenticates in its first frame, `enroll` redeems a one-time pairing, and `session` and `lend`
- * carry the extension's own durable token as a bearer, which the routes verify themselves (webext.routes.ts).
- * The two credential doors are a pair pointing opposite ways: `session` takes a site's sign-in from the
- * person's browser into a sandbox profile, `lend` takes one back out for a step no remote browser can perform.
- * The MCP bridge is the agent's door and carries the per-boot bridge token. */
-const webextPublicPath = (path: string): boolean =>
-    path === "/system/webext/connect" || path === "/system/webext/enroll" || path === "/system/webext/session" || path === "/system/webext/lend";
-const webextMcpPath = /^\/mcp\/webext\/[^/]+$/;
+// A connected BROWSER's two credential doors, exempt for the same reason: `session` and `lend` carry the
+// extension's own durable token as a bearer, which the routes verify themselves (webext.routes.ts). They are a
+// pair pointing opposite ways: `session` takes a site's sign-in from the person's browser into a sandbox
+// profile, `lend` takes one back out for a step no remote browser can perform.
+const webextCredentialPath = (path: string): boolean => path === "/system/webext/session" || path === "/system/webext/lend";
 
-// A RUNNER's doors, the same exemption for the same reason: the caller is a container on another machine
-// with no Google identity to present, authenticated by its pairing (enroll), its first frame (connect), or
-// its durable token as a bearer the git routes verify themselves (runner-git.routes.ts). See runners/ and
-// docs/remote-runners-plan.md (workspace root).
+// A RUNNER's further doors: its durable token as a bearer the git routes verify themselves
+// (runner-git.routes.ts), and the credential doors. See runners/ and docs/remote-runners-plan.md (workspace root).
 const runnerGitPath = /^\/system\/runners\/git\/[^/]+\/(?:info\/refs|git-upload-pack|git-receive-pack)$/;
 const runnerPublicPath = (path: string): boolean =>
-    path === "/system/runners/connect" ||
-    path === "/system/runners/enroll" ||
     path === "/system/runners/credentials" ||
     path === "/system/runners/credentials/refresh" ||
     path.startsWith("/system/runners/translator/") ||
@@ -185,14 +172,11 @@ const READY_EXEMPT = new Set([
     "/system/terminal",
     "/system/browser-profile",
     "/system/browser-view",
-    // A connected device reconnects on its own backoff, which a booting daemon would otherwise park just long
-    // enough to look like an outage on the card. Its socket needs nothing the boot chain builds.
-    "/system/hosts/connect",
-    // A connected browser's, for the same reason — and with more at stake in the parking: an MV3 service worker
-    // is killed after ~30s of silence, so a socket held open waiting for a boot step is a socket Chrome shuts.
-    "/system/webext/connect",
-    // A runner's socket, for the same reason.
-    "/system/runners/connect",
+    /* Every peer door's socket: a connected device reconnects on its own backoff, which a booting daemon would
+     * otherwise park just long enough to look like an outage on the card, and a browser's has more at stake in
+     * the parking: an MV3 service worker is killed after ~30s of silence, so a socket held open waiting for a
+     * boot step is a socket Chrome shuts. None of them needs anything the boot chain builds. */
+    ...PEER_DOORS.map((door) => peerConnectPath(door.slug)),
 ]);
 
 // The HTTP API the browser drives DIRECTLY over the sandbox's own Cloudflare tunnel. When services.auth is set
@@ -379,11 +363,10 @@ export const createApp = (services: Services): Hono<AppEnv> => {
                 intakePublicPath(c.req.path) ||
                 ciWebhookPath.test(c.req.path) ||
                 gatePath.test(c.req.path) ||
-                hostPublicPath(c.req.path) ||
-                runnerPublicPath(c.req.path) ||
-                hostMcpPath.test(c.req.path) ||
-                webextPublicPath(c.req.path) ||
-                webextMcpPath.test(c.req.path)
+                peerPublicPath(c.req.path) ||
+                peerMcpPaths.some((pattern) => pattern.test(c.req.path)) ||
+                webextCredentialPath(c.req.path) ||
+                runnerPublicPath(c.req.path)
             ) {
                 return next();
             }
@@ -677,38 +660,18 @@ export const createApp = (services: Services): Hono<AppEnv> => {
     const sync = createSyncRoutes(services);
     app.post("/system/sync/pair", sync.pair);
 
-    /* The user's own devices (hosts/host.routes.ts): pairing, enrollment, roster and revoke, then the machine's
-     * own socket. All before the oRPC catch-all, like the terminal. */
-    const hosts = createHostRoutes(services);
-    app.post("/system/hosts/pair", hosts.pair);
-    app.post("/system/hosts/enroll", hosts.enroll);
-    app.get("/system/hosts", hosts.list);
-    app.delete("/system/hosts/:id", hosts.revoke);
-    app.get("/system/hosts/connect", createHostConnectRoute(services));
-
-    // The user's own BROWSERS (webext/webext.routes.ts): the hosts block retold for the extension installed in
-    // one, then the extension's socket and its two credential doors.
-    const webexts = createWebExtRoutes(services);
-    app.post("/system/webext/pair", webexts.pair);
-    app.post("/system/webext/enroll", webexts.enroll);
-    app.get("/system/webext", webexts.list);
-    app.delete("/system/webext/:id", webexts.revoke);
-    app.get("/system/webext/connect", createWebExtConnectRoute(services));
-    // A handed-over site session. Authenticated by the extension's own enrollment token, and deliberately not
-    // an answer on the socket: see webext-protocol.ts.
+    /* THE PEER DOORS (peers/): the user's own devices, their browsers, and this sandbox's runners, each with its
+     * pairing, enrollment, roster, revoke and socket, and an MCP bridge where the agent reaches it that way. All
+     * before the oRPC catch-all, like the terminal. */
+    mountPeerRoutes(app, HOST_PEER, hostPeerRoutes(services));
+    mountPeerRoutes(app, WEBEXT_PEER, webextPeerRoutes(services));
+    mountPeerRoutes(app, RUNNER_PEER, runnerPeerRoutes(services));
+    // A browser's two credential doors: a handed-over site session, and one lent back out. Authenticated by the
+    // extension's own enrollment token, and deliberately not answers on the socket: see webext-protocol.ts.
     app.post("/system/webext/session", createWebExtSessionRoute(services));
     app.post("/system/webext/lend", createWebExtLendRoute(services));
-
-    // This sandbox's RUNNERS (runners/runner.routes.ts): pairing, enrollment, roster, revoke and the settings
-    // push, then the runner's socket, its git door and its credential doors.
-    const runners = createRunnerRoutes(services);
-    app.post("/system/runners/pair", runners.pair);
-    app.post("/system/runners/enroll", runners.enroll);
-    app.get("/system/runners", runners.list);
-    app.delete("/system/runners/:id", runners.revoke);
-    app.post("/system/runners/:id/definition/sync", runners.definitionSync);
-
-    app.get("/system/runners/connect", createRunnerConnectRoute(services));
+    // A runner's settings push (runner.routes.ts), then its git door and its credential doors.
+    app.post("/system/runners/:id/definition/sync", createRunnerDefinitionSyncRoute(services));
     // The git door runners fetch and push through (runner-git.routes.ts): stock smart HTTP off the real git
     // dirs, authenticated by the runner's own token, spawned per request. Before the oRPC catch-all.
     app.get("/system/runners/git/:repo/info/refs", createRunnerGitRefsRoute(services));
@@ -719,14 +682,6 @@ export const createApp = (services: Services): Hono<AppEnv> => {
     app.post("/system/runners/credentials", createRunnerCredentialsRoute(services));
     app.post("/system/runners/credentials/refresh", createRunnerCredentialRefreshRoute(services));
     app.all(`${runnerTranslatorPath}/*`, createRunnerTranslatorProxyRoute(services));
-    const hostMcp = createHostMcpRoute(services);
-    app.post("/mcp/hosts/:id", hostMcp);
-    app.get("/mcp/hosts/:id", hostMcp);
-    app.delete("/mcp/hosts/:id", hostMcp);
-    const webextMcp = createWebExtMcpRoute(services);
-    app.post("/mcp/webext/:id", webextMcp);
-    app.get("/mcp/webext/:id", webextMcp);
-    app.delete("/mcp/webext/:id", webextMcp);
     // Control tokens (auth/control-tokens.routes.ts): owner-minted, durable, revocable machine credentials.
     const controlTokens = createControlTokenRoutes(services);
     app.post("/system/control/tokens", controlTokens.mint);

@@ -58,7 +58,7 @@ export const startDraftingReceipts = (): void => {
          * two were the same silence over the same empty box, the exact state that reads as a broken feature
          * and sends the user round the loop of toggling the chip, switching views and reloading, none of which
          * could ever have helped. The chain being spent, a provider refusing, the deadline expiring
-         * (agent/one-shot.ts) all land here, and all deserve to be said rather than left to be inferred.
+         * (claude/claude-one-shot.ts) all land here, and all deserve to be said rather than left to be inferred.
          *
          * SAID FOR EVERY LANDING, exactly like the promise above it, that symmetry is the point. The line
          * "writing a commit message for X…" is offered to a user who has asked for nothing, so the answer owes

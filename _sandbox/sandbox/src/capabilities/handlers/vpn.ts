@@ -1,14 +1,12 @@
-import type { CapabilityStatus, VpnConfig } from "@intentic/sandbox-contract";
-import { removeLoadedSkill, writeLoadedSkill } from "../../settings/loaded-skills.js";
+import type { VpnConfig } from "@intentic/sandbox-contract";
+import { tunnelHandler, tunnelStatus } from "../../tunnel/tunnel-handler.js";
 import { vpnDrivers } from "../../vpn/vpn-drivers.js";
 import { connectVpn, disconnectVpn, vpnLink } from "../../vpn/vpn-links.js";
-import type { CapabilityHandler } from "../capability.js";
 import { TUN_PRIVILEGES_FRAGMENT } from "./net-privileges.js";
 
 // The `vpn` capability: STORE a connection (credentials + whether it dials itself on boot). Everything about
-// dialling lives in the vpn/ subsystem behind a per-protocol driver, and the live surface is the /vpn routes,
-// so this handler is only the manifest's half of the story, and the same connect path serves the operator's
-// VPN capability card, the agent's `vpn` CLI, this apply, and the boot restore.
+// dialling lives in the vpn/ subsystem behind a per-protocol driver, the live surface is the /vpn routes, and
+// the handler's shape is the tunnel kind's (tunnel/tunnel-handler.ts), so what is here is this kind's data.
 //
 // The tooling for all three protocols, and the container privileges they need, arrive via this capability's
 // environment-overlay fragment + runtime directives, applied by an owner-run rebuild; until then a link reads
@@ -69,26 +67,9 @@ Notes:
 - A tunnel the user set to auto-connect comes back on its own after a sandbox restart: only toggle it when asked.
 `;
 
-// A live VPN link mapped onto the capability grid's four states. "connecting" is deliberately `pending` rather
-// than `active`: a dial in flight is not yet carrying traffic, and the grid's pending affordance already means
-// "not finished".
-const capabilityStatus = (state: string, detail: string | undefined): CapabilityStatus => {
-    if (state === "connected") {
-        return { state: "active" };
-    }
-    if (state === "connecting") {
-        return { state: "pending", detail: "connecting" };
-    }
-    if (state === "unavailable") {
-        return { state: "pending", detail: "rebuild required" };
-    }
-    if (state === "failed") {
-        return { state: "error", ...(detail === undefined ? {} : { detail }) };
-    }
-    return { state: "inactive" };
-};
-
-export const vpnHandler: CapabilityHandler = {
+export const vpnHandler = tunnelHandler<VpnConfig>({
+    kind: "vpn",
+    skill: { name: "vpn", text: VPN_SKILL },
     /* The credential a user ROTATES, one per provider: /secrets reveals and replaces exactly this field.
      * wireguard's whole conf is secret (it holds the private key); fortinet has one password. An ipsec tunnel
      * carries two (the group PSK and, when XAuth is on, the per-user password): the per-user one is the rotatable
@@ -149,56 +130,11 @@ export const vpnHandler: CapabilityHandler = {
     },
     // Two blocks: this kind's clients, and the tun privilege shared with `exit` as one identical string.
     fragment: () => [VPN_FRAGMENT, TUN_PRIVILEGES_FRAGMENT],
-    // A tunnel's conf files are written per name by its driver, and the re-apply writes them under the new one,
-    // so this only has to take the old tunnel down and erase what it left. A tunnel that was up comes back up
-    // where the config says it should (autoConnect), under the name it now has.
-    rename: {
-        carry: async (_ctx, from, _to, config) => {
-            const vpn = config as VpnConfig;
-            await disconnectVpn({ id: from, config: vpn }).catch(() => undefined);
-            await vpnDrivers[vpn.provider].erase(from, vpn);
-        },
-    },
-    async *apply(ctx, id, config) {
-        const vpn = config as VpnConfig;
-        const entry = { id, config: vpn };
-        const driver = vpnDrivers[vpn.provider];
-        // Persist the connection first: the manifest entry is what puts the fragment into the overlay, so an
-        // add must land even when the tooling isn't installed yet.
-        await driver.write(id, vpn);
-        await writeLoadedSkill(ctx.files, ctx.workspace.root, "vpn", VPN_SKILL);
-        // Re-applying (an edited credential, an auto-connect flip) must never leave a tunnel running the old
-        // config, drop it, then re-dial below if it should be up.
-        await disconnectVpn(entry).catch(() => undefined);
-        if (vpn.autoConnect !== "on") {
-            yield { kind: "log", message: `Stored ${id}. Connect it from its row on the VPN card, or ask the agent to.` };
-            return;
-        }
-        const missing = await driver.missingTool();
-        if (missing !== undefined) {
-            // Pre-rebuild bootstrap: a missing client is a soft outcome, not a failed add, the overlay this
-            // very add composes is what installs it.
-            yield {
-                kind: "log",
-                message: `Stored ${id}, this sandbox doesn't carry ${missing} yet. Rebuild it from the Environment card; the tunnel dials itself when it restarts.`,
-            };
-            return;
-        }
-        yield* connectVpn(entry);
-    },
-    status: async (_ctx, id, config) => {
-        const link = await vpnLink({ id, config: config as VpnConfig });
-        return capabilityStatus(link.state, link.detail);
-    },
-    remove: async (ctx, id, config) => {
-        const vpn = config as VpnConfig;
-        await disconnectVpn({ id, config: vpn }).catch(() => undefined);
-        await vpnDrivers[vpn.provider].erase(id, vpn);
-        // The skill is shared by every vpn, drop it only when this was the last one. The route removes the
-        // manifest entry AFTER this handler, so `id` is still counted here.
-        const vpnCount = (await ctx.capabilities.list()).filter((capability) => capability.kind === "vpn").length;
-        if (vpnCount <= 1) {
-            await removeLoadedSkill(ctx.files, ctx.workspace.root, "vpn");
-        }
-    },
-};
+    driverOf: (config) => vpnDrivers[config.provider],
+    wanted: (config) => config.autoConnect === "on",
+    up: connectVpn,
+    down: disconnectVpn,
+    status: async (entry) => tunnelStatus(await vpnLink(entry), { active: "connected", pending: "connecting" }),
+    stored: (id) => `Stored ${id}. Connect it from its row on the VPN card, or ask the agent to.`,
+    afterRebuild: "the tunnel dials itself when it restarts",
+});

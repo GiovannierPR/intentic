@@ -1,15 +1,13 @@
-import type { CapabilityStatus, ExitConfig } from "@intentic/sandbox-contract";
+import type { ExitConfig } from "@intentic/sandbox-contract";
 import { exitDrivers } from "../../exit/exit-drivers.js";
 import { exitLink, startExit, stopExit } from "../../exit/exit-links.js";
-import { removeLoadedSkill, writeLoadedSkill } from "../../settings/loaded-skills.js";
-import type { CapabilityHandler } from "../capability.js";
+import { tunnelHandler, tunnelStatus } from "../../tunnel/tunnel-handler.js";
 import { TUN_PRIVILEGES_FRAGMENT } from "./net-privileges.js";
 
 /* The `exit` capability: STORE a pool to come out of (which provider, a resting country, whether it comes up
  * on boot). Everything about starting, moving and rotating lives in the exit/ subsystem behind a per-provider
- * driver, and the live surface is the /exit routes, so this handler is only the manifest's half of the story,
- * and the same path serves the operator's capability card, the agent's `geo` CLI, this apply, the browser wiring
- * and the boot restore.
+ * driver, the live surface is the /exit routes, and the handler's shape is the tunnel kind's
+ * (tunnel/tunnel-handler.ts), so what is here is this kind's data.
  *
  * ONE FRAGMENT PER PROVIDER, not one for the kind, because the providers differ in the thing that costs the
  * user something. Tor needs a package and NOTHING ELSE: no tun device, no NET_ADMIN, no privilege disclosure
@@ -87,26 +85,9 @@ browser whose address says Berlin and whose clock says New York is more conspicu
   rather than trying to install a VPN client yourself.
 `;
 
-// A live exit mapped onto the capability grid's four states. "starting" is `pending` rather than `active` on
-// purpose: an exit mid-move is not yet somewhere useful, and the grid's pending affordance already means
-// "not finished".
-const capabilityStatus = (state: string, detail: string | undefined): CapabilityStatus => {
-    if (state === "up") {
-        return { state: "active" };
-    }
-    if (state === "starting") {
-        return { state: "pending", detail: detail ?? "starting" };
-    }
-    if (state === "unavailable") {
-        return { state: "pending", detail: "rebuild required" };
-    }
-    if (state === "failed") {
-        return { state: "error", ...(detail === undefined ? {} : { detail }) };
-    }
-    return { state: "inactive" };
-};
-
-export const exitHandler: CapabilityHandler = {
+export const exitHandler = tunnelHandler<ExitConfig>({
+    kind: "exit",
+    skill: { name: "geo", text: EXIT_SKILL },
     // Only the bring-your-own arm carries a credential: the pasted confs hold private keys. tor and vpngate
     // have no account at all, which is most of why they are here.
     secret: (config) => ((config as ExitConfig).provider === "wireguard" ? "config" : undefined),
@@ -132,63 +113,23 @@ export const exitHandler: CapabilityHandler = {
         // with the vpn kind (see net-privileges.ts).
         return [exit.provider === "vpngate" ? OPENVPN_FRAGMENT : WIREGUARD_FRAGMENT, TUN_PRIVILEGES_FRAGMENT];
     },
-    // An exit's state is keyed by id (its state directory, its interface, its derived proxy port), and the
-    // proxy port MOVES with the name, which is the one consequence worth carrying: anything pointed at the old
-    // port has to be repointed. So the old exit comes down and its files go, and the re-apply brings it back
-    // under the new name at the new port.
-    rename: {
-        carry: async (_ctx, from, _to, config) => {
-            const exit = config as ExitConfig;
-            await stopExit({ id: from, config: exit }).catch(() => undefined);
-            await exitDrivers[exit.provider].erase(from, exit);
-        },
-    },
-    async *apply(ctx, id, config) {
-        const exit = config as ExitConfig;
-        const entry = { id, config: exit };
-        const driver = exitDrivers[exit.provider];
-        // Persist first: the manifest entry is what puts the fragment into the overlay, so an add must land
-        // even when the client isn't installed yet.
-        await driver.write(id, exit);
-        await writeLoadedSkill(ctx.files, ctx.workspace.root, "geo", EXIT_SKILL);
-        // Re-applying (an edited conf, a changed country, an auto-start flip) must never leave the old one
-        // running: take it down, then bring it back below if it should be up.
-        await stopExit(entry).catch(() => undefined);
-        if (exit.autoStart !== "on") {
-            yield { kind: "log", message: `Stored ${id}. Start it from its row on the Geo exit card, or ask the agent to.` };
-            return;
-        }
-        const missing = await driver.missingTool();
-        if (missing !== undefined) {
-            // Pre-rebuild bootstrap: a missing client is a soft outcome, not a failed add, the overlay this
-            // very add composes is what installs it.
-            yield {
-                kind: "log",
-                message: `Stored ${id}, this sandbox doesn't carry ${missing} yet. Rebuild it from the Environment card; the exit comes up when it restarts.`,
-            };
-            return;
-        }
-        yield* startExit(entry, exit.country);
-    },
-    status: async (_ctx, id, config) => {
-        const link = await exitLink({ id, config: config as ExitConfig });
+    driverOf: (config) => exitDrivers[config.provider],
+    wanted: (config) => config.autoStart === "on",
+    // An exit's state is keyed by id (its state directory, its interface, its derived proxy port), and on a
+    // rename the proxy port MOVES with the name, which is the one consequence worth knowing: anything pointed
+    // at the old port has to be repointed.
+    up: (entry) => startExit(entry, entry.config.country),
+    down: stopExit,
+    status: async (entry) => {
+        const link = await exitLink(entry);
         /* A country mismatch outranks the raw state, and this is the only place the grid can say so. An exit
          * can be genuinely up and coming out of the wrong place, if it drifted after the start that verified
          * it, and "active" would be a true statement about the tunnel and a misleading one about the sandbox. */
         if (link.state === "up" && link.country !== undefined && link.observedCountry !== undefined && link.observedCountry !== link.country) {
             return { state: "error", detail: `asked for ${link.country}, coming out of ${link.observedCountry}` };
         }
-        return capabilityStatus(link.state, link.detail);
+        return tunnelStatus(link, { active: "up", pending: "starting" });
     },
-    remove: async (ctx, id, config) => {
-        const exit = config as ExitConfig;
-        await stopExit({ id, config: exit }).catch(() => undefined);
-        await exitDrivers[exit.provider].erase(id, exit);
-        // The skill is shared by every exit, drop it only when this was the last one. The route removes the
-        // manifest entry AFTER this handler, so `id` is still counted here.
-        const exitCount = (await ctx.capabilities.list()).filter((capability) => capability.kind === "exit").length;
-        if (exitCount <= 1) {
-            await removeLoadedSkill(ctx.files, ctx.workspace.root, "geo");
-        }
-    },
-};
+    stored: (id) => `Stored ${id}. Start it from its row on the Geo exit card, or ask the agent to.`,
+    afterRebuild: "the exit comes up when it restarts",
+});

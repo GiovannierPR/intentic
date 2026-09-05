@@ -1,3 +1,5 @@
+import { readStored, storedId, writeStored } from "@intentic/sandbox-contract/embed";
+
 /* Who the visitor is, in the two forms the daemon distinguishes: a THREAD key (ephemeral, minted here, not a
  * claim about anybody) and, when the site asks for sign-in, a Google ID token the daemon verifies itself.
  *
@@ -5,48 +7,22 @@
  * hands it to the model tagged unverified. Anyone can type "admin"; only Google's signature says who someone is. */
 
 // localStorage keys are namespaced per automation: two Front Desks on one site are two threads, and clearing one
-// must not log the visitor out of the other.
+// must not log the visitor out of the other. Storage that refuses (Safari's private mode, a site that blocks
+// it) degrades to a fresh thread per page load, the contract's embed helpers' rule.
 const key = (automationId: string, name: string): string => `intentic.front-desk.${automationId}.${name}`;
-
-// localStorage throws in Safari's private mode and wherever the site blocks storage. A visitor with no storage
-// still gets a working chat, just a fresh thread per page load, which is the honest degradation.
-const read = (name: string): string | undefined => {
-    try {
-        return window.localStorage.getItem(name) ?? undefined;
-    } catch {
-        return undefined;
-    }
-};
-
-const write = (name: string, value: string): void => {
-    try {
-        window.localStorage.setItem(name, value);
-    } catch {
-        /* no storage, the caller keeps the value in memory for this page load */
-    }
-};
 
 // The visitor's thread id, minted once and kept. This is what makes a follow-up message land in the SAME
 // sandbox conversation instead of opening a new one, so it is the single most important thing to persist.
-export const visitorConversationId = (automationId: string): string => {
-    const name = key(automationId, "conversation");
-    const existing = read(name);
-    if (existing !== undefined && existing !== "") {
-        return existing;
-    }
-    const minted = crypto.randomUUID();
-    write(name, minted);
-    return minted;
-};
+export const visitorConversationId = (automationId: string): string => storedId(key(automationId, "conversation"));
 
-export const storedDisplayName = (automationId: string): string | undefined => read(key(automationId, "name"));
-export const storeDisplayName = (automationId: string, name: string): void => write(key(automationId, "name"), name);
+export const storedDisplayName = (automationId: string): string | undefined => readStored(key(automationId, "name"));
+export const storeDisplayName = (automationId: string, name: string): void => writeStored(key(automationId, "name"), name);
 
 // Start a new thread, the visitor pressed "New chat". Only the conversation id is dropped; a typed name and a
 // Google session are properties of the person, not of the thread.
 export const resetConversation = (automationId: string): string => {
     const minted = crypto.randomUUID();
-    write(key(automationId, "conversation"), minted);
+    writeStored(key(automationId, "conversation"), minted);
     return minted;
 };
 

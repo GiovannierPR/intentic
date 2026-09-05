@@ -10,10 +10,8 @@ import { ensureIntentInstallable } from "../scaffold/ensure-intent.js";
 import { scaffoldAppMonorepo, scaffoldNeutralLedger } from "../scaffold/scaffold-repos.js";
 import type { EndpointCatalog } from "../endpoints/endpoint-catalog.js";
 import { syncEndpointCompat } from "../endpoints/endpoint-translator.js";
-import type { HostHub } from "../hosts/host-hub.js";
-import type { HostsStore } from "../hosts/hosts-store.js";
-import type { WebExtHub } from "../webext/webext-hub.js";
-import type { WebExtStore } from "../webext/webext-store.js";
+import type { HostHub, HostStore } from "../hosts/host-peer.js";
+import type { WebExtHub, WebExtStore } from "../webext/webext-peer.js";
 import type { ResolvedContribution } from "./contributions.js";
 import type { CapabilitiesStore } from "./capabilities-store.js";
 
@@ -47,7 +45,7 @@ export interface CapabilityCtx {
     // subject (a scope edit has to reach a live machine while the user is still looking at the card), and the
     // store's enrollment state is the difference between "added" and "actually connected", which is the only
     // thing this kind's status can usefully say.
-    readonly hosts: HostsStore;
+    readonly hosts: HostStore;
     readonly hostHub: HostHub;
     // The same pair for the user's own browsers, passed whole for the same two reasons: the hub IS the
     // handler's subject (a switch edited on the card has to reach a live browser while the owner is still

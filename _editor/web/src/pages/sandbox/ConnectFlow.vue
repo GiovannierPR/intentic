@@ -59,26 +59,10 @@ const flow = computed(() =>
 const destination = computed(() => providerSpec(provider)?.destination ?? provider);
 
 /* Whether this is a NO-PASTE sign-in: the provider (or the daemon) finishes it out of band and this panel is
- * read-only, as against one that hands the user something to bring back.
- *
- * `flow` when the handshake carries one, and both the routed flows and the minted ones do: the wire says which
- * shape it is, and for a minted provider it is a fact about the ESTATE rather than about the provider (Z.ai
- * polls internationally and dead-ends on the mainland), so it could not be read off a name here anyway.
- *
- * Without that field there are two older shapes left. A code is Grok's, pre-filled at x.ai. A HANDSHAKE id with
- * no code is Cursor's, which has nothing to paste: the page it opens is already addressed to the attempt, and
- * the daemon holds the half that redeems it. That last case is why this cannot simply read `code !== ""` — an
- * empty code used to mean "paste-back", and for Cursor it means the opposite. */
-const deviceFlow = computed(() => {
-    const live = flow.value;
-    if (live === undefined) {
-        return false;
-    }
-    if (live.flow !== undefined) {
-        return live.flow === `device`;
-    }
-    return live.code !== `` || live.handshake !== undefined;
-});
+ * read-only, as against one that hands the user something to bring back. The wire says which shape it is,
+ * and for a minted provider it is a fact about the ESTATE rather than about the provider (Z.ai polls
+ * internationally and dead-ends on the mainland), so it could not be read off a name here anyway. */
+const deviceFlow = computed(() => flow.value?.flow === `device`);
 
 /* Whether the thing coming back is a whole ADDRESS rather than a code the provider showed on screen, which
  * decides both the placeholder and whether the dead-end picture is drawn. Every routed redirect is one, and so
@@ -125,7 +109,7 @@ const deadEndAddress = computed(() =>
  * Cursor's poll, a minted sign-in, a translator subscription) lands its account minutes later through a route
  * that never saw the field, so offering it there would be a control that silently does nothing — and in all of
  * those cases the name is a rename, on the row the account lands as. */
-const namesTheAccount = computed(() => kind === `native` && nativeConnectFlow.value?.provider === provider && nativeConnectFlow.value.pkce !== undefined);
+const namesTheAccount = computed(() => kind === `native` && nativeConnectFlow.value?.provider === provider && nativeConnectFlow.value.flow === `paste`);
 
 // Whether this panel is waiting on something the user has to bring back: the state both helpers below arm on,
 // and the only one in which a window listener or a clipboard read is any of our business.
@@ -144,8 +128,8 @@ const awaitingPaste = computed(() => flow.value !== undefined && !deviceFlow.val
  *     clipboard by ourselves when the browser lets us read it. */
 
 // The pending handshake's `state`, for whichever flow has one. A routed session's lives on the translator flow;
-// a minted redirect's lives on the native one. Claude's native handshake keeps its state inside `pkce` and is
-// never matched here, because it is not a redirect: nothing to recognise off the clipboard.
+// a minted redirect's lives on the native one. A paste sign-in's is blank, because it is not a redirect: nothing
+// to recognise off the clipboard.
 const redirectState = computed(() => (kind === `routed` ? (translatorConnectFlow.value?.state ?? ``) : (nativeConnectFlow.value?.state ?? ``)));
 
 /* Whether a string is the address THIS handshake is waiting for. The grant is the query parameter, and the

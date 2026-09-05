@@ -1,6 +1,5 @@
 import { errorMessage } from "@intentic/base/errors";
 import {
-    capabilitiesOf,
     endpointProvider,
     NATIVE_PROVIDERS,
     type NativeProvider,
@@ -12,10 +11,8 @@ import {
 import type { Services } from "../composition.js";
 import { endpointConfigOf } from "../endpoints/local-model.js";
 import { mentionsSpentAllowance } from "./failure-sentences.js";
-import { harnessReadyProviders, resolveHarnessCredentials } from "./harness-credentials.js";
-import { runOneShot } from "./one-shot.js";
-import { runCursorOneShot } from "./one-shot-cursor.js";
-import { runGeminiOneShot } from "./one-shot-gemini.js";
+import { adapterFor } from "./adapter-registry.js";
+import { harnessReadyProviders } from "./harness-credentials.js";
 import { type QuickAsk, readQuickAnswer, UnusableAnswerError } from "./quick-answer.js";
 import { rungLimit, spentRung } from "./quick-model-quota.js";
 
@@ -116,7 +113,7 @@ export interface QuickModelAttempt {
 export type QuickModelProgress = (attempts: readonly QuickModelAttempt[]) => void;
 
 // What went wrong, as a sentence rather than an object. Every throw this walks over already carries a
-// user-facing message (one-shot.ts turns a spent allowance and a dead credential into prose deliberately), so
+// user-facing message (the Claude Code helper turns a spent allowance and a dead credential into prose deliberately), so
 // there is nothing to classify here, this is the seam that keeps a stray non-Error from becoming "[object
 // Object]" in the panel's readout.
 const refusalText = (error: unknown): string => errorMessage(error);
@@ -183,29 +180,18 @@ const cooling = (choice: QuickModelChoice, now: number): Memo | undefined => {
     return held !== undefined && held.until > now ? held : undefined;
 };
 
-/* WHICH LOOP RUNS THIS RUNG, asked of the contract, never decided here. `capabilitiesOf` is where a provider's
- * runtime is settled for the whole product (the adapter that serves a chat turn reads the same record), so a
- * helper that named a provider of its own would be a second opinion on a question that already has one, and
- * the day the two disagreed, a turn and its commit message would run on different loops.
- *
- * What it settles today: Gemini answers `opencode-gemini` and Cursor answers `cursor`, whatever harness is
- * asked for, because neither has a Claude Code road (Google refuses that loop outright; Cursor has no
- * translator route at all). Reading runtime from the contract rather than hard-coding providers means this walk
- * needs no opinion about either vendor, and that when another provider ends up native-only, this seam is
- * already right. */
+/* WHICH LOOP RUNS THIS RUNG, asked of the contract, never decided here. `adapterFor` reads the record where a
+ * provider's runtime is settled for the whole product (the adapter that serves a chat turn is the same one),
+ * so a helper that named a provider of its own would be a second opinion on a question that already has one,
+ * and the day the two disagreed, a turn and its commit message would run on different loops. Each runtime's
+ * one-shot is its adapter's (agent/adapter.ts oneShot); a runtime with none is a refusal like any other, and
+ * the walk steps over it. */
 const askRung = async (services: Services, choice: QuickModelChoice, prompt: string, signal: AbortSignal): Promise<string> => {
-    const runtime = capabilitiesOf(choice.provider, `claude-code`).runtime;
-    if (runtime === `opencode-gemini`) {
-        return runGeminiOneShot({ services, prompt, cwd: services.workspace.root, model: choice.model, signal });
+    const adapter = adapterFor(choice.provider, `claude-code`);
+    if (adapter.oneShot === undefined) {
+        throw new Error(`${adapter.runtime} runs no helper, so there is nothing to ask it one line with.`);
     }
-    if (runtime === `cursor`) {
-        return runCursorOneShot({ services, prompt, cwd: services.workspace.root, model: choice.model, signal });
-    }
-    const resolved = await resolveHarnessCredentials(services, { agent: choice.provider, model: choice.model });
-    if (!resolved.ok) {
-        throw new Error(resolved.message);
-    }
-    return runOneShot({ prompt, cwd: services.workspace.root, model: choice.model, credentials: resolved.credentials, signal });
+    return adapter.oneShot(services, { provider: choice.provider, prompt, cwd: services.workspace.root, model: choice.model, signal });
 };
 
 /* RUN ONE PROMPT ON THE SANDBOX'S QUICK MODEL, WALKING DOWN THE CHAIN UNTIL ONE ANSWERS. The single seam every

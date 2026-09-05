@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { pollUntil } from "@intentic/base/async";
-import { interfaceAddress } from "../vpn/net-probe.js";
+import { interfaceAddress } from "../tunnel/net-probe.js";
 import { exitRouteTable } from "./exit-paths.js";
 
 /* POLICY ROUTING, and the single rule that keeps this feature from breaking the sandbox.

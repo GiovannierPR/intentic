@@ -1,8 +1,6 @@
-import { execFile } from "node:child_process";
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { promisify } from "node:util";
+import { mkdir, rm } from "node:fs/promises";
 import type { ExitConfig, IntenticLine, WireguardExitConfig } from "@intentic/sandbox-contract";
-import { toolMissing } from "../vpn/net-probe.js";
+import { wireguardDial, wireguardDrop, wireguardEndpoint, wireguardMissing, wireguardUp, writeWireguardConf } from "../tunnel/wireguard-tools.js";
 import { isCountryCode, rankCountries } from "./exit-countries.js";
 import type { ExitDriver, ExitProbe } from "./exit-driver.js";
 import { observeThroughAddress } from "./exit-observe.js";
@@ -31,7 +29,6 @@ import { dropProxy, ensureProxy, proxyBound, tunnelAddress, tunnelResolver } fro
  *              0.0.0.0/0 becomes a default route in the MAIN table and the sandbox loses its own uplink.
  */
 
-const exec = promisify(execFile);
 const config = (raw: ExitConfig): WireguardExitConfig => raw as WireguardExitConfig;
 
 export interface WireguardProfile {
@@ -77,8 +74,6 @@ export const countryOfConf = (conf: string): string | undefined => {
     return fromHost !== undefined && isCountryCode(fromHost) ? fromHost.toUpperCase() : undefined;
 };
 
-export const endpointOfConf = (conf: string): string | undefined => /^\s*Endpoint\s*=\s*(\S+)/im.exec(conf)?.[1];
-
 /* Split the pasted blob into individual configs. `[Interface]` starts each one, which is true of every
  * WireGuard config there is (wg-quick requires it), so the split needs no separator convention of its own and
  * a user can paste files back to back with no editing at all. */
@@ -90,7 +85,7 @@ export const parseWireguardConfigs = (blob: string): WireguardProfile[] => {
     const profiles: WireguardProfile[] = [];
     for (const [index, conf] of chunks.entries()) {
         const country = countryOfConf(conf);
-        const endpoint = endpointOfConf(conf);
+        const endpoint = wireguardEndpoint(conf);
         profiles.push({
             name: country === undefined ? `exit-${index + 1}` : `${country}-${index + 1}`,
             country,
@@ -123,25 +118,12 @@ const pick = (all: readonly WireguardProfile[], country: string | undefined, avo
     return eligible.find((profile) => profile.name !== avoid) ?? eligible[0];
 };
 
-const tunnelUp = async (name: string): Promise<boolean> =>
-    exec("wg", ["show", name]).then(
-        () => true,
-        () => false,
-    );
-
-const down = async (id: string): Promise<void> => {
-    await exec("wg-quick", ["down", wgConfPath(id)]).catch(() => undefined);
-};
-
 async function* bring(id: string, profile: WireguardProfile): AsyncGenerator<IntenticLine> {
-    await down(id);
+    await wireguardDrop(wgConfPath(id));
     await dropProxy(id);
-    await mkdir(exitStateDir(id), { recursive: true, mode: 0o700 });
-    // The conf holds a private key; never group- or world-readable, and only the PATH ever reaches a command
-    // line, so no key appears in argv or in `ps`.
-    await writeFile(wgConfPath(id), neutralisedConf(profile.conf), { mode: 0o600 });
+    await writeWireguardConf(wgConfPath(id), neutralisedConf(profile.conf));
     yield { kind: "log", message: `Bringing up ${profile.name}${profile.endpoint === undefined ? "" : ` (${profile.endpoint})`}…` };
-    await exec("wg-quick", ["up", wgConfPath(id)]);
+    await wireguardDial(wgConfPath(id));
     const address = await ensureProxy(id);
     await writeSelection(id, { ...(profile.country === undefined ? {} : { country: profile.country }), server: profile.name });
     yield { kind: "log", message: `Tunnel up on ${exitInterface(id)} (${address}). SOCKS proxy on 127.0.0.1:${exitProxyPort(id)}.` };
@@ -166,7 +148,7 @@ export const wireguardExitDriver: ExitDriver = {
     erase: async (id) => {
         await rm(exitStateDir(id), { recursive: true, force: true });
     },
-    missingTool: async () => ((await toolMissing("wg-quick", ["--help"])) ? "wg-quick" : undefined),
+    missingTool: wireguardMissing,
     async *start(id, raw, country): AsyncGenerator<IntenticLine> {
         const wanted = country ?? raw.country;
         const all = profiles(raw);
@@ -195,13 +177,13 @@ export const wireguardExitDriver: ExitDriver = {
         yield* bring(id, profile);
     },
     stop: async (id) => {
-        await down(id);
+        await wireguardDrop(wgConfPath(id));
         await dropProxy(id);
     },
     probe: async (id): Promise<ExitProbe> => {
         const name = exitInterface(id);
-        if (!(await tunnelUp(name))) {
-            return (await toolMissing("wg-quick", ["--help"])) ? { state: "unavailable" } : { state: "down" };
+        if (!(await wireguardUp(name))) {
+            return (await wireguardMissing()) === undefined ? { state: "down" } : { state: "unavailable" };
         }
         if ((await tunnelAddress(id)) === undefined) {
             return { state: "starting", interface: name };

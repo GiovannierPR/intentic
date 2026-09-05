@@ -1,4 +1,4 @@
-import { interfaceAddress } from "../vpn/net-probe.js";
+import { interfaceAddress } from "../tunnel/net-probe.js";
 import { exitInterface, exitProxyPort } from "./exit-paths.js";
 import { awaitInterfaceAddress, bareAddress, installExitRoute, removeExitRoute } from "./exit-routing.js";
 import { type SocksHandle, startSocks } from "./exit-socks.js";

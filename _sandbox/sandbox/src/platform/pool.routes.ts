@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import { soleLiveConversation, turnRunOf } from "../agent/turn-runs.js";
+import { liveCardRun } from "../agent/offer-card.js";
 import type { Services } from "../composition.js";
 import type { AppEnv } from "../context.js";
 import { relayServiceCatalog, relayServiceRun, relayServiceWant } from "./pool-services.js";
@@ -40,14 +40,8 @@ export const createPoolRoutes = (services: PoolRoutesDeps) => ({
                   {
                       catalog: () => relayServiceCatalog(services.config),
                       run: (slug, body, onStatus) => relayServiceRun(services.config, slug, body, onStatus),
-                      liveRun: (conversationId) => {
-                          const id = conversationId ?? soleLiveConversation();
-                          const run = id === undefined ? undefined : turnRunOf(id);
-                          return id === undefined || run === undefined || run.done
-                              ? undefined
-                              : { conversationId: id, push: (event) => run.push(event) };
-                      },
-                      observe: (conversationId, event) => services.agents.observe(conversationId, event),
+                      liveRun: liveCardRun,
+                      observe: services.agents.observe,
                   },
                   {
                       slug: c.req.param("slug"),

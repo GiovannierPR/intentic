@@ -16,6 +16,7 @@ import { createMintedCatalog, type MintedCatalog } from "./minted-catalog.js";
 import { fileMintedStore, type MintedStore } from "./minted-credentials.js";
 import type { MintedLoginDriver } from "./minted-login.js";
 import { zaiLoginDriver } from "./zai-login.js";
+import { mintedAccountDoor } from "./minted-accounts.js";
 
 /* EVERYTHING A MINTED PROVIDER CONTRIBUTES TO THE DAEMON, written ONCE and instantiated per provider.
  *
@@ -165,6 +166,7 @@ export const seedModelsOf = (provider: MintedProvider): readonly Model[] => SEED
  * rows in the secrets inventory. */
 export const mintedProviderModule = (provider: MintedProvider): ProviderModule => ({
     id: provider,
+    accounts: mintedAccountDoor(provider),
     adapters: [],
     catalog: (services) => services.minted[provider].catalog.models(),
     // A stored credential is the whole of it. Cheap by the seam's contract: one directory listing, never a probe

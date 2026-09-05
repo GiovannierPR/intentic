@@ -1,4 +1,4 @@
-import type { HostHub } from "../hosts/host-hub.js";
+import type { HostHub } from "../hosts/host-peer.js";
 import { isReadableName, skipReason } from "./scan-policy.js";
 
 /* READING A SETUP OFF ONE OF THE OWNER'S OWN DEVICES, the path that deletes the packing step entirely.

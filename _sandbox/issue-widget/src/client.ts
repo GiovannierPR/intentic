@@ -1,9 +1,8 @@
 import type { IssueIngest, IssuePublicConfig, IssueReport } from "@intentic/sandbox-contract";
+import { type EmbedEndpoint, solveProofOfWork, storedId } from "@intentic/sandbox-contract/embed";
 import { type Breadcrumbs, createBreadcrumbs } from "./breadcrumbs.js";
-import { solveProofOfWork } from "./challenge.js";
 import { type Capture, reportFrom, startCapture } from "./capture.js";
-import { clientIdFor } from "./client-id.js";
-import { type Endpoint, fetchChallenge, fetchConfig, send } from "./transport.js";
+import { fetchChallenge, fetchConfig, send } from "./transport.js";
 
 /* THE SDK ITSELF: everything between "an error happened" and "the daemon has it", and nothing about how it
  * looks (the dialog is a separate module and an optional one).
@@ -58,13 +57,17 @@ export interface IssueClient {
 
 // The intake as the daemon resolved it, plus the two handles a page-long client keeps.
 export const createClient = async (options: InitOptions): Promise<IssueClient> => {
-    const endpoint: Endpoint = { base: options.base.replace(/\/$/, ""), automationId: options.automationId };
+    const endpoint: EmbedEndpoint = { base: options.base.replace(/\/$/, ""), automationId: options.automationId };
     /* The config fetch is also the reachability probe: a sandbox that is asleep, an intake that was deleted, and
      * an origin nobody listed all land here. It THROWS rather than degrading to a default, because a reporter
      * that silently posts into the void is worse than one that says it could not start. main.ts turns that into
      * one console line for the site owner and then stands down. */
     const config = await fetchConfig(endpoint);
-    const clientId = clientIdFor(options.automationId);
+    /* WHO IS REPORTING, in the only sense this SDK has one: a per-browser id, kept in localStorage and namespaced
+     * per intake, so two reporters on one site are two clients. NOT identity and NOT a secret: it is the key the
+     * daemon's per-minute rate window counts against, and what a solved proof of work is bound to. A name or an
+     * address is something they type into the dialog, and it reaches the agent labelled unverified. */
+    const clientId = storedId(`intentic.issues.${options.automationId}.client`);
     const crumbs = createBreadcrumbs();
 
     const deliver = async (report: IssueReport): Promise<string | undefined> => {
@@ -81,7 +84,7 @@ export const createClient = async (options: InitOptions): Promise<IssueClient> =
                 // second of the reporter's time, which is affordable while they wait on a dialog and is not
                 // affordable in a crash handler.
                 ...(shaped.kind === "report" && config.antiBot === "pow"
-                    ? { powNonce: await solveProofOfWork(await fetchChallenge(endpoint, clientId)) }
+                    ? { powNonce: await solveProofOfWork(await fetchChallenge(endpoint, clientId), "This page must be served over HTTPS to send a report.") }
                     : {}),
             };
             return (await send(endpoint, body)).id;

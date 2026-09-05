@@ -1,7 +1,8 @@
 import { errorMessage } from "@intentic/base/errors";
 import { browser } from "@intentic/browser";
 import { desktop, pngSize } from "@intentic/desktop";
-import { type HostScopes, MCP_PROTOCOL_VERSION, SandboxResourcesAskFieldsSchema } from "@intentic/sandbox-contract";
+import { type HostScopes, SandboxResourcesAskFieldsSchema } from "@intentic/sandbox-contract";
+import { createMcpServer, type McpTool, textResult, tool } from "@intentic/sandbox-contract/peer-mcp-server";
 import { z } from "zod";
 import { audit } from "./audit.js";
 import { assertScope, ScopeError } from "./policy.js";
@@ -25,62 +26,12 @@ import {
 import { DEFAULT_TIMEOUT_MS, describeResult, MAX_TIMEOUT_MS, runCommand } from "./tools/shell.js";
 import { MACHINE_VERSION } from "../version.js";
 
-/* The MCP server, running HERE, on the machine, not in the sandbox.
- *
- * The sandbox's daemon forwards JSON-RPC verbatim and interprets none of it, so this file is the entire tool
- * surface: what this device can do is decided by the binary installed on it, and a machine that upgrades
- * learns new tools without anything changing in the sandbox. That is the reason for the split, the alternative
- * (schemas in the daemon, execution here) makes every new tool a coordinated release of two products.
- *
- * The protocol implemented is the subset that a Streamable HTTP client actually uses against a stateless server:
- * initialize, tools/list, tools/call, ping, and notifications (which get no reply). Anything else answers
- * "method not found", which is the correct JSON-RPC response and not an error worth logging.
- *
- * A FAILED TOOL IS NOT A FAILED CALL. Every error, a refused scope, a missing file, a command that exited 1,
- * an argument that does not typecheck, comes back as a normal result with isError, because that is what a model
- * can read and act on; a JSON-RPC error surfaces as a transport fault and invites a retry loop against a
- * device that will refuse it exactly the same way the second time.
- *
- * EACH TOOL'S ARGUMENTS ARE DESCRIBED ONCE. The schema below is what the model is shown (`tools/list` publishes
- * it as JSON Schema) AND what an arriving call is checked against, so the advertised shape and the accepted one
- * cannot drift, the failure mode of writing both by hand, where a renamed field keeps validating and the model
- * keeps being told about the old name. It also means a handler receives its arguments typed: no per-tool
- * coercion helpers, and no casting an untyped bag into the shape it was hoped to have. */
-
-interface Tool {
-    readonly name: string;
-    readonly description: string;
-    // JSON Schema for `tools/list`, derived from the zod schema once at module load rather than per request.
-    readonly inputSchema: Record<string, unknown>;
-    readonly call: (args: unknown, scopes: HostScopes) => Promise<Record<string, unknown>>;
-}
-
-const textResult = (text: string, isError = false): Record<string, unknown> => ({ content: [{ type: "text", text }], isError });
-
-/* One tool, from the only description of its arguments there is. The generic is what carries the schema's type
- * through to the handler's parameter; `Tool` erases it again, because the dispatch table holds all 24 and the
- * parse is what re-establishes the type at the boundary.
- *
- * `$schema` is dropped: the enclosing tool entry already says what this document is, and MCP clients read the
- * keywords rather than the dialect declaration. */
-const tool = <Schema extends z.ZodType>(spec: {
-    name: string;
-    description: string;
-    input: Schema;
-    run: (args: z.output<Schema>, scopes: HostScopes) => Promise<Record<string, unknown>>;
-}): Tool => {
-    const { $schema: _dialect, ...inputSchema } = z.toJSONSchema(spec.input, { io: "input" });
-    return {
-        name: spec.name,
-        description: spec.description,
-        inputSchema,
-        call: async (args, scopes) => {
-            const parsed = spec.input.safeParse(args);
-            // Readable enough for a model to fix its own call: which field, and what was expected there.
-            return parsed.success ? await spec.run(parsed.data, scopes) : textResult(z.prettifyError(parsed.error), true);
-        },
-    };
-};
+/* THE TOOL SURFACE of a connected device, served by the peer MCP server (sandbox-contract's peer-mcp-server.ts:
+ * the dispatch, the "a failed tool is not a failed call" rule and the schema-once `tool()` builder are there).
+ * What is here is what this machine can DO, written for a reader who has never seen it: descriptions carry
+ * the judgement calls the schema cannot, that writes are off by default, that there is no delete, that one
+ * big command beats ten small ones over a link like this. Every tool takes the live grant beside its
+ * arguments, read per call, so a switch the owner turns off is in force on the very next call. */
 
 const NO_ARGS = z.object({});
 
@@ -118,7 +69,7 @@ const required = z.string().min(1);
 /* The tool list, written for a reader who has never seen this machine. Descriptions carry the judgement calls
  * the schema cannot: that writes are off by default, that there is no delete, that one big command beats ten
  * small ones over a link like this. */
-const TOOLS: readonly Tool[] = [
+const TOOLS: readonly McpTool<HostScopes>[] = [
     tool({
         name: "describe",
         description:
@@ -377,8 +328,6 @@ const TOOLS: readonly Tool[] = [
     }),
 ];
 
-const BY_NAME = new Map(TOOLS.map((entry) => [entry.name, entry]));
-
 /* What the audit log records about a call. Arguments verbatim, EXCEPT typed text: `device` with action "type"
  * carries whatever the user asked to be entered, which is routinely a password or a message, and writing it to a
  * file on their disk is the one thing an audit trail must not do to earn its place. Its LENGTH still tells the
@@ -391,56 +340,13 @@ const auditDetail = (name: string, args: Record<string, unknown>): string => {
     return JSON.stringify(safe).slice(0, 500);
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
-
-// Handle one JSON-RPC message. Returns the response, or undefined for a notification (nothing to answer).
-// `scopes` is read per call from the live grant, so a scopes frame that arrives mid-session takes effect on the
-// very next tool call rather than at the next reconnect.
-export const handleMcpMessage = async (message: unknown, scopes: () => HostScopes): Promise<Record<string, unknown> | undefined> => {
-    if (!isRecord(message)) {
-        return { jsonrpc: "2.0", id: null, error: { code: -32600, message: "invalid request" } };
-    }
-    const id = message["id"];
-    const method = message["method"];
-    if (id === undefined) {
-        return undefined;
-    }
-    const reply = (result: Record<string, unknown>): Record<string, unknown> => ({ jsonrpc: "2.0", id, result });
-
-    if (method === "initialize") {
-        return reply({
-            protocolVersion: MCP_PROTOCOL_VERSION,
-            capabilities: { tools: {} },
-            serverInfo: { name: "intentic-machine", version: MACHINE_VERSION },
-        });
-    }
-    if (method === "ping") {
-        return reply({});
-    }
-    if (method === "tools/list") {
-        return reply({ tools: TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) });
-    }
-    if (method === "tools/call") {
-        const params = isRecord(message["params"]) ? message["params"] : {};
-        const name = typeof params["name"] === "string" ? params["name"] : "";
-        const args = isRecord(params["arguments"]) ? params["arguments"] : {};
-        const found = BY_NAME.get(name);
-        if (found === undefined) {
-            return reply(textResult(`This device has no tool called "${name}".`, true));
-        }
-        try {
-            const result = await found.call(args, scopes());
-            void audit({ tool: name, ok: result["isError"] !== true, detail: auditDetail(name, args) });
-            return reply(result);
-        } catch (error) {
-            const refused = error instanceof ScopeError;
-            void audit({
-                tool: name,
-                ok: false,
-                detail: `${refused ? "refused" : "failed"}: ${errorMessage(error)}`,
-            });
-            return reply(textResult(errorMessage(error), true));
-        }
-    }
-    return { jsonrpc: "2.0", id, error: { code: -32601, message: `method "${String(method)}" is not supported` } };
-};
+// Handle one JSON-RPC message against the grant as it stands at that moment (the router reads it per call).
+export const handleMcpMessage = createMcpServer<HostScopes>({
+    serverInfo: () => ({ name: "intentic-machine", version: MACHINE_VERSION }),
+    tools: TOOLS,
+    noSuchTool: (name) => `This device has no tool called "${name}".`,
+    refused: (error) => error instanceof ScopeError,
+    errorMessage,
+    audit: ({ tool: name, args, ok, failure }) =>
+        audit({ tool: name, ok, detail: failure === undefined ? auditDetail(name, args) : `${failure.refused ? "refused" : "failed"}: ${failure.message}` }),
+});

@@ -10,6 +10,7 @@ import { createGrokAgent, createGrokRunner } from "../grok/grok-agent.js";
 import { OPENCODE_GEMINI_PROVIDER, openCodeBinaryMissing, type OpenCodeService } from "../grok/opencode.js";
 import { onPath } from "../platform/on-path.js";
 import { createGeminiCatalog, type GeminiCatalog } from "./gemini-catalog.js";
+import { geminiOneShot } from "./gemini-one-shot.js";
 
 /* EVERYTHING GEMINI CONTRIBUTES TO THE DAEMON, aggregated by the provider registry (agent/provider-module.ts
  * is the seam). Gemini is the module with the strangest shape, and honestly so: its native runtime is GROK'S
@@ -83,6 +84,7 @@ export const planGeminiTurn = async (services: Services, input: AgentTurn, conte
  * `opencode serve` serves both, so if it is missing neither can run. */
 const OPENCODE_GEMINI_ADAPTER: AgentAdapter<"opencode-gemini"> = {
     runtime: "opencode-gemini",
+    oneShot: geminiOneShot,
     preflight: (services, input, context) => planGeminiTurn(services, input, context),
     health: async (services) => {
         if (services.config.translator.url === "") {

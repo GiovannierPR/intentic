@@ -1,4 +1,4 @@
-import type { NativeProvider, SecretInventoryEntry, TranslatorAccounts, Model } from "@intentic/sandbox-contract";
+import type { LoginStart, Model, NativeProvider, OauthAccount, SecretInventoryEntry, TranslatorAccounts } from "@intentic/sandbox-contract";
 import type { Logger } from "pino";
 import { stateRelPath } from "../workspace/state-paths.js";
 import type { Services } from "../composition.js";
@@ -59,6 +59,33 @@ export interface SharedProviderReads {
     readonly translatorAccounts: () => Promise<TranslatorAccounts>;
 }
 
+/* THE ACCOUNT DOOR: how this provider's OWN accounts are connected, listed, renamed and dropped, for a provider
+ * whose credential the sandbox holds itself (the translator's subscriptions are the other road, translator/).
+ * One shape behind /accounts/{provider} (accounts.routes.ts), so a provider's mechanism — Anthropic's paste-back,
+ * Cursor's held verifier, xAI's device code through OpenCode, a sign-in that mints the vendor's key — is its
+ * module's business and the route family is written once. Nothing redeemable crosses this seam: a start hands
+ * back a page and a handshake, and the proof that finishes the attempt stays in the door. */
+export interface AccountDoor {
+    readonly start: (variant: string | undefined) => Promise<LoginStart>;
+    /* Finish an attempt with what the page handed back: the code it showed (a paste), or the address a redirect
+     * landed on. Answers with the account where the exchange ends here; undefined where the door still has a
+     * mint to do behind the answer and the row lands in the list minutes later. Absent for a door whose every
+     * attempt finishes on its own (a device flow), which the route says in so many words. */
+    readonly complete?: (input: {
+        readonly handshake: string;
+        readonly code?: string | undefined;
+        readonly redirectUrl?: string | undefined;
+        readonly label?: string | undefined;
+    }) => Promise<OauthAccount | undefined>;
+    readonly cancel: (handshake: string) => void;
+    // `force` re-measures the plan limits before answering, for the doors that have any to measure.
+    readonly list: (force: boolean) => Promise<OauthAccount[]>;
+    // Undefined ⇒ no such account, the route's 404: a rename that matched nothing is the caller addressing a
+    // row that another device just disconnected, and the card has to learn its list is stale.
+    readonly rename: (id: string, label: string) => Promise<OauthAccount | undefined>;
+    readonly disconnect: (id: string) => Promise<void>;
+}
+
 export interface ProviderModule {
     readonly id: NativeProvider;
     /* The adapter rows this provider's runtimes contribute (adapter-registry assembles them). Usually one;
@@ -83,6 +110,9 @@ export interface ProviderModule {
     // credential lives on disk. Absent ⇒ the provider stores nothing here (none today; absence is legal so a
     // future keyless provider does not have to fake an empty list).
     readonly secretEntries?: (services: Services, shared: SharedProviderReads) => Promise<SecretInventoryEntry[]>;
+    // This provider's account door, built once per daemon (a door holds the attempts still open). Absent ⇒ the
+    // provider holds no account of its own here, and /accounts/{provider} answers 404 for it.
+    readonly accounts?: (services: Services) => AccountDoor;
 }
 
 // One connected account's row in the secrets inventory, in the one shape that page renders. Moved here from

@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import type { ExitObservation } from "@intentic/sandbox-contract";
 import { writeJsonFile } from "../store/json-file.js";
 import type { ExitSelection } from "./exit-driver.js";
@@ -42,15 +42,6 @@ export const readObservation = async (id: string): Promise<{ at: number; seen: E
     await readJson<{ at: number; seen: ExitObservation }>(observationPath(id));
 export const writeObservation = async (id: string, seen: ExitObservation, at: number): Promise<void> =>
     await writeJson(observationPath(id), { at, seen }, id);
-
-// Epoch ms this exit came up, from the marker touched on a successful start. ADVISORY: liveness always comes
-// from the driver's probe, so an exit raised outside the daemon shows no uptime rather than a wrong state.
-export const upSince = async (id: string): Promise<number | undefined> => (await stat(upMarkerPath(id)).catch(() => undefined))?.mtimeMs;
-
-export const markUp = async (id: string): Promise<void> => {
-    await mkdir(exitStateDir(id), { recursive: true, mode: 0o700 });
-    await writeFile(upMarkerPath(id), "", { mode: 0o600 });
-};
 
 // Everything an exit remembers, dropped. Called when it goes down: a stale observation outliving the tunnel
 // that produced it would let `list` claim a country nothing is coming out of any more.

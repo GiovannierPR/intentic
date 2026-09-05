@@ -162,7 +162,7 @@ export interface CommandGateOptions {
     readonly answered?: ((at: number, answer: SafetyLogEntry["answer"], outcome: SafetyLogEntry["outcome"]) => void) | undefined;
     /* WHICH OF THE OWNER'S COMPUTERS this gate is judging for, absent for the sandbox's own shell. Selects the
      * half of the policy that applies, and the two halves are deliberately very different: everything in the
-     * container is disposable and nothing on somebody's laptop is. Set by the host bridge (hosts/host.routes.ts),
+     * container is disposable and nothing on somebody's laptop is. Set by the host bridge (hosts/host-peer.ts),
      * which judges a machine's `run_command` before it crosses the tunnel. */
     readonly machine?: string | undefined;
     /* ADD A LINE THE OWNER ACCEPTED ON A CARD to their policy. What the Always button does now: the judge

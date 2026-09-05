@@ -51,6 +51,39 @@
                 "default": "./dist/batch-runs.js"
             }
         },
+        "./embed": {
+            "types": "./dist/embed.d.ts",
+            "import": {
+                "@intentic/src": "./src/embed.ts",
+                "default": "./dist/embed.js"
+            },
+            "require": {
+                "@intentic/src": "./src/embed.ts",
+                "default": "./dist/embed.js"
+            }
+        },
+        "./peer-dial": {
+            "types": "./dist/peer-dial.d.ts",
+            "import": {
+                "@intentic/src": "./src/peer-dial.ts",
+                "default": "./dist/peer-dial.js"
+            },
+            "require": {
+                "@intentic/src": "./src/peer-dial.ts",
+                "default": "./dist/peer-dial.js"
+            }
+        },
+        "./peer-mcp-server": {
+            "types": "./dist/peer-mcp-server.d.ts",
+            "import": {
+                "@intentic/src": "./src/peer-mcp-server.ts",
+                "default": "./dist/peer-mcp-server.js"
+            },
+            "require": {
+                "@intentic/src": "./src/peer-mcp-server.ts",
+                "default": "./dist/peer-mcp-server.js"
+            }
+        },
         "./tunnel-ids": {
             "types": "./dist/tunnel-ids.d.ts",
             "import": {

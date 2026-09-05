@@ -40,7 +40,7 @@ const MAX_SKIP_TICKS = 8;
 // Which of this machine's sandboxes an unattended prepare may even consider: running ones (`prepare` reads
 // the approved overlay out of the container, and a stopped sandbox gets its download on the tick after it
 // starts), and never runners — a runner's image is its PARENT's decision, reconciled from the parent sandbox
-// (runner-hub.ts), and staging an update under one would fight that reconciler. Pinned and dev images are
+// (the parent's runner door), and staging an update under one would fight that reconciler. Pinned and dev images are
 // deliberately NOT filtered here: `ic` classifies those from the container's own stamps, where the knowledge
 // lives.
 export const prepareTargets = (boxes: readonly DeviceSandbox[]): string[] =>

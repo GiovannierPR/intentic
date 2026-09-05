@@ -1,11 +1,13 @@
 import { sleep } from "@intentic/base/async";
 import { errorMessage } from "@intentic/base/errors";
-import type { Capability, ExitConfig, ExitLink, ExitObservation, IntenticLine } from "@intentic/sandbox-contract";
+import type { ExitConfig, ExitLink, ExitObservation, IntenticLine } from "@intentic/sandbox-contract";
 import type { CapabilitiesStore } from "../capabilities/capabilities-store.js";
+import { notCarriedYet, type TunnelEntry, tunnelEntries } from "../tunnel/tunnel-links.js";
+import { markUp, upSince } from "../tunnel/tunnel-state.js";
 import { countryName } from "./exit-countries.js";
 import { exitDrivers } from "./exit-drivers.js";
-import { exitProxyPort } from "./exit-paths.js";
-import { forgetLiveState, markUp, readObservation, readSelection, upSince, writeObservation, writeSelection } from "./exit-state.js";
+import { exitProxyPort, exitStateDir, upMarkerPath } from "./exit-paths.js";
+import { forgetLiveState, readObservation, readSelection, writeObservation, writeSelection } from "./exit-state.js";
 import { ensureProxy, proxyBound } from "./exit-tunnel.js";
 
 /* The one place the manifest ("which exits exist") is joined to the machine ("which are up, and where do they
@@ -19,13 +21,7 @@ import { ensureProxy, proxyBound } from "./exit-tunnel.js";
  * happily use while believing it was somewhere else.
  */
 
-export interface ExitEntry {
-    readonly id: string;
-    readonly config: ExitConfig;
-}
-
-const exitEntries = (capabilities: readonly Capability[]): ExitEntry[] =>
-    capabilities.flatMap((capability) => (capability.kind === "exit" ? [{ id: capability.id, config: capability.config }] : []));
+export type ExitEntry = TunnelEntry<ExitConfig>;
 
 export const proxyUrl = (id: string): string => `socks5://127.0.0.1:${exitProxyPort(id)}`;
 
@@ -76,17 +72,12 @@ export const exitLink = async (entry: ExitEntry): Promise<ExitLink> => {
               }),
         ...(probe.interface === undefined ? {} : { interface: probe.interface }),
         ...(probe.detail === undefined ? {} : { detail: probe.detail }),
-        ...(probe.state === "up" ? { since: await upSince(entry.id) } : {}),
+        ...(probe.state === "up" ? { since: await upSince(upMarkerPath(entry.id)) } : {}),
     };
 };
 
 export const exitLinks = async (capabilities: CapabilitiesStore): Promise<ExitLink[]> =>
-    await Promise.all(exitEntries(await capabilities.list()).map((entry) => exitLink(entry)));
-
-export const exitEntry = async (capabilities: CapabilitiesStore, id: string): Promise<ExitEntry | undefined> => {
-    const capability = await capabilities.get(id);
-    return capability === undefined || capability.kind !== "exit" ? undefined : { id: capability.id, config: capability.config };
-};
+    await Promise.all(tunnelEntries(await capabilities.list(), "exit").map((entry) => exitLink(entry)));
 
 /* Bring an exit up (or move it) at `country`, and prove it.
  *
@@ -100,13 +91,11 @@ export async function* startExit(entry: ExitEntry, country: string | undefined):
     const driver = exitDrivers[entry.config.provider];
     const missing = await driver.missingTool();
     if (missing !== undefined) {
-        throw new Error(
-            `This sandbox doesn't carry ${missing} yet. Rebuild it from the Sandbox ▸ Environment card: the exit capability's image fragment installs it, and an auto-start exit comes up once the sandbox restarts.`,
-        );
+        throw notCarriedYet(missing, "exit");
     }
     const wanted = country ?? entry.config.country;
     yield* driver.start(entry.id, entry.config, wanted);
-    await markUp(entry.id);
+    await markUp(exitStateDir(entry.id), upMarkerPath(entry.id));
     yield { kind: "log", message: "Checking where this comes out…" };
     let seen: ExitObservation;
     try {
@@ -216,7 +205,7 @@ export const restoreExits = async (
     capabilities: CapabilitiesStore,
     logger: { info: (message: string) => void; warn: (message: string) => void },
 ): Promise<void> => {
-    for (const entry of exitEntries(await capabilities.list())) {
+    for (const entry of tunnelEntries(await capabilities.list(), "exit")) {
         const driver = exitDrivers[entry.config.provider];
         const probe = await driver.probe(entry.id, entry.config).catch(() => undefined);
         if (probe === undefined) {

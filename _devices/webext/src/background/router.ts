@@ -14,7 +14,7 @@ import { browserFacts, refreshBadge } from "./tools/access.js";
  * `setScopes` writes through to storage rather than into a variable, and that is deliberate: an MV3 service
  * worker is killed after ~30 seconds of idleness and rebuilt on the next event, so a grant held in memory would
  * quietly revert to defaults several times an hour. Storage is the only thing here that outlives the worker. */
-export const createWebExtRouter = (version: string) => {
+export const createWebExtRouter = () => {
     const os = implement(webextContract);
     return os.router({
         describe: os.describe.handler(async () => await browserFacts()),
@@ -28,6 +28,6 @@ export const createWebExtRouter = (version: string) => {
         ping: os.ping.handler(() => ({ ok: true })),
         // The one opaque procedure. Its payload is MCP, understood by handleMcpMessage and by the tool it
         // names, and deliberately not by the daemon in between (see the contract for why).
-        mcp: os.mcp.handler(async ({ input }) => await handleMcpMessage(input, version)),
+        mcp: os.mcp.handler(async ({ input }) => await handleMcpMessage(input, undefined)),
     });
 };

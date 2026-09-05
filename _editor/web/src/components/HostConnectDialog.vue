@@ -1,7 +1,10 @@
 <script setup lang="ts">
+import type { HostSummary } from "@intentic/sandbox-contract";
 import { Button, Code, Modal } from "@intentic/ui";
 import { computed, onBeforeUnmount, watch } from "vue";
-import { useHostConnect } from "../composables/sandbox/useHostConnect";
+import { HOST_DOOR, usePeerConnect } from "../composables/sandbox/usePeerConnect";
+import { useSandbox } from "../composables/sandbox/useSandbox";
+import { bashCommand, psCommand } from "../environments/scriptCommand";
 import ScriptSourceSwitch from "./ScriptSourceSwitch.vue";
 
 /* "Connect this device" for a `host`-kind capability. The counterpart of the browser-profile dialog: that one
@@ -12,17 +15,27 @@ import ScriptSourceSwitch from "./ScriptSourceSwitch.vue";
  * since it is the moment a person decides to give an agent hands on their device. The permissions shown are
  * the capability's own config, so the sentence they read here is the same grant the machine will enforce.
  *
- * Once the machine connects, this flips to a confirmation without a refresh: the composable polls while a
- * pairing is live, and the machine coming online is exactly what the user is standing there waiting for. */
+ * Once the machine connects, this flips to a confirmation without a refresh: the daemon pushes the socket
+ * landing, and the machine coming online is exactly what the user is standing there waiting for. What this
+ * dialog builds from the pairing is the one-liner, in the shell the machine actually has. */
 
 const props = defineProps<{ visible: boolean; id: string; platform: string; permissions: string }>();
 const emit = defineEmits<{ (event: "update:visible", value: boolean): void; (event: "connected"): void }>();
 
-const { hostFor, pairToken, minting, error, linuxCommand, windowsCommand, connect, start, stop, close } = useHostConnect();
+const { peerFor, pairToken, minting, error, connect, start, stop, close } = usePeerConnect<HostSummary>(HOST_DOOR);
+const { daemonUrl } = useSandbox();
 
-const host = computed(() => hostFor(props.id));
+const host = computed(() => peerFor(props.id));
 const online = computed(() => host.value?.online === true);
-const command = computed(() => (props.platform === `windows` ? windowsCommand.value : linuxCommand.value));
+const command = computed(() => {
+    const url = daemonUrl.value ?? ``;
+    if (url === `` || pairToken.value === undefined) {
+        return ``;
+    }
+    return props.platform === `windows`
+        ? psCommand(`devicePs1`, `$env:SANDBOX_URL='${url}'; $env:PAIR_TOKEN='${pairToken.value}'; `)
+        : bashCommand(`deviceSh`, `env SANDBOX_URL='${url}' PAIR_TOKEN='${pairToken.value}' `, ``);
+});
 const shell = computed(() => (props.platform === `windows` ? `PowerShell` : `a terminal`));
 
 // Opening mints; closing forgets. A pairing left live in a closed tab is a credential nobody is watching.

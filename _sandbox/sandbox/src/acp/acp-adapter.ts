@@ -2,8 +2,7 @@ import type { AgentTurn, Capability } from "@intentic/sandbox-contract";
 import { type AgentAdapter, attemptProbe, healthReady, healthUnavailable, healthUnknown } from "../agent/adapter.js";
 import { withAttachments } from "../agent/attachment-note.js";
 import type { TurnContext, TurnPlan } from "../agent/turn-plan.js";
-import { hostToolsOf } from "../capabilities/host-tools.js";
-import { webextToolsOf } from "../capabilities/webext-tools.js";
+import { peerToolsOf } from "../peers/peer-tools.js";
 import { mcpToolsOf } from "../capabilities/mcp-tools.js";
 import type { Services } from "../composition.js";
 
@@ -27,8 +26,11 @@ export const planAcpTurn = async (
         return { ok: false, message: `Unknown agent provider "${provider}", add it as an Agent capability first.` };
     }
     const acpConfig = capability.config;
-    const tools = [...services.tools, ...mcpToolsOf(granted), ...hostToolsOf(granted, services.config.sandbox.port, services.hostBridgeToken),
-        ...webextToolsOf(granted, services.config.sandbox.port, services.webextBridgeToken),
+    const tools = [
+        ...services.tools,
+        ...mcpToolsOf(granted),
+        ...peerToolsOf("host", granted, services.config.sandbox.port, services.hostBridgeToken),
+        ...peerToolsOf("webext", granted, services.config.sandbox.port, services.webextBridgeToken),
     ];
     return {
         ok: true,

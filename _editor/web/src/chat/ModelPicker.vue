@@ -297,7 +297,7 @@ onMounted(() => {
      * green ring that nothing on screen has any reason to doubt.
      *
      * Opening the picker IS the moment the numbers get read, so it is the moment to take them: the daemon
-     * re-measures behind this call (claude.routes.ts) and answers within its own deadline, and the rings
+     * re-measures behind this call (claude/claude-accounts.ts) and answers within its own deadline, and the rings
      * redraw as it lands. Unforced: the daemon's freshness bound is what keeps opening a picker twice in a
      * minute off the provider's quota endpoint; the footer's own control is the way past it. */
     void refreshConnections();
