@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ui, formatTokens, Row, RowGroup } from "@intentic/ui";
+import { formatTokens, Row, RowGroup, Verdict } from "@intentic/ui";
 import ToggleSwitch from "primevue/toggleswitch";
 import { computed } from "vue";
 import { relativeTime } from "../../../composables/chat/catalog";
 import { useSavings } from "../../../composables/sandbox/useSavings";
 import { useSandboxSettings } from "../../../composables/sandbox/useSandboxSettings";
 import { ALL_CLEANER_IDS, CLEANER_OPTIONS, savedByCleaner } from "../savingsChart";
-import { asPercent, commitPercent } from "./numberInputs";
+import { asPercent } from "./numberInputs";
 import CommandOutputInfo from "./CommandOutputInfo.vue";
+import MeasurementPanel, { type PanelReading } from "./MeasurementPanel.vue";
 
 /* The shell-output filter: the master toggle, the per-cleaner checklist the spec string round-trips through,
  * the holdout that measures it, and what it has all been worth. One grouped section instead of a card per
@@ -72,6 +73,67 @@ const toggleCleaner = (id: string, on: boolean): void => {
 // Holdout control: a percentage [0,100] of commands whose output bypasses cleaning, stored as a fraction [0,1].
 const holdoutPercent = computed<number>(() => asPercent(settings.value?.outputHoldout));
 
+/* WHAT THE HOLDOUT HAS BOUGHT, in the shape <MeasurementPanel> draws for the other two experiments. This row
+ * used to spell its own version of that block — the same "% of X left alone, as a control" label and the same
+ * 26px field, hand-drawn, at `text-xs text-content` where the shared one was `text-xs font-medium text-content`
+ * — so three settings that do one thing read as three things.
+ *
+ * ASSEMBLED RATHER THAN TAKEN FROM `verdictsOf` because this experiment is not a turn-level one: it compares
+ * whole COMMANDS, cleaned against raw, so the daemon reports it as a share rather than as two arms of means.
+ * The verdict slot takes the answer either way, which is the point of there being a slot.
+ *
+ * NO READING UNTIL THERE IS ONE. `measuredSavedPct` is absent until both arms have commands in them, and the
+ * panel shows the control alone until then: "0%" would be a measurement, and there has not been one. */
+const cleanerReadings = computed<PanelReading[]>(() => {
+    const holdout = savings.value?.input.holdout;
+    if (holdout?.measuredSavedPct === undefined) {
+        return [];
+    }
+    return [
+        {
+            verdict: {
+                value: `${holdout.measuredSavedPct}%`,
+                unit: `of command output removed`,
+                // Success only because this is the MEASURED figure: the estimate above it never earns the tone.
+                tone: holdout.measuredSavedPct > 0 ? `success` : `muted`,
+                detail: `cleaned commands against the raw ones the holdout kept`,
+            },
+            on: holdout.cleaned,
+            off: holdout.heldOut,
+        },
+    ];
+});
+
+/* THE LEDGER'S OWN HEADLINE, which is a different claim from the one above it: this is every command the
+ * cleaners have touched, estimated against what each one would have emitted raw, where the holdout figure is
+ * the slice that was actually left raw to check it against.
+ *
+ * It moved out of the row's `#description` to get here. A description is what a setting IS — static text a
+ * reader learns once — and this row was putting a live figure, its provenance and its freshness in that slot,
+ * as a run-on sentence with a `<br>` in it. <Row> keeps facts and explanation in different places on purpose. */
+const savingsVerdict = computed(() => {
+    const input = savings.value?.input;
+    if (input === undefined || input.commands === 0) {
+        return {
+            value: `Nothing yet`,
+            unit: `no commands cleaned so far`,
+            tone: `muted`,
+            detail: `The ledger fills as the assistant runs shell commands, one row per command.`,
+            evidence: ``,
+        } as const;
+    }
+    const measured = input.holdout.measuredSavedPct;
+    return {
+        value: `${input.savedPct}%`,
+        unit: `of command output removed, all time`,
+        tone: `success`,
+        detail: `~${formatTokens(input.rawTokens)} → ~${formatTokens(input.emittedTokens)} tokens over ${input.commands} commands${
+            measured === undefined ? `` : ` · ${measured}% measured against the holdout`
+        }`,
+        evidence: input.updatedAt === undefined ? `` : `last command ${relativeTime(input.updatedAt)}`,
+    } as const;
+});
+
 /* What each mechanism has been worth, all-time: the readout that belongs NEXT TO ITS SWITCH. Unwindowed on
  * purpose: this page is where a switch is flipped, not where a period is compared, and the Usage tab's Savings
  * section owns the windowed chart. */
@@ -121,63 +183,58 @@ const savedTokens = computed(() => savedByCleaner(savings.value?.input));
                     </div>
 
                     <!-- Holdout: measurement control, a % of commands left raw so the savings report has a real
-                         cleaned-vs-raw baseline instead of an estimate. -->
-                    <label class="mt-3 flex items-center justify-between gap-3">
-                        <span class="flex min-w-0 flex-col">
-                            <span class="text-xs text-content">Holdout control</span>
-                            <span class="text-2xs text-muted">Leave this % of commands uncleaned to measure real savings.</span>
-                        </span>
-                        <span class="flex shrink-0 items-center gap-1">
-                            <input
-                                type="number"
-                                min="0"
-                                max="100"
-                                :value="holdoutPercent"
-                                :class="ui.inputSm('w-16 text-right')"
-                                @change="(event: Event) => commitPercent(event, holdoutPercent, (outputHoldout: number) => patch({ outputHoldout }))"
-                            />
-                            <span class="text-xs text-muted">%</span>
-                        </span>
-                    </label>
+                         cleaned-vs-raw baseline instead of an estimate. The SAME block the iq search teaching
+                         carries, said in the same words: both settings that measure themselves do it this way,
+                         and a reader who has understood one has understood the other. -->
+                    <!-- `mt-3` on top of the stack's own `gap-2`: the 20px this block had before. It is not the
+                         12px the other panel sits at under its row header, and should not be — what is above it
+                         there is the setting's own description, and what is above it here is a grid of sixteen
+                         switches, which needs more air to read as a block that has ended. -->
+                    <MeasurementPanel
+                        class="mt-3"
+                        :percent="holdoutPercent"
+                        :readings="cleanerReadings"
+                        note="Leaves this share of commands uncleaned, as a control."
+                        on-label="cleaned"
+                        off-label="raw"
+                        @commit="(outputHoldout: number) => patch({ outputHoldout })"
+                    />
                 </div>
             </template>
         </Row>
 
-        <!-- Realized savings. The hero is one number; everything that qualifies it: freshness, what it is a
-             share of: sits under it rather than trailing it as a run-on, because those are the facts that tell
-             a live figure from a frozen one, and this card once sat on a ledger nothing was writing any more.
-             The breakdown BY mechanism lives on the Usage tab, where a window exists to compare it over. -->
+        <!-- Realized savings. The hero is one number; everything that qualifies it — freshness, what it is a
+             share of — sits under it rather than trailing it as a run-on, because those are the facts that tell
+             a live figure from a frozen one, and this row once sat on a ledger nothing was writing any more.
+             The breakdown BY mechanism lives on the Usage tab, where a window exists to compare it over.
+
+             THE FIGURE IS A <Verdict> IN `#below`, NOT PROSE IN `#description`. Absence is a verdict too
+             ("Nothing yet", muted, in the same slot): the row used to fall back to a grey sentence in the
+             description, so the one state a reader most needs to recognise was the one drawn least like the
+             others. Before that it wasn't rendered at all, and a page of switches promising savings showed
+             nothing whatever about them. -->
         <Row icon="wave-pulse" title="Output savings">
-            <template #description>
-                <template v-if="savings !== undefined && savings.input.commands > 0">
-                    <span class="font-medium text-success">{{ savings.input.savedPct }}% saved</span>
-                    · ~{{ formatTokens(savings.input.rawTokens) }} → ~{{ formatTokens(savings.input.emittedTokens) }} tokens over
-                    {{ savings.input.commands }} commands
-                    <span v-if="savings.input.holdout.measuredSavedPct !== undefined">
-                        · <span class="text-content">{{ savings.input.holdout.measuredSavedPct }}%</span> measured against the holdout
-                    </span>
-                    <br />
-                    <span v-if="savings.input.updatedAt !== undefined" class="text-muted">
-                        last command {{ relativeTime(savings.input.updatedAt) }}
-                    </span>
-                </template>
-                <!-- Absence used to be the empty state: the row simply wasn't rendered, so a page of switches
-                     promising savings showed nothing at all about them. -->
-                <span v-else class="text-muted">
-                    Nothing measured yet: the ledger fills as the agent runs shell commands, one row per command.
-                </span>
-            </template>
-            <!-- WHERE THE NEXT CLEANER WOULD PAY. Grouped by command and ranked by total, so the list answers
-                 "what is worth a handler" rather than "which single run was biggest", and the count is shown
-                 because a command that costs this much across twenty runs is the one to write for. -->
-            <template v-if="savings !== undefined && savings.input.gaps.length > 0" #below>
-                <div class="flex flex-col gap-1">
-                    <p class="text-2xs font-medium uppercase tracking-wide text-subtle">Un-cleaned (add a handler)</p>
-                    <p v-for="gap in savings.input.gaps.slice(0, 5)" :key="gap.command" class="flex items-baseline gap-1.5 text-2xs">
-                        <span class="shrink-0 tabular-nums text-muted">~{{ formatTokens(gap.tokens) }}</span>
-                        <span class="shrink-0 tabular-nums text-subtle">×{{ gap.commands }}</span>
-                        <span class="truncate font-mono text-muted">{{ gap.command }}</span>
-                    </p>
+            <template #below>
+                <div class="flex flex-col gap-3">
+                    <Verdict
+                        :value="savingsVerdict.value"
+                        :unit="savingsVerdict.unit"
+                        :tone="savingsVerdict.tone"
+                        :detail="savingsVerdict.detail"
+                        :evidence="savingsVerdict.evidence"
+                    />
+                    <!-- WHERE THE NEXT CLEANER WOULD PAY. Grouped by command and ranked by total, so the list
+                         answers "what is worth a handler" rather than "which single run was biggest", and the
+                         count is shown because a command that costs this much across twenty runs is the one to
+                         write for. -->
+                    <div v-if="savings !== undefined && savings.input.gaps.length > 0" class="flex flex-col gap-1">
+                        <p class="text-2xs font-medium uppercase tracking-wide text-subtle">Un-cleaned (add a handler)</p>
+                        <p v-for="gap in savings.input.gaps.slice(0, 5)" :key="gap.command" class="flex items-baseline gap-1.5 text-2xs">
+                            <span class="shrink-0 tabular-nums text-muted">~{{ formatTokens(gap.tokens) }}</span>
+                            <span class="shrink-0 tabular-nums text-subtle">×{{ gap.commands }}</span>
+                            <span class="truncate font-mono text-muted">{{ gap.command }}</span>
+                        </p>
+                    </div>
                 </div>
             </template>
         </Row>

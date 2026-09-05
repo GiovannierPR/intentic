@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Card, InfoHint } from "@intentic/ui";
+import { Card, InfoHint, Verdict, type VerdictTone } from "@intentic/ui";
 
 /* ONE savings card's frame, and the same frame for all three, which is the whole point of it existing.
  *
@@ -18,17 +18,20 @@ import { Card, InfoHint } from "@intentic/ui";
  *   FOOTNOTE    provenance. Bottom-aligned so the row's footnotes share a baseline whatever the bodies do.
  *
  * The method text moves into the hint rather than being deleted: it is right, it is what makes the numbers
- * trustworthy, and it is not what anyone is reading the card FOR. Hover/focus is the correct altitude for it. */
+ * trustworthy, and it is not what anyone is reading the card FOR. Hover/focus is the correct altitude for it.
+ *
+ * THE VERDICT SLOT IS <Verdict>, at the card rank, and this file no longer owns how it is drawn. It used to
+ * carry its own three-entry tone map — the same three entries, verbatim, as the agent settings' measurement
+ * block, which reports the SAME experiments one tab away and drew them in its own language. Two copies of a
+ * tone map is not an expensive bug; it is the tell that the two files were one component at two sizes. */
 
-const { title, value, unit, tone } = defineProps<{
+defineProps<{
     title: string;
     value: string;
     unit: string;
     // Success is reserved for a saving that was actually measured: never for a card that is merely switched on.
-    tone: "success" | "content" | "muted";
+    tone: VerdictTone;
 }>();
-
-const VALUE_TONE = { success: `text-success`, content: `text-content`, muted: `text-muted` };
 </script>
 
 <template>
@@ -43,12 +46,9 @@ const VALUE_TONE = { success: `text-success`, content: `text-content`, muted: `t
             </InfoHint>
         </div>
 
-        <!-- Verdict and unit on one baseline. The unit is not decoration: "↓12%" alone does not say twelve
-             percent of what, and the two experiments are scored on different metrics. -->
-        <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-            <span class="text-2xl leading-none font-semibold tabular-nums" :class="VALUE_TONE[tone]">{{ value }}</span>
-            <span class="min-w-0 text-xs text-muted">{{ unit }}</span>
-        </div>
+        <!-- Verdict and unit on one baseline, at the card rank. The unit is not decoration: "↓12%" alone does
+             not say twelve percent of what, and the two experiments are scored on different metrics. -->
+        <Verdict size="lg" :value="value" :unit="unit" :tone="tone" />
 
         <slot />
 

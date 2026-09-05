@@ -67,6 +67,7 @@ import {
     type StatusVariant,
     useTextSize,
     useTheme,
+    Verdict,
 } from "@intentic/ui";
 import Checkbox from "primevue/checkbox";
 import { ref } from "vue";
@@ -567,10 +568,20 @@ const pickedTier = ref(`collaborator`);
             <section class="flex flex-col gap-4">
                 <h2 :class="ui.sectionLabel()">Figures</h2>
                 <p class="text-xs text-muted">
-                    Three shapes that look alike in a list of names and are not: a tally line, a stat strip, a bar chart.
+                    Four shapes that look alike in a list of names and are not: a tally line, a stat strip, a bar chart, and a verdict.
                 </p>
                 <StatusTally :items="COUNTS" />
                 <StatStrip :items="STATS" />
+                <!-- ONE MEASURED ANSWER, in the three ranks a card, a settings row and a second reading of the
+                     same experiment are drawn at. It brings no container and no margin: what it sits in is the
+                     caller's, which is why the same component is right on a savings card and inside a row's
+                     `#below`. A verdict is a WORD when there is no figure — the state IS the answer. -->
+                <div class="flex flex-wrap items-start gap-x-10 gap-y-4">
+                    <Verdict size="lg" tone="success" value="25%" unit="of command output removed" />
+                    <Verdict tone="success" value="↓12%" unit="searches per turn" detail="±3.1pp (95%)" evidence="329 taught · 94 cold" />
+                    <Verdict tone="muted" value="Off" unit="not being measured" />
+                    <Verdict size="xs" tone="content" value="↑2%" unit="searches before the first file" />
+                </div>
                 <div class="max-w-read-lg"><BarChart :items="BARS" /></div>
                 <div class="max-w-read-lg">
                     <InfoTable

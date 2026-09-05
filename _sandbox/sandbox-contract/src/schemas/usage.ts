@@ -104,8 +104,8 @@ export const UsageTurnSchema = z.object({
      * rather than being filtered out, they dilute both arms equally, while selecting on "did it search" would
      * select on the treatment itself.
      *
-     * Absent ⇒ the turn predates this being measured; `armOf` drops it rather than reading it as a turn that
-     * searched nothing. */
+     * Absent ⇒ the turn predates this being measured; the arm's mean drops it (turn-experiments.ts, the filter
+     * inside `conversationExperimentOf`) rather than reading it as a turn that searched nothing. */
     searchCalls: z.number().optional(),
     /* …and how many of them came BEFORE the turn first opened or changed a file, the orientation burst. A turn
      * that already knows where to look starts working; one that doesn't goes hunting first.

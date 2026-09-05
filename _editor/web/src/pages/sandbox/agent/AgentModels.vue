@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { type AgentRunPin, parsePinned, quickModelKey } from "@intentic/sandbox-contract";
-import { Row, RowGroup, SegmentedControl } from "@intentic/ui";
+import { Row, RowGroup, SegmentedControl, Verdict } from "@intentic/ui";
 import { computed, shallowRef } from "vue";
 import { useAgentRunModel } from "../../../composables/chat/agentRunModel";
 import { effortLabelOf } from "../../../composables/chat/effortScale";
@@ -71,6 +71,39 @@ const tierWindow = computed(() => ({ from: new Date(Date.now() - TIER_WINDOW_DAY
 const { savings } = useSavings(tierWindow);
 const tierReport = computed(() => savings.value?.tier);
 const pct = (part: number, whole: number): string => `${Math.round((part / whole) * 100)}%`;
+
+/* THE REPORT AS A <Verdict>, which is the shape every other measured answer in the app is drawn in: the figure,
+ * what it is a figure of, and the evidence under it. It used to be a `rounded-lg bg-canvas px-3 py-2.5` well
+ * hand-drawn in this row's `#below` — the same well the iq search teaching had, in a padding no tier contains,
+ * so the settings pages carried a copy of one idea each and none of them matched the savings cards reporting
+ * the same ledger on the Usage tab.
+ *
+ * THE SENTENCES ARE ASSEMBLED HERE rather than in the template, because written inline each needs a
+ * `<template v-if>` mid-sentence and the whitespace gymnastics that go with it (`}}<template …></template\n>·`)
+ * — which is unreadable, and one stray newline away from printing a space before a middot. */
+const tierUnit = computed<string>(() => {
+    const report = tierReport.value;
+    if (report === undefined) {
+        return ``;
+    }
+    const share = report.judged > 0 ? ` (${pct(report.fast, report.judged)})` : ``;
+    return `of ${report.judged} turns judged simple${share} · last ${TIER_WINDOW_DAYS} days`;
+});
+/* What became of those judgements. Empty when nothing has happened yet, which <Verdict> reads as absent: a row
+ * of zeroes is a claim that three things were measured and came to nothing, and none of them were measured. */
+const tierEvidence = computed<string>(() => {
+    const report = tierReport.value;
+    if (report === undefined) {
+        return ``;
+    }
+    return [
+        report.routed > 0 ? `${report.routed} down-routed` : undefined,
+        report.escalated > 0 ? `${report.escalated}/${report.fast} bumped up` : undefined,
+        report.denied > 0 ? `${report.denied} vetoed` : undefined,
+    ]
+        .filter((part) => part !== undefined)
+        .join(` · `);
+});
 
 /* THE TIER AN ENTRY WILL ACTUALLY RUN AT, clamped the way the composer clamps its own (effortScale.ts): a
  * stored `max` on a model whose scale stops at `high`, or on one whose thinking the same pin switched off,
@@ -347,27 +380,16 @@ const eagernessOptions = [
                         Simple turns run on the cheaper model. Each conversation can veto it.
                     </p>
 
-                    <div v-if="settings?.autoTier !== `off` && tierReport !== undefined" class="rounded-lg bg-canvas px-3 py-2.5">
-                        <p class="flex flex-wrap items-baseline gap-x-1.5">
-                            <span class="text-sm font-semibold tabular-nums text-content">{{ tierReport.fast }}</span>
-                            <span class="min-w-0 text-2xs text-muted">
-                                of {{ tierReport.judged }} turns judged simple<template v-if="tierReport.judged > 0">
-                                    ({{ pct(tierReport.fast, tierReport.judged) }})</template
-                                >
-                                · last {{ TIER_WINDOW_DAYS }} days
-                            </span>
-                        </p>
-                        <p
-                            v-if="tierReport.routed > 0 || tierReport.escalated > 0 || tierReport.denied > 0"
-                            class="mt-1 text-2xs tabular-nums text-subtle"
-                        >
-                            <template v-if="tierReport.routed > 0">{{ tierReport.routed }} down-routed</template
-                            ><template v-if="tierReport.escalated > 0"
-                                ><template v-if="tierReport.routed > 0"> · </template>{{ tierReport.escalated }}/{{ tierReport.fast }} bumped
-                                up</template
-                            ><template v-if="tierReport.denied > 0"> · {{ tierReport.denied }} vetoed</template>
-                        </p>
-                    </div>
+                    <!-- WHAT THE JUDGE HAS RECORDED, in the app's one shape for a measured answer and with no
+                         surface of its own: the row's `#below` is already inside the row's hairline, and a fill
+                         here would split the setting down a colour change. See <Verdict>. -->
+                    <Verdict
+                        v-if="settings?.autoTier !== `off` && tierReport !== undefined"
+                        tone="content"
+                        :value="`${tierReport.fast}`"
+                        :unit="tierUnit"
+                        :evidence="tierEvidence"
+                    />
 
                     <div class="flex flex-col gap-1.5">
                         <div class="flex flex-wrap items-center justify-between gap-3">

@@ -461,7 +461,11 @@ test("the judge's record renders its three numbers once turns have been judged",
     const host = mount();
     await Promise.resolve();
 
-    expect(host.textContent).toContain(`${tier.fast} of ${tier.judged}`);
+    /* NO SPACE BEFORE `of`, AND THAT IS NOT A TYPO. The figure and the unit it is a figure OF are two spans of
+     * one <Verdict> now — the space between them is the flex gap, so it is in the layout rather than in the
+     * text. Asserted as one string anyway, because what this test is for is that the count still lands against
+     * its own denominator: read apart, `10` and `of 40 turns` would both pass while reporting nothing. */
+    expect(host.textContent).toContain(`${tier.fast}of ${tier.judged} turns judged simple`);
     expect(host.textContent).toContain(String(tier.routed));
     expect(host.textContent).not.toContain(`$1.50`);
     expect(host.textContent).toContain(`${tier.escalated}/${tier.fast}`);

@@ -221,6 +221,12 @@ export { useCompact } from "./components/splitView.js";
 export { default as StatStrip } from "./components/StatStrip.vue";
 export { default as StatusBadge, type StatusVariant } from "./components/StatusBadge.vue";
 export { default as StepSection } from "./components/StepSection.vue";
+/* ONE MEASURED ANSWER — the figure, its unit, what qualifies it, what it was measured over — in the three ranks
+ * a card, a settings row and a second reading of the same experiment are drawn at. It ships because the app
+ * reports the SAME A/B experiments on two tabs and had two languages for them: a 2xl figure in a <SavingsCard>
+ * on Usage, and a `bg-canvas` well inside a <Row>'s `#below` on Agent, each with its own copy of the tone map. */
+export { default as Verdict } from "./components/Verdict.vue";
+export { VERDICT_RANKS, VERDICT_TONES, type VerdictSize, type VerdictTone } from "./components/verdict.js";
 export { Theme } from "./styles/theme.js";
 export { installUi } from "./plugin.js";
 // The markdown ENGINE is not re-exported here, it ships as `@intentic/ui/markdown` so plain .ts modules
