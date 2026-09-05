@@ -25,6 +25,7 @@ export const CHECKS = [
     { id: "daemon-boundaries", file: "daemon-boundaries.mjs", needs: "checkout", about: "no new whole-Services taker, no new mutual subsystem cycle" },
     { id: "publish-set", file: "publish-set.mjs", needs: "checkout", about: "PUB is dependency-closed and topologically ordered" },
     { id: "publish-retry", file: "publish-retry.mjs", needs: "checkout", about: "the publish failures a release rides out, and the ones it must not" },
+    { id: "release-api", file: "release-api.mjs", needs: "checkout", about: "github.sh answers a question with text or nothing, and fails loudly on a write" },
     { id: "engines", file: "engines-blessed.mjs", needs: "checkout", about: "engines.json blesses only versions this repo pins" },
     { id: "build-cache", file: "build-cache-mounts.mjs", needs: "checkout", about: "sandbox image fragments keep the build-cache contract" },
     { id: "mirror-roots", file: "mirror-roots.mjs", needs: "checkout", about: "build output an agent turn overlays is emptied, never removed" },

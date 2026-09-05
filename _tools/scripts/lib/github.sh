@@ -56,14 +56,27 @@ gh_require_token() {
 
 # The id of a release by tag, or empty when there is none. Never fatal: "does this release exist yet" is a
 # question two of the callers ask precisely because the answer may be no.
+#
+# The curl runs on its OWN line, its status swallowed by `|| true`, rather than piped straight into gh_field.
+# Every caller sets `set -euo pipefail`, and under pipefail a `curl --fail | gh_field` pipeline answers with
+# CURL's status, not the reader's — so the 404 that MEANS "no such release yet" killed the caller instead of
+# answering it. That is exactly what happened to v1.246.0: publish-github.sh asked whether its brand-new tag
+# already had a Release, got the expected 404, and died with curl's exit 22 and no output at all.
 gh_release_id() {
-    gh_api "https://api.github.com/repos/$1/releases/tags/$2" 2>/dev/null | gh_field id
+    local body
+    body="$(gh_api "https://api.github.com/repos/$1/releases/tags/$2" 2>/dev/null || true)"
+    [ -n "$body" ] || return 0
+    printf '%s' "$body" | gh_field id
 }
 
 # The tag a repository currently serves as `latest` (the flag every download link and update check follows), or
-# empty.
+# empty. Same shape as gh_release_id, and for the same reason: a repository with no released version answers
+# 404 here, and that is an answer rather than a failure.
 gh_latest_tag() {
-    gh_api "https://api.github.com/repos/$1/releases/latest" 2>/dev/null | gh_field tag_name
+    local body
+    body="$(gh_api "https://api.github.com/repos/$1/releases/latest" 2>/dev/null || true)"
+    [ -n "$body" ] || return 0
+    printf '%s' "$body" | gh_field tag_name
 }
 
 # Create a release and answer with its id. The notes are passed as an ARGUMENT to node and serialized there,
