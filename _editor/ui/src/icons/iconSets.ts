@@ -90,6 +90,7 @@ export type IconName =
     | "pause"
     | "pencil"
     | "picture-in-picture"
+    | "pin"
     | "play"
     | "plus"
     | "plus-circle"
@@ -233,6 +234,9 @@ export const ICONS: Record<IconName, string> = {
     palette: "ri:palette-line",
     paperclip: "ri:attachment-line",
     pencil: "ri:pencil-line",
+    // Keeping something that would otherwise go: the chat rail's and the board's "keep this open" press, on a
+    // tab the strip is holding only while you look at it (Conversation.peek).
+    pin: "ri:pushpin-2-line",
     play: "ri:play-line",
     backward: "ri:rewind-mini-line",
     compress: "ri:fullscreen-exit-line",

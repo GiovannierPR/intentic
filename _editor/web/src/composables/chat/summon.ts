@@ -5,7 +5,7 @@ import { Conversation } from "./conversation";
 import { traceFocus } from "./focusTrace";
 import { showRun } from "./chatRun";
 import { snapshotTab, type StoredTab } from "./tabSnapshot";
-import { closeConversations } from "./useChat-tabs";
+import { closeConversations, keepChat } from "./useChat-tabs";
 import { type Reveal, reveal, type RevealEntry } from "./useChat-reveal";
 
 /* SUMMONING THE CHAT, FOR EVERY WINDOW AT ONCE, the one way a surface outside the panel puts something on it.
@@ -50,7 +50,12 @@ export type Summons =
      *
      * The panel's OWN × is untouched and still local (ChatTabList): a gesture on the strip narrows the strip it
      * was made in and sets the words aside, which is the rule this is the other side of, not an exception to. */
-    | { readonly kind: `close`; readonly conversationIds: readonly string[] };
+    | { readonly kind: `close`; readonly conversationIds: readonly string[] }
+    /* KEEPING A CHAT THAT WAS ONLY BEING LOOKED AT (Conversation.peek), for the same reason the close above is a
+     * summons: the press is on the BOARD, and the panel holding that peeked tab is very often another window's.
+     * Promoted only in the pressing window, the popped-out chat would sweep the tab on its next focus move, so
+     * the one press the user made to keep a chat is exactly the press that would have lost it. */
+    | { readonly kind: `keep`; readonly conversationIds: readonly string[] };
 
 const portable = (entry: RevealEntry): RevealEntry => (entry instanceof Conversation ? { ...snapshotTab(entry), queued: [] } : entry);
 
@@ -70,6 +75,12 @@ const apply = (summons: Summons): void => {
     }
     if (summons.kind === `close`) {
         closeConversations(new Set(summons.conversationIds));
+        return;
+    }
+    if (summons.kind === `keep`) {
+        for (const id of summons.conversationIds) {
+            keepChat(id);
+        }
         return;
     }
     reveal(summons);

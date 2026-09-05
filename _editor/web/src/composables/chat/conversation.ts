@@ -357,6 +357,30 @@ export class Conversation {
     // tab at once. Persisted with the tab, so a reload doesn't un-know it.
     readonly registered = ref(false);
 
+    /* A TAB OPENED FOR A LOOK, which lives only while the focus is on it: the workspace editor's preview tab
+     * (useWorkspaceTabs' preview slot), for chats. A click on a fleet card or a history row is a glance, and a
+     * glance that left a permanent tab meant skimming a lane of a dozen agents cost a rail of a dozen chats to
+     * close one × at a time. So the strip's writer sweeps a peeked tab the moment the focus leaves it
+     * (useChat-tabs.transient), exactly as it sweeps an untouched draft, and NOTHING IS LOST when it does: the
+     * conversation keeps its card on the board and its row in History, a running turn is detached rather than
+     * stopped (abort is soft), and words in the composer spare the tab outright.
+     *
+     * Cleared by `keep` below, from every act that makes this chat the user's rather than something they are
+     * looking at. It lives on the CONVERSATION rather than as one id in the store so that the promotion is
+     * reachable from anywhere holding the chat — the class's own verbs do it themselves — and so that "at most
+     * one peek" needs no bookkeeping: any peeked tab that isn't the focused one is swept by the next list write,
+     * whichever of them it is. */
+    readonly peek = ref(false);
+
+    /* This chat is the user's now, not a glance: promote it out of the peek slot. Called by the verbs below
+     * that CHANGE the conversation (a pick, a send, a stop, an answer), never by the ones the daemon drives
+     * (loadTranscript, attach, adoptEnding) — a transcript arriving is the peek working as intended, and
+     * promoting on it would keep every chat the reader ever glanced at. Typing promotes too, watched at the
+     * strip (useChat-tabs) because words reach a composer by five routes and this method knows none of them. */
+    keep(): void {
+        this.peek.value = false;
+    }
+
     // The conversation's worktree identity from the turn's `worktree` frame: its agent/<id> branch and the
     // root repo's short base sha. Undefined until the first isolated turn runs (or on main-tree conversations).
     readonly worktree = ref<{ branch: string; base: string } | undefined>();
@@ -730,6 +754,7 @@ export class Conversation {
         if (!this.pointAt(next)) {
             return;
         }
+        this.keep();
         // A choice, so there is no longer a fallback owed back: wherever the app had moved this chat from, the
         // user has now said where it runs.
         this.movedFrom.value = undefined;
@@ -805,6 +830,7 @@ export class Conversation {
         if (this.streaming.value && pick.provider !== this.provider.value) {
             return;
         }
+        this.keep();
         // `pointAt` rather than `selectProvider`, and a no-op when the row's provider is already this chat's: the
         // pair is remembered ONCE, below, with the model the user actually pressed. Routing through the provider
         // setter wrote the memory twice, the first time pairing the new provider with the OLD one's model.
@@ -868,6 +894,7 @@ export class Conversation {
         if (this.generating.value) {
             return;
         }
+        this.keep();
         this.account.value = id;
         selectedAccountId.value = { ...selectedAccountId.value, [this.provider.value]: id };
         this.switchedMidTurn = this.switchedMidTurn || this.streaming.value;
@@ -883,6 +910,7 @@ export class Conversation {
         if (this.streaming.value || next === this.harness.value) {
             return;
         }
+        this.keep();
         this.harness.value = next;
         turnDefaults.harness.value = next;
         this.activeModel.value = null;
@@ -1759,6 +1787,7 @@ export class Conversation {
         const trimmed = text.trim();
         // The user is driving again, a Stop's hold on the queue is released (see `interrupted`).
         this.interrupted = false;
+        this.keep();
         if ((trimmed.length > 0 || attachments.length > 0) && !repeatsNudge({ text: trimmed, attachments }, this.queued.value.at(-1))) {
             this.queued.value = [
                 ...this.queued.value,
@@ -2054,6 +2083,7 @@ export class Conversation {
         if (!this.streaming.value) {
             return;
         }
+        this.keep();
         this.ended();
         const stopping = postTurnControl(this.at, `/agent/stop`, { conversationId: this.conversationId }).then((delivered) => {
             if (!delivered) {
@@ -2193,6 +2223,9 @@ export class Conversation {
         if (this.deciding.value.has(id)) {
             return false;
         }
+        // Answering a card the turn is parked on is an act on this chat, whichever card it is: the one place
+        // every decision passes through, so a plan, a question and a permission all promote a peeked tab alike.
+        this.keep();
         this.deciding.value = new Set(this.deciding.value).add(id);
         try {
             if (!(await postTurnControl(this.at, `/agent/reply`, body))) {

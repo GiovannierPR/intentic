@@ -50,7 +50,7 @@ const emit = defineEmits<{
     open: [id: string];
 }>();
 
-const { conversations, active, activeId, panes, openBeside, closePane, sessions, loadSessions } = useChat();
+const { conversations, active, activeId, panes, openBeside, closePane, sessions, loadSessions, keepChat } = useChat();
 const { agentById, rename } = useAgents();
 const { floats } = useChatFloating();
 const router = useRouter();
@@ -463,9 +463,12 @@ const openHistory = (event: Event): void => {
                 <span v-if="isArchived(active)" class="flex shrink-0 items-center" aria-label="Archived">
                     <Icon name="box" class="text-2xs text-subtle" />
                 </span>
+                <!-- Italic while this chat is only being LOOKED at (Conversation.peek), the mark the rail's
+                     cards and the workspace's preview tab both wear. The press that keeps it is the pin in the
+                     toolbar below, beside the other things this bar does to the chat it is naming. -->
                 <span
                     class="min-w-0 flex-1 truncate text-left font-medium"
-                    :class="statusTabClass(active.status.value)"
+                    :class="[statusTabClass(active.status.value), { italic: active.peek.value }]"
                     v-tooltip.bottom.overflow="tabLabel(active)"
                     >{{ tabLabel(active) }}</span
                 >
@@ -519,6 +522,20 @@ const openHistory = (event: Event): void => {
              the rail form (which is already one of the places they lead: out there the ways back are the
              Chat tile's own right-click menu, the window's ×, F9, or this bar's menu rows). -->
         <div v-if="!vertical" class="flex shrink-0 items-center gap-1">
+            <!-- KEEP THIS CHAT, and only while there is something to keep: the docked column shows one tab at a
+                 time, so a peeked chat has no card of its own here to carry the rail's pin. It leads the group
+                 because it is about the title beside it rather than about the panel, and it disappears the
+                 moment the chat is the reader's (by this press, or by anything they do in the chat). -->
+            <button
+                v-if="active.peek.value"
+                type="button"
+                class="composer-ghost h-7 w-7 shrink-0"
+                @click="keepChat(active.conversationId)"
+                v-tooltip.bottom="'Keep open, otherwise this chat closes when you open another'"
+                aria-label="Keep this chat open"
+            >
+                <Icon name="pin" class="text-sm" />
+            </button>
             <button type="button" class="composer-ghost h-7 w-7 shrink-0" @click="startAgent()" v-tooltip.bottom="'New agent'" aria-label="New agent">
                 <Icon name="plus" class="text-sm" />
             </button>

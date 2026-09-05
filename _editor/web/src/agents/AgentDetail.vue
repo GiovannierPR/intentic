@@ -35,7 +35,7 @@ const route = useRoute();
 const router = useRouter();
 const { mobile } = useDevice();
 const { fleet, refresh, open, agentById, archived, loadArchived, rename } = useAgents();
-const { conversations, setActive } = useChat();
+const { conversations, setActive, closeTabs } = useChat();
 const { activeSandboxId } = useSandbox();
 
 const agentId = computed(() => (typeof route.params[`id`] === `string` ? route.params[`id`] : ``));
@@ -89,6 +89,7 @@ watch(
 onUnmounted(() => {
     releaseBoxes?.();
     releaseBoxes = undefined;
+    sweepPeek();
 });
 
 /* AN ID THIS TAB HAS NOT BEEN TOLD ABOUT IS NOT AN ID THAT DOESN'T EXIST, and the difference is the whole of
@@ -125,6 +126,23 @@ const settleLookup = (id: string): void => {
 const registered = computed(() => fleetAgent.value !== undefined && !unregistered(fleetAgent.value.status));
 const reviewable = computed(() => registered.value && fleetAgent.value?.branch !== undefined);
 const conversation = computed(() => conversations.value.find((candidate) => candidate.conversationId === agentId.value));
+
+/* THE PHONE'S OWN FOCUS-LEAVE SWEEP, for the tab a tap on a fleet card opened as a LOOK (Conversation.peek).
+ *
+ * Everywhere else that sweep is the strip's: a peeked chat goes when the focus moves to another one, which on
+ * the desktop is what the next card click does. A phone has no dock and no next card — a tap comes HERE, and
+ * going back leaves the focus exactly where it was — so the screen being LEFT is the event, and this is the only
+ * place that can see it. Without it the phone would be the one surface where skimming the board still cost a tab
+ * per agent looked at.
+ *
+ * Only while it is still a look: anything done in the conversation has already promoted it (Conversation.keep),
+ * and unsent words spare it whatever else is true (the same floor `transient` holds). */
+const sweepPeek = (): void => {
+    const chat = conversation.value;
+    if (mobile.value && chat?.peek.value === true && !chat.unsent.value) {
+        closeTabs(new Set([chat.conversationId]));
+    }
+};
 
 // Bind the shared chat singleton to this agent's tab: open/create from the fleet entry, else focus the
 // already-open conversation. Desktop additionally requires a REGISTERED agent (there must be a diff to

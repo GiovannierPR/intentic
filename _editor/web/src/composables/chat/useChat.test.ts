@@ -83,7 +83,7 @@ const mockConnections = (connections: { subscriptions?: Subscriptions; accounts?
 const { useSandbox } = await import("../sandbox/useSandbox");
 const { setDaemonRoutes } = await import("../sandbox/useDaemonRoutes");
 const { resetChat, useChat } = await import("./useChat");
-const { draftConversation, openAgentConversation, reveal } = await import("./useChat-reveal");
+const { agentTabOf, draftConversation, openAgentConversation, reveal } = await import("./useChat-reveal");
 const { hydrateOnce } = await import("./useChat-sessions");
 const { loadAccountStatus, refreshConnections } = await import("./useChat-accounts");
 // The store half of "New agent", as the summons applies it (agentActions.startAgent): the fixture these
@@ -1024,6 +1024,7 @@ describe(`abandoned drafts`, () => {
                             id: `far`,
                             registered: false,
                             standing: `draft`,
+                            peek: false,
                             provider: `claude`,
                             harness: `native`,
                             model: ``,
@@ -1076,6 +1077,129 @@ describe(`abandoned drafts`, () => {
         await nextTick();
 
         expect(chat.conversations.value.map((c) => c.conversationId)).toEqual([first, registered.conversationId]);
+    });
+});
+
+/* A CHAT OPENED FOR A LOOK (Conversation.peek): the workspace editor's preview tab, for conversations. A plain
+ * click on a fleet card or a history row opens one, it lives while the reader is reading it, and the strip
+ * sweeps it the moment the focus goes to the next card — unless they made it theirs, which is what every case
+ * below is about. Nothing is lost by the sweep: the conversation keeps its card on the board and its row in
+ * History, and its turn runs on without the tab. */
+describe(`chats opened for a look`, () => {
+    beforeEach(async () => {
+        storage.clear();
+        resetChat();
+        await nextTick();
+    });
+
+    // The board's plain click, as the summons applies it in every window (useAgents.open with `peek`).
+    const peekAgent = (id: string) =>
+        reveal({
+            verb: `show`,
+            entries: [agentTabOf({ id, provider: `claude`, harness: `native`, title: `Agent ${id}` })],
+            focus: id,
+            caret: false,
+            peek: true,
+        })!;
+
+    // The tab that was there first, holding words so the focus-leave sweep has no claim on IT.
+    const working = (): string => {
+        const chat = useChat();
+        chat.draft.value = `real work`;
+        return chat.active.value.conversationId;
+    };
+
+    it(`sweeps the looked-at chat when the next card takes the focus`, () => {
+        const chat = useChat();
+        const first = working();
+        peekAgent(`agent-a`);
+
+        peekAgent(`agent-b`);
+
+        // Reading down a lane costs one tab, not one per card, and the survivor is the one being read.
+        expect(chat.conversations.value.map((conversation) => conversation.conversationId)).toEqual([first, `agent-b`]);
+        expect(chat.activeId.value).toBe(`agent-b`);
+    });
+
+    it(`keeps it the moment words land in its composer`, async () => {
+        const chat = useChat();
+        const first = working();
+        const looked = peekAgent(`agent-a`);
+
+        looked.draft.value = `while I'm here`;
+        await nextTick();
+
+        // Promoted before anything can sweep it, and the card stops calling itself temporary.
+        expect(looked.peek.value).toBe(false);
+        chat.setActive(first);
+        expect(chat.conversations.value.map((conversation) => conversation.conversationId)).toEqual([first, `agent-a`]);
+    });
+
+    it(`keeps it when a pick is made in it: acting on a chat is not looking at one`, () => {
+        const chat = useChat();
+        const first = working();
+        const looked = peekAgent(`agent-a`);
+
+        looked.selectModel({ provider: `claude`, value: `claude-sonnet-4-5` });
+
+        expect(looked.peek.value).toBe(false);
+        chat.setActive(first);
+        expect(chat.conversations.value.map((conversation) => conversation.conversationId)).toEqual([first, `agent-a`]);
+    });
+
+    // The pin on the card, and the "Keep Open" row behind the right-click: the same one verb, which the board
+    // presses through the summons channel so the window drawing the chat hears it (summon.ts's `keep`).
+    it(`keeps it when the pin is pressed`, () => {
+        const chat = useChat();
+        const first = working();
+        peekAgent(`agent-a`);
+
+        chat.keepChat(`agent-a`);
+
+        chat.setActive(first);
+        expect(chat.conversations.value.map((conversation) => conversation.conversationId)).toEqual([first, `agent-a`]);
+    });
+
+    // A column of its own is arranging the screen around a chat, so it is no longer a glance at one.
+    it(`keeps it when it is given a column of its own`, () => {
+        const chat = useChat();
+        const first = working();
+        const looked = peekAgent(`agent-a`);
+
+        chat.openBeside(`agent-a`);
+
+        expect(looked.peek.value).toBe(false);
+        chat.setActive(first);
+        expect(chat.conversations.value.map((conversation) => conversation.conversationId)).toEqual([first, `agent-a`]);
+    });
+
+    /* Looking at a chat the reader deliberately kept must not demote it back into the slot, and looking twice
+     * at the same card must not promote it either: an open tab keeps whatever standing it had (reveal's rule). */
+    it(`leaves a kept chat kept, however often it is looked at`, () => {
+        const chat = useChat();
+        const first = working();
+        const opened = openAgentConversation({ id: `agent-a`, provider: `claude`, harness: `native`, title: `Someone's work` });
+
+        peekAgent(`agent-a`);
+
+        expect(opened.peek.value).toBe(false);
+        chat.setActive(first);
+        expect(chat.conversations.value.map((conversation) => conversation.conversationId)).toEqual([first, `agent-a`]);
+    });
+
+    /* THE POP-OUT HANDOFF, which is the same snapshot a reload reads (useChat-tabs): the flag rides it, so the
+     * chat being read survives the panel moving windows — and comes back still a look rather than pinned as the
+     * one tab nobody asked to keep. */
+    it(`carries the mark through the snapshot the panel is handed off with`, async () => {
+        const chat = useChat();
+        const first = working();
+        peekAgent(`agent-a`);
+        await nextTick();
+
+        resetChat();
+
+        expect(chat.conversations.value.map((conversation) => conversation.conversationId)).toEqual([first, `agent-a`]);
+        expect(chat.active.value.peek.value).toBe(true);
     });
 });
 

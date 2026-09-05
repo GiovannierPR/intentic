@@ -398,6 +398,12 @@ const inPane = (id: string): boolean => {
     const { panes: shown } = chatStrip.value;
     return !mobile.value && !runGraphUp.value && shown.length > 1 && shown.includes(id);
 };
+/* WHICH CARD THE CHAT IS ONLY LOOKING AT (TabFacts.peek), so the card can say so: a plain click here opens the
+ * conversation for as long as you read it and the strip sweeps that tab when you point at the next card. Read
+ * off the strip exactly as the ring is, so a card is right about a chat that is open in the popped-out window
+ * on somebody's other screen. Desktop only, like the ring: a phone's tab set is one screen deep, and the mark
+ * would be explaining a rule the reader never meets. */
+const peeked = (id: string): boolean => !mobile.value && chatStrip.value.tabs.some((tab) => tab.id === id && tab.peek);
 const finishedWindow = computed(() => windowFinished(boardLanes.value.finished, windowed.value ? highlightId.value : undefined, (agent) => agent.id));
 // The lane's visible cards. Finished shows its window (or the archive, when open); the other two lanes are
 // self-emptying and show everything.
@@ -913,7 +919,11 @@ const focusAgent = (agent: FleetAgent, event?: MouseEvent): void => {
     // ...and an UNMODIFIED one is the reset those modifiers are defined against: `show` collapses the split
     // (reveal's rule), so whatever else was ringed gives its column back and "just this one" needs no cleanup
     // after it. The split is one Alt+click away again and the chats that left the screen are still in the rail.
-    open(agent);
+    //
+    // It is also a LOOK (useAgents.open's mode): the tab it opens is the reader's for as long as they are
+    // reading it and gone when they point at the next card, which is what makes clicking down a lane cheap in
+    // the one place it was expensive. Anything they then DO in that chat keeps it (Conversation.keep).
+    open(agent, `peek`);
     if (mobile.value) {
         void router.push(`/agents/${encodeURIComponent(agent.id)}`);
     }
@@ -927,6 +937,15 @@ const agentHref = (agent: FleetAgent): string =>
             ? { path: `/agents/${encodeURIComponent(agent.id)}`, query: { sandbox: agent.sandboxId } }
             : `/agents/${encodeURIComponent(agent.id)}`,
     ).href;
+/* KEEPING A CHAT THIS BOARD ONLY OPENED FOR A LOOK (AgentCard's pin, the card menu's row, and every deliberate
+ * press below that implies it). A SUMMONS, for the same reason the close further down is one: the tab lives in
+ * whichever window is drawing the chat, and that is very often not this one — promoted here alone, the
+ * popped-out chat would sweep the tab on its next focus move, so the press meant to keep a chat would be the
+ * press that lost it. */
+const keepAgent = (agent: FleetAgent): void => {
+    summonChat({ kind: `keep`, conversationIds: [agent.id] });
+};
+
 const reviewAgent = (agent: FleetAgent): void => {
     /* A card from another box opens its review WITHOUT opening a tab for it, and the omission is the point:
      * `open()` files a conversation into the chat singleton, which is pointed at this daemon, so it would mint
@@ -937,6 +956,10 @@ const reviewAgent = (agent: FleetAgent): void => {
         return;
     }
     open(agent);
+    // Walking to the agent's own page is a decision about it rather than a glance at it, so a tab a click had
+    // opened for a look stops being one. Said explicitly because `open` above leaves an already-open tab exactly
+    // as it found it: this is the gesture speaking, not the opening.
+    keepAgent(agent);
     void router.push(`/agents/${encodeURIComponent(agent.id)}`);
 };
 /* The only exit a card with no registry entry has (AgentCard's `closable`): closing the CONVERSATION, which this
@@ -1002,6 +1025,10 @@ const copySessionName = async (branch: string): Promise<void> => {
  * truncating. A user who opened this menu having decided something about a card reads what they are ending; a
  * user who noticed the readout presses the readout. One row for however many are armed, because that is what
  * the press means about a card, and the daemon disarms them together (agents.stopWatching). */
+// The row that stops a chat opened for a LOOK from going (`peeked`, and AgentCard's pin, which this makes
+// findable). A row-builder like the two below, so the menu itself stays a list of groups.
+const keepRow = (agent: FleetAgent): MenuItem[] => (peeked(agent.id) ? [{ label: `Keep Open`, icon: `pin`, command: () => keepAgent(agent) }] : []);
+
 const watchRow = (agent: FleetAgent, here: boolean): MenuItem[] => {
     const armed = agent.watches?.length ?? 0;
     if (!watching(agent) || !here) {
@@ -1040,6 +1067,9 @@ const cardMenuItems = computed<MenuItem[]>(() => {
     const groups: MenuItem[][] = [
         [
             { label: `Open`, icon: `arrow-right`, command: () => focusAgent(agent) },
+            // ...and, for a card whose chat is open only as a look, the press that stops it going. The chat
+            // rail's menu carries the identical row for the identical state.
+            ...keepRow(agent),
             /* The agent's own page has an address, so this row is a link as well as a command: it can be
                hovered to read where it goes, and Ctrl/⌘-clicked to put the review in its own tab. The
                plain click still goes through `reviewAgent`, which also points the chat dock at the agent:
@@ -1492,10 +1522,12 @@ const grabCard = (event: PointerEvent, agent: FleetAgent, card: HTMLElement): vo
                                 :dragging="draggedId === agent.id && dragging"
                                 :pending="pendingFor(agent)"
                                 :selected="agent.id === highlightId || inPane(agent.id)"
+                                :peek="peeked(agent.id)"
                                 :match="snippetOf(agent)"
                                 :query="needle"
                                 :match-case="matchCase"
                                 @open="(event) => focusAgent(agent, event)"
+                                @keep="keepAgent(agent)"
                                 @review="reviewAgent(agent)"
                                 @resolve="resolveNow(agent.id, agent.sandboxId)"
                                 @land="landNow(agent.id, agent.sandboxId)"

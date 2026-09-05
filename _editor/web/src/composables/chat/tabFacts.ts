@@ -28,6 +28,10 @@ export interface TabFacts {
     // Which sandbox the conversation runs in, when that is not the one the browser is pointed at (Conversation.box).
     readonly box?: string;
     readonly title?: string;
+    // Only being LOOKED at (Conversation.peek): the tab leaves as soon as the focus does. Carried here because
+    // the card that has to SAY so is usually in another window — the fleet board while the chat is popped out —
+    // and this is the one account of the strip such a window reads (chatEcho.ts).
+    readonly peek: boolean;
     readonly sessionId?: string;
     // The model the next turn will run on: what a card for a prepared message names as its spend.
     readonly model: string;
@@ -108,6 +112,7 @@ export const tabFacts = (conversation: Conversation): TabFacts => {
         harness: conversation.harness.value,
         box: conversation.box.value,
         title: conversation.title.value ?? undefined,
+        peek: conversation.peek.value,
         sessionId: conversation.session.value?.id,
         model: conversation.model.value,
         unsent: conversation.unsent.value,

@@ -61,6 +61,14 @@ export interface Reveal {
     readonly focus: string;
     // Put the caret in the composer: what the press is FOR when it starts something to type into.
     readonly caret: boolean;
+    /* A LOOK RATHER THAN AN OPENING: the chats this reveal has to create come in as peeks (Conversation.peek),
+     * so the strip sweeps them again the moment the focus goes elsewhere. It is a property of the GESTURE, not
+     * of the chat — a click down a lane of fleet cards, a skim of history rows — which is why it rides the
+     * reveal and not the entries, and why every window applies it identically off the one summons.
+     *
+     * Only the tabs it OPENS: a chat already open keeps whatever standing it had, so looking at one the reader
+     * deliberately kept never demotes it, and looking twice at the same card never promotes it either. */
+    readonly peek?: boolean;
     /* THE WORDS THESE CHATS WERE CLOSED HOLDING (closedDrafts), for the reveal to put back. Filled by the
      * window whose gesture reopens them, which claims them ONCE from the shared store and sends them with the
      * summons so every window restores the identical composer; absent on a reveal made in this window alone,
@@ -183,9 +191,22 @@ const resolveEntry = (entry: RevealEntry, additions: Conversation[], kept: Reado
 const keptFor = (entries: readonly RevealEntry[], unsent: readonly StoredTab[] | undefined): ReadonlyMap<string, StoredTab> =>
     new Map((unsent ?? claimClosedDrafts(entries.map((entry) => entry.conversationId))).map((tab) => [tab.conversationId, tab] as const));
 
+/* The tabs a LOOK had to create, marked as such (Reveal.peek) before the write that seats them, so the strip is
+ * never momentarily holding a peek that doesn't say it is one — the snapshot watch reads exactly that moment,
+ * and a tab persisted between the two would come back pinned. Only the additions, never a chat that was already
+ * open: that one keeps whatever standing the reader gave it. */
+const markPeeked = (peek: boolean | undefined, additions: readonly Conversation[]): void => {
+    if (peek !== true) {
+        return;
+    }
+    for (const conversation of additions) {
+        conversation.peek.value = true;
+    }
+};
+
 // Reveal returns the conversation the focus resolved to, the summoning surface may still need the live
 // instance (a fork link, a test fixture). `unpane` shows nothing, so it returns nothing.
-export const reveal = ({ verb, entries, focus, caret, unsent }: Reveal): Conversation | undefined => {
+export const reveal = ({ verb, entries, focus, caret, unsent, peek }: Reveal): Conversation | undefined => {
     if (verb === `unpane`) {
         closePane(focus);
         return undefined;
@@ -201,6 +222,7 @@ export const reveal = ({ verb, entries, focus, caret, unsent }: Reveal): Convers
     if (verb === `beside`) {
         claimColumnBeside(focusId);
     }
+    markPeeked(peek, additions);
     if (additions.length > 0) {
         setConversations([...conversations.value, ...additions], focusId, `reveal-${verb}`);
     }
@@ -338,9 +360,12 @@ export const composingConversation = (): Conversation => {
     return !focused.registered.value && focused.messages.value.length === 0 && focused.session.value === undefined ? focused : draftConversation();
 };
 
-// Open a past conversation from the panel's own history rows: focus its tab when one already shows that
-// session, else load its transcript into a new tab (reveal's session entry). Panel-internal, so it reveals in
-// THIS window only, the surfaces outside the panel go through the summons channel (summon.ts) instead.
+/* Open a past conversation from the panel's own history rows: focus its tab when one already shows that
+ * session, else load its transcript into a new tab (reveal's session entry). Panel-internal, so it reveals in
+ * THIS window only, the surfaces outside the panel go through the summons channel (summon.ts) instead.
+ *
+ * A PEEK, like a click on a fleet card, and for the same reason: reading down a list of past sessions to find
+ * the one you meant is the gesture this list exists for, and it used to cost a permanent tab per row tried. */
 export const openConversation = (id: string): void => {
     const conversationId = uuid();
     reveal({
@@ -348,5 +373,6 @@ export const openConversation = (id: string): void => {
         entries: [{ conversationId, sessionRef: id, title: sessions.value.find((session) => session.id === id)?.title }],
         focus: conversationId,
         caret: false,
+        peek: true,
     });
 };

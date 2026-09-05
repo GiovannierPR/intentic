@@ -116,7 +116,10 @@ export const setResumeAfterLimit = async (id: string, resumeAfterLimit: boolean 
         previous.resumeAfterLimit = resumeAfterLimit ?? undefined;
     }
     try {
-        const summary = await sandboxJson<AgentSummary>(`/agents/${encodeURIComponent(id)}/resume-after-limit`, jsonBody(`POST`, { resumeAfterLimit }));
+        const summary = await sandboxJson<AgentSummary>(
+            `/agents/${encodeURIComponent(id)}/resume-after-limit`,
+            jsonBody(`POST`, { resumeAfterLimit }),
+        );
         registry.value = registry.value.map((agent) => (agent.id === id ? summary : agent));
     } catch (error) {
         const target = registry.value.find((agent) => agent.id === id);
@@ -219,11 +222,18 @@ export const agentSeed = (
     ...(agent.tierHold !== undefined ? { tierHold: agent.tierHold } : {}),
 });
 
-// Opening a card is a SUMMONS, not a store call: the chat panel showing the result may be another window's (the
-// chat can be floating in a window of its own), so the reveal is broadcast and every window, this one included,
-// applies the same thing (summon.ts).
-export const open = (agent: Parameters<typeof agentSeed>[0]): void => {
+/* Opening a card is a SUMMONS, not a store call: the chat panel showing the result may be another window's (the
+ * chat can be floating in a window of its own), so the reveal is broadcast and every window, this one included,
+ * applies the same thing (summon.ts).
+ *
+ * A PLAIN CLICK ON A CARD IS A LOOK (`peek`), the mode the workspace editor opens a file in when you single-click
+ * it in the tree: the tab lives while you are reading it and is swept the moment you point at something else, so
+ * skimming a lane of forty agents costs the chat one tab rather than forty. The gestures that mean more than a
+ * look, opening the review, sending it a message, giving it a column, say `keep`, which is the default here on
+ * purpose: a caller that has not thought about it is doing something deliberate. What a peek promises is only
+ * possible because closing a chat's tab destroys nothing (see Conversation.peek). */
+export const open = (agent: Parameters<typeof agentSeed>[0], mode: "peek" | "keep" = `keep`): void => {
     const seed = agentSeed(agent);
-    summonChat({ kind: `reveal`, verb: `show`, entries: [agentTabOf(seed)], focus: seed.id, caret: false });
+    summonChat({ kind: `reveal`, verb: `show`, entries: [agentTabOf(seed)], focus: seed.id, caret: false, peek: mode === `peek` });
     markSeen(agent.id);
 };

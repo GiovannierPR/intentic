@@ -342,6 +342,7 @@ describe("draft cards", () => {
         id,
         registered: false,
         standing: `draft`,
+        peek: false,
         provider: `claude`,
         harness: `native`,
         model: ``,

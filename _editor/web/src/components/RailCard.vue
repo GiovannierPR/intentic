@@ -85,6 +85,13 @@ const props = defineProps<{
     dashed?: boolean;
     // A destination rather than a session you are in (the rail's off-list search hits): the ink drops a step.
     quiet?: boolean;
+    /* A card the surface is holding only while you LOOK at it (Conversation.peek): its title is set in italic,
+     * which is what the workspace editor's tab strip already says about a preview tab (FileTabs). One word, one
+     * mark, wherever a transient thing is drawn.
+     *
+     * Italic is invisible to a screen reader, so the accessible name says it in words instead. The gesture that
+     * keeps it is a real button the host puts in `trailing`; nobody should have to learn a font style. */
+    peek?: boolean;
     // WHY this row survived the filter: the line the query hit and who said it (MatchLine draws both).
     snippet?: MatchSnippet;
     /* WHERE THIS CARD GOES, for the lists whose rows are addresses rather than selections.
@@ -124,10 +131,17 @@ const titleRuns = computed(() => markSegments(props.title, props.needle ?? ``, p
                     <Icon :name="icon" class="text-2xs" :class="quiet ? 'text-subtle' : 'text-link'" />
                 </span>
                 <!-- Two lines before the clamp: a card has the width for most titles whole. -->
-                <span class="line-clamp-2 min-w-0 flex-1 text-xs font-semibold leading-4" :class="quiet ? 'text-muted' : 'text-content'">
+                <span
+                    class="line-clamp-2 min-w-0 flex-1 text-xs font-semibold leading-4"
+                    :class="[quiet ? 'text-muted' : 'text-content', { italic: peek }]"
+                >
                     <span v-for="(run, at) in titleRuns" :key="at" :class="run.hit ? 'rounded-sm bg-primary-600/30 text-content' : ''">{{
                         run.text
                     }}</span>
+                    <!-- The italic says "temporary" to the eye and to nobody else, so the fact rides the card's
+                         own accessible name. A hidden span rather than an `aria-label` on this element: the
+                         attribute is only honoured on a role that takes a name, and this one has none. -->
+                    <span v-if="peek" class="sr-only">, temporary</span>
                 </span>
                 <slot name="trailing" />
                 <span v-if="status !== undefined" class="flex h-4 shrink-0 items-center"><Icon v-bind="status" /></span>

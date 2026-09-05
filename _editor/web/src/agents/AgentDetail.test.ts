@@ -74,8 +74,20 @@ vi.mock("../composables/chat/useChat", async () => {
     const { ref } = await import("vue");
     return {
         useChat: () => ({
-            conversations: ref([{ conversationId: `agent-1`, title: ref(`Readable mobile title`), streaming: ref(true) }]),
+            // The fields the page reads off a conversation, on the real Conversation's terms: `peek` and
+            // `unsent` are what the phone's focus-leave sweep asks about on the way out (AgentDetail.sweepPeek),
+            // and this agent is one the reader walked into rather than glanced at.
+            conversations: ref([
+                {
+                    conversationId: `agent-1`,
+                    title: ref(`Readable mobile title`),
+                    streaming: ref(true),
+                    peek: ref(false),
+                    unsent: ref(false),
+                },
+            ]),
             setActive: vi.fn(),
+            closeTabs: vi.fn(),
         }),
     };
 });

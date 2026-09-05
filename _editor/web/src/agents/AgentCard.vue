@@ -74,6 +74,12 @@ const props = defineProps<{
      * the rail ranked it the same way; both have stopped, because nothing about a second column makes the
      * first one more real. See RailCard.selected, which this is the board's half of. */
     selected?: boolean;
+    /* This agent's chat is on screen only as a LOOK (Conversation.peek): the tab a plain click on this card
+     * opened, which goes again the moment the reader points at another card. The card says so the way the
+     * rail's does and the workspace's preview tab does — an italic title — and offers the press that stops it
+     * going. Read from the chat's own strip by the board (AgentsView), so a card is right about a chat that is
+     * open in a window on somebody's other screen. */
+    peek?: boolean;
     // The board's filter, when one is on. `match` is the line the query hit and who said it: the EVIDENCE for
     // this card being in a filtered lane. Absent when the hit was the title (already on the card, and marked
     // below instead). A card that matches for a reason the user can't see is what teaches people to stop
@@ -100,6 +106,8 @@ const emit = defineEmits<{
     archive: [];
     restore: [];
     close: [];
+    // Keep a chat this card's click only opened for a look (see `peek`).
+    keep: [];
     grab: [event: PointerEvent, card: HTMLElement];
 }>();
 
@@ -499,11 +507,27 @@ const grab = (event: PointerEvent): void => {
                 @vue:mounted="edit.focusInput"
             />
             <template v-else>
-                <span class="min-w-0 flex-1 truncate text-xs font-semibold text-content">
+                <span class="min-w-0 flex-1 truncate text-xs font-semibold text-content" :class="{ italic: peek }">
                     <span v-for="(run, at) in titleRuns" :key="at" :class="run.hit ? 'rounded-sm bg-primary-600/30 text-content' : ''">{{
                         run.text
                     }}</span>
+                    <!-- Same as the rail card's: the italic is invisible to a screen reader, so the state is
+                         part of the card's name instead of an `aria-label` on an element with no role. -->
+                    <span v-if="peek" class="sr-only">, temporary</span>
                 </span>
+                <!-- KEEP THIS CHAT OPEN, on the card whose click opened it for a look, in the row of quiet
+                     affordances the rest of the card's rare acts live in. It leads them because it is the one
+                     press with a deadline on it: the tab it saves goes on the next click somewhere else. -->
+                <button
+                    v-if="peek"
+                    type="button"
+                    aria-label="Keep this chat open"
+                    v-tooltip.top="'Keep open, otherwise this chat closes when you open another'"
+                    :class="[HOVER_ACTION, mobile ? 'opacity-60' : 'opacity-0 focus-visible:opacity-100 group-hover:opacity-100']"
+                    @click.stop="emit(`keep`)"
+                >
+                    <Icon name="pin" class="text-2xs" />
+                </button>
                 <button
                     v-if="localOnly"
                     type="button"
@@ -747,7 +771,8 @@ const grab = (event: PointerEvent): void => {
             <div v-if="away !== undefined" class="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
                 <span v-tooltip.top="away.title" class="inline-flex shrink-0 items-start gap-1.5 text-2xs leading-snug text-warning">
                     <Icon :name="away.icon" class="mt-0.5 shrink-0 text-2xs" /><span class="min-w-0"
-                        >{{ away.text }}<template v-if="away.hint !== undefined">
+                        >{{ away.text
+                        }}<template v-if="away.hint !== undefined">
                             <span class="text-subtle"> ({{ away.hint }})</span></template
                         ></span
                     >

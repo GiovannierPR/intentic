@@ -62,7 +62,10 @@ const openFromHistory = (id: string): void => {
         <!-- The whole title area opens the conversation sheet: the biggest possible touch target. -->
         <button type="button" class="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-left active:bg-overlay" @click="openSheet">
             <Icon v-if="active" v-bind="statusIcon(active.status.value)" />
-            <span class="min-w-0 flex-1 truncate text-sm font-medium text-content">{{
+            <!-- Italic while this chat is only being looked at (Conversation.peek): the phone's tap on a fleet
+                 card is a look like the desktop's click, and the tab goes when the reader leaves its screen
+                 (AgentDetail's sweep). One mark, every surface. -->
+            <span class="min-w-0 flex-1 truncate text-sm font-medium text-content" :class="{ italic: active?.peek.value }">{{
                 active?.title.value ?? (active?.isolated.value ? "New agent" : "New chat")
             }}</span>
             <PresenceAvatars

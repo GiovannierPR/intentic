@@ -97,6 +97,12 @@ export interface StoredTab {
      * opened an empty record with nothing to seed the session from, and a chat that looked continued answered
      * from nothing. Absent on every ordinary tab, and on a fork from its acked first turn onward. */
     readonly forkOf?: { conversationId: string; keep: number; files: "then" | "now" };
+    /* Whether this tab is only being LOOKED at (Conversation.peek): a chat opened from a fleet card or a history
+     * row, which the strip sweeps as soon as the focus goes elsewhere. Persisted because this snapshot is also
+     * the handoff between the docked chat and its own window (useChat-tabs' snapshot watch), where dropping the
+     * flag would pin a tab nobody asked to keep and dropping the tab would close the chat being read. A peek is
+     * always the focused tab, so it comes back as what it was: still a look. */
+    readonly peek?: boolean;
     readonly title?: string;
     readonly draft: string;
     // When this composer first held something unsent (Conversation.draftAt), so the unsent mark's age survives
@@ -139,6 +145,7 @@ export const snapshotTab = (conversation: Conversation): StoredTab => ({
     // has to be right.
     session: conversation.session.value,
     forkOf: conversation.pendingForkOf.value,
+    peek: conversation.peek.value,
     title: conversation.title.value ?? undefined,
     draft: conversation.draft.value,
     draftAt: conversation.draftAt.value,
@@ -280,6 +287,7 @@ const readTab = (raw: Record<string, unknown>): StoredTab | undefined => {
         ...readFlag(`thinking`, raw[`thinking`]),
         ...readFlag(`fast`, raw[`fast`]),
         ...readFlag(`autoContinue`, raw[`autoContinue`]),
+        ...readFlag(`peek`, raw[`peek`]),
         ...readFlag(`tierHold`, raw[`tierHold`]),
         ...readTier(raw[`tier`]),
         ...readHarness(raw[`harness`]),

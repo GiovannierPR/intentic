@@ -39,13 +39,33 @@ export const activeId = ref<string>(``);
  * window's strip, not from whether this window's copy survived the click. */
 export const untouchedDraft = (conversation: Conversation): boolean => untouched(tabFacts(conversation));
 
+/* THE TABS THAT EXIST ONLY WHILE THE FOCUS IS ON THEM, which is the whole of what the writer below sweeps: an
+ * untouched draft, and a chat opened for a LOOK (Conversation.peek, the workspace editor's preview tab for
+ * chats). One rule, two doors into it, and the same promise on the way out — a sweep here can destroy nothing:
+ * the conversation keeps its card on the board and its row in History, and a running turn is detached rather
+ * than stopped.
+ *
+ * WORDS IN THE COMPOSER SPARE A PEEK whatever its flag says. Typing clears the flag itself (the watch further
+ * down), so this is the floor under that watch rather than a second opinion about the same thing: the sweep is
+ * a synchronous list write and the watch is a flush later, and the one ordering nobody should ever have to
+ * reason about is the one with a message at stake. */
+const transient = (conversation: Conversation): boolean => untouchedDraft(conversation) || (conversation.peek.value && !conversation.unsent.value);
+
+/** Promote a peeked tab into an ordinary one, named by id: what the card's pin, its menu row and the surfaces
+ *  that hold an id rather than a live chat press. A chat acted on promotes itself (Conversation.keep). */
+export const keepChat = (conversationId: string): void => {
+    conversations.value.find((conversation) => conversation.conversationId === conversationId)?.keep();
+};
+
 /* The one writer of the tab list AND of the focus (setActive routes through it too), holding both of the
  * strip's invariants in the same write:
  *   · the focus lands on a tab that is actually in the list, and on the LAST one when the tab that had it is
  *     gone (VSCode behaviour, the rule the workspace's tabs follow too). A focus naming nothing is invisible
  *     rather than loud, the strip highlights no tab while the panel quietly shows the first one, so every
  *     click afterwards looks like it did nothing.
- *   · at most ONE untouched draft is open, and only as the focused tab.
+ *   · at most ONE TRANSIENT tab is open, and only as the focused one: an untouched draft, or a chat opened for
+ *     a look (`transient`, above). Neither needs counting to stay unique, since any of them that is not the
+ *     focused tab leaves on this very write.
  *
  * The draft rule is enforced HERE rather than by a watcher reacting to the focus afterwards, which is what it
  * used to be. Reaping after the fact meant the outcome of an explicit action was decided by an implicit reaper
@@ -63,6 +83,22 @@ export const untouchedDraft = (conversation: Conversation): boolean => untouched
  * is the only answer that makes a close from the board and a close from the rail land in the same place. */
 let recent: readonly string[] = [];
 
+/* A SWEPT TAB IS DETACHED ON ITS WAY OUT, the one piece of teardown a transient tab can need: an untouched
+ * draft has no turn to leave, but a PEEK may be attached to one — looking at a working agent is most of what
+ * the board's cards are for — and a stream left open would go on writing into a conversation nothing renders.
+ * Soft, like every abort here (Conversation.abort): the daemon-side turn carries on and the card on the board
+ * goes on saying so.
+ *
+ * The cached transcript is deliberately KEPT, unlike a close's (see `closing`): the mirror is what makes the
+ * next look at the same card paint instantly, and a look is the gesture most likely to be repeated. */
+const detachSwept = (next: readonly Conversation[], kept: readonly Conversation[]): void => {
+    for (const conversation of next) {
+        if (!kept.includes(conversation)) {
+            conversation.abort();
+        }
+    }
+};
+
 export const setConversations = (next: readonly Conversation[], focus: string, reason: string): void => {
     const open = (id: string): boolean => next.some((conversation) => conversation.conversationId === id);
     /* Where the focus lands when the id asked for names no tab in the list being written, a close taking the
@@ -72,9 +108,10 @@ export const setConversations = (next: readonly Conversation[], focus: string, r
      * with its last editor; this is the same move). Then the tab the focus was on most recently before this one
      * (`recent`), and only when nothing has ever held it, the strip's last tab. */
     const focused = open(focus) ? focus : (panes.value.find(open) ?? recent.findLast(open) ?? next.at(-1)!.conversationId);
-    // The focused tab is always kept, so the list can never come out empty. A dropped draft needs no teardown:
-    // untouched means no turn to detach from and no transcript to evict.
-    const kept = next.filter((conversation) => conversation.conversationId === focused || !untouchedDraft(conversation));
+    // The focused tab is always kept, so the list can never come out empty. A dropped draft needs no teardown
+    // (untouched means no turn to detach from and no transcript to evict), and a dropped peek needs none either:
+    // its transcript is the daemon's and its turn goes on without the tab.
+    const kept = next.filter((conversation) => conversation.conversationId === focused || !transient(conversation));
     /* Every movement of the focus, with what asked for it and what it resolved to, see focusTrace.ts. The
      * FALLBACK is the line worth having: an id that names no tab in the list being written is not an error
      * here, it silently seats the focus on the last one instead, which on screen is indistinguishable from
@@ -91,6 +128,7 @@ export const setConversations = (next: readonly Conversation[], focus: string, r
             ...(kept.length === next.length ? {} : { swept: next.length - kept.length }),
         });
     }
+    detachSwept(next, kept);
     // Reassigned only when the list actually moved, so a plain tab switch doesn't re-fire every list watcher
     // (the snapshot write, the hydrate sweep) for a change that is only about the focus.
     if (kept.length !== conversations.value.length || kept.some((conversation, at) => conversation !== conversations.value[at])) {
@@ -189,6 +227,12 @@ export const restoreTab = (tab: StoredTab): Conversation => {
     // The posture isn't part of the snapshot (it is a per-task choice, not a preference), a restored tab
     // starts from the mode its tree calls for, same as a fresh one.
     conversation.modePick.value = startingMode(conversation.isolated.value);
+    /* A tab that was only being LOOKED at comes back that way. This snapshot is also the handoff between the
+     * docked chat and its own window (the note by the snapshot watch below), so a flag dropped here would pin
+     * the one tab the reader never asked to keep every time the panel moved, and dropping the tab instead would
+     * close the chat they are in the middle of reading. It is always the focused tab, so a restored peek is
+     * simply "still a look", swept by the first click that goes elsewhere. */
+    conversation.peek.value = tab.peek === true;
     restoreComposer(conversation, tab);
     conversation.title.value = tab.title ?? null;
     // Restore the harness before the model, the native/claude-code model lists diverge for codex/grok.
@@ -329,6 +373,26 @@ watch(
     { immediate: true },
 );
 
+/* WORDS IN A PEEKED CHAT KEEP IT, the promotion that matters most and the only one this store makes on the
+ * user's behalf: everything else that promotes is an act the chat performs on itself (Conversation.keep) or a
+ * press on the card. It watches the same flag the stamp above does, and for the same reason — something reaches
+ * a composer by five routes, and a promotion that missed one of them would be a message swept away with the tab
+ * that held it.
+ *
+ * The sweep spares an unsent tab regardless (`transient`); what this adds is taking the MARK off the card, so a
+ * chat stops calling itself temporary the moment it stops being so. */
+watch(
+    () => conversations.value.map((conversation) => `${conversation.conversationId}:${conversation.unsent.value ? 1 : 0}`).join(`,`),
+    () => {
+        for (const conversation of conversations.value) {
+            if (conversation.unsent.value) {
+                conversation.keep();
+            }
+        }
+    },
+    { immediate: true },
+);
+
 // The stringified getter touches every persisted field, so tab open/close/switch, keystrokes, uploads finishing
 // and session commits all write through automatically. Registered AFTER the stamp above so a draft's first
 // keystroke persists with its stamp in the same flush rather than one behind it.
@@ -403,6 +467,13 @@ export const openBeside = (conversationId: string): void => {
 // The claim alone, without the focus move: reveal's `beside` verb takes the column BEFORE its list write (its
 // note has why), and openBeside is this followed by the focus. Already on screen ⇒ nothing to claim.
 export const claimColumnBeside = (conversationId: string): void => {
+    /* ARRANGING THE SCREEN KEEPS EVERY CHAT ON IT: the arriving column, and the ones already up. A split is the
+     * gesture that says "these, together", so both halves stop being looks — and the second half is the one that
+     * matters, because the chat the reader is putting this one BESIDE is usually the card they just clicked,
+     * which is a peek, and it would otherwise be swept by the very focus move that opens the new column. */
+    for (const id of [conversationId, ...panes.value]) {
+        keepChat(id);
+    }
     if (!panes.value.includes(conversationId)) {
         const beside = panes.value.indexOf(activeId.value);
         panes.value = panes.value.toSpliced(beside === -1 ? panes.value.length : beside + 1, 0, conversationId);
@@ -451,6 +522,11 @@ export const setPanes = (ids: readonly string[]): void => {
     const wanted = [...new Set(ids)].filter(isOpen);
     if (wanted.length === 0) {
         return;
+    }
+    // Every chat in the set is being put on screen deliberately, so none of them is a look any more
+    // (claimColumnBeside's note): a Shift-run keeps its whole run.
+    for (const id of wanted) {
+        keepChat(id);
     }
     const kept = panes.value.filter((id) => wanted.includes(id));
     panes.value = [...kept, ...wanted.filter((id) => !kept.includes(id))];

@@ -80,7 +80,7 @@ const emit = defineEmits<{
     open: [id: string];
 }>();
 
-const { conversations, activeId, tabReveal, panes, openBeside, closePane, collapsePanes, setPanes } = useChat();
+const { conversations, activeId, tabReveal, panes, openBeside, closePane, collapsePanes, setPanes, keepChat } = useChat();
 const { agentById, fleet, loadArchived, rename } = useAgents();
 
 const { floats } = useChatFloating();
@@ -651,7 +651,13 @@ const tabMenuItems = computed<MenuItem[]>(() => {
     const others = othersOf(id);
     const toRight = toRightOf(id);
     const finished = finishedTabs();
+    const peeked = conversations.value.find((conversation) => conversation.conversationId === id)?.peek.value === true;
     return [
+        /* KEEP OPEN, above everything else and only on a card that would otherwise go: the discoverable half of
+         * the pin in the card's own corner, the way "Open Beside" is the discoverable half of Ctrl+click. It is
+         * the workspace editor's row for a preview tab, word for word (WorkspaceDesktop), because it is the same
+         * act on the same kind of tab. */
+        ...(peeked ? [{ label: `Keep Open`, icon: `pin` as IconName, command: () => keepChat(id) }, { separator: true }] : []),
         { label: `Rename`, icon: `pencil`, shortcut: commandShortcut(`chat.rename`), command: () => beginRename(id) },
         /* SHARE: the one row here that reaches outside this machine, so it sits apart from the pane and close
          * rows rather than among them, and it opens a dialog rather than acting on the press. Nothing about the
@@ -715,6 +721,14 @@ const openTabMenu = (id: string, event: Event): void => {
 const closeTab = (event: Event, id: string): void => {
     event.stopPropagation();
     emit(`close`, new Set([id]));
+};
+
+/* Keep a chat that is only being LOOKED at (Conversation.peek), the press the italic title is asking about.
+ * Local, unlike the board's version of it (summon.ts's `keep`): this rail only ever renders in the window
+ * drawing the chat, and every other window reads the mark off the published strip, so there is nothing to say. */
+const keepTab = (event: Event, id: string): void => {
+    event.stopPropagation();
+    keepChat(id);
 };
 </script>
 
@@ -840,6 +854,7 @@ const closeTab = (event: Event, id: string): void => {
                             :now="now"
                             tight
                             :selected="activeId === c.conversationId || showing(c.conversationId)"
+                            :peek="c.peek.value"
                             :attention="lane.key === 'attention'"
                             :snippet="agent === undefined ? undefined : snippetOf(agent)"
                             @click="onRowClick($event, c.conversationId)"
@@ -861,8 +876,23 @@ const closeTab = (event: Event, id: string): void => {
                                      glyph on hover (AgentCard's rename/archive pattern) rather than the
                                      status glyph's own, so nothing about the card moves as the pointer
                                      crosses it. -->
+                                <!-- A CARD BEING LOOKED AT OFFERS THE PIN WHERE EVERY OTHER CARD OFFERS ITS ×,
+                                     in the same slot so nothing moves as the pointer crosses it. On a tab that
+                                     leaves by itself the × is a press for what happens anyway; the gesture
+                                     worth putting under the pointer is the one that stops it going, and it is
+                                     the only visible teaching of a state whose other mark is a font style. -->
                                 <span
-                                    v-if="conversations.length > 1"
+                                    v-if="c.peek.value"
+                                    role="button"
+                                    aria-label="Keep this chat open"
+                                    v-tooltip.top="'Keep open, otherwise this chat closes when you open another'"
+                                    class="-my-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted opacity-0 transition hover:bg-overlay hover:text-content focus-visible:opacity-100 group-hover:opacity-100"
+                                    @click="keepTab($event, c.conversationId)"
+                                >
+                                    <Icon name="pin" class="text-2xs" />
+                                </span>
+                                <span
+                                    v-else-if="conversations.length > 1"
                                     role="button"
                                     aria-label="Close chat"
                                     class="-my-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted opacity-0 transition hover:bg-overlay hover:text-content focus-visible:opacity-100 group-hover:opacity-100"
