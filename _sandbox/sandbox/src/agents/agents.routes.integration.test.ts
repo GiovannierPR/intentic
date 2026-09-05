@@ -14,22 +14,15 @@ import { extensionProcessKey } from "../extensions/extension-processes.js";
 
 import { windowOf } from "../sessions/transcript-record.js";
 
-import {
-    clientFor,
-    codexConnectedProxy,
-    collect,
-    errorCode,
-    fakeHistory,
-    fakeServiceProcesses,
-    runAgentTurn,
-    services,
-    withTranslator,
-} from "../route-testing.js";
+import { clientFor, collect, errorCode } from "../route-client.testing.js";
+import { fakeHistory, fakeServiceProcesses } from "../route-fakes.testing.js";
+import { codexConnectedProxy, services, withTranslator } from "../route-services.testing.js";
+import { runAgentTurn } from "../route-turns.testing.js";
 
 /* The agents routes, driven over the daemon's HTTP surface exactly as the browser drives them.
  * Split out of app.integration.test.ts, which had grown to 116 tests across every route in the daemon:
  * one file that two agents working on unrelated features collided in every time. The fakes and the client
- * are shared (route-testing.ts); what lives here is what these routes do. */
+ * are shared (route-services.testing.ts and its siblings); what lives here is what these routes do. */
 
 test("an isolated turn runs in the conversation worktree, leads with the worktree frame, skips the main-tree snapshots, and registers the agent", async () => {
     let seen: { cwd?: string } | undefined;
@@ -255,7 +248,7 @@ test("agents.search matches titles and later lines, across the archive", async (
         from: 0,
         more: false,
     });
-    /* WHICH DIR, not how many reads. The fake derives `count` from `read` on purpose (route-testing), so the
+    /* WHICH DIR, not how many reads. The fake derives `count` from `read` on purpose (route-services.testing.ts), so the
      * number of store reads tracks the daemon's own bookkeeping — a turn reads its start index, and a settled one
      * reads it again to place any message steered into it (sessions/turn-transcript.ts). What must never drift is
      * the SCOPE: every one of them is the workspace root, because an isolated turn's namespace makes its worktree

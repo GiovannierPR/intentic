@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
 import { createApp } from "../../app.js";
 import type { Services } from "../../composition.js";
-import { services } from "../../route-testing.js";
+import { services } from "../../route-services.testing.js";
 import { testConfig } from "../../testing.js";
 import { workspaceExtensionsRoot } from "../../capabilities/extension-dirs.js";
 import { workspacePaths } from "../../workspace/workspace.js";
@@ -60,7 +60,7 @@ const writeExtension = async (root: string, name: string, server: string): Promi
     await writeFile(join(dir, "server.js"), server);
 };
 
-// The real supervisor over the route-testing services: the circular seam production composition solves with
+// The real supervisor over the route harness's `services`: the circular seam production composition solves with
 // a holder, solved here the same way. extensionsDir is emptied so the repo's own first-party extensions stay
 // out of the host under test.
 const harness = (root: string): { svc: Services; backend: ExtensionBackend } => {

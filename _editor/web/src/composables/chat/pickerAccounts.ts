@@ -22,7 +22,7 @@ import {
     planLimitBandTone,
     refusalFor,
 } from "./usageStatus";
-import { accountsOf, refreshConnections, subscriptionOnly } from "./useChat";
+import { accountsOf, refreshConnections, subscriptionOnly } from "./useChat-accounts";
 
 /* WHICH CREDENTIAL AND WHICH RUNTIME SERVE THE TURN, the derivation behind the model picker's footer, shared by
  * the two surfaces that ask it: the chat composer (bound to a conversation) and the shell's own picker opened by

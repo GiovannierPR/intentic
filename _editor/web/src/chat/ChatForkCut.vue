@@ -4,7 +4,9 @@ import type { MenuItem } from "primevue/menuitem";
 import { computed, ref } from "vue";
 import { useQueryClient } from "@tanstack/vue-query";
 import { invalidateWorkspace } from "../composables/workspace/useHistory";
-import { openAgentConversation, useChat, usePaneView } from "../composables/chat/useChat";
+import { useChat } from "../composables/chat/useChat";
+import { usePaneView } from "../composables/chat/useChat-view";
+import { openAgentConversation } from "../composables/chat/useChat-reveal";
 import { useAgents } from "../composables/agents/useAgents";
 import { errandOf } from "../composables/chat/errands";
 

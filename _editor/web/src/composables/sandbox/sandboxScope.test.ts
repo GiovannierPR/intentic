@@ -14,12 +14,10 @@ import { beforeEach, expect, test, vi } from "vitest";
 const calls: string[] = [];
 const record = (name: string) => (): void => void calls.push(name);
 
-vi.mock(`../agents/useAgents`, () => ({
-    loadArchived: record(`loadArchived`),
-    resetAgents: record(`resetAgents`),
-    resetArchive: record(`resetArchive`),
-}));
-vi.mock(`../chat/useChat`, () => ({ loadAccountStatus: record(`loadAccountStatus`), resetChat: record(`resetChat`) }));
+vi.mock(`../agents/useAgents`, () => ({ resetAgents: record(`resetAgents`) }));
+vi.mock(`../agents/useAgents-registry`, () => ({ loadArchived: record(`loadArchived`), resetArchive: record(`resetArchive`) }));
+vi.mock(`../chat/useChat`, () => ({ resetChat: record(`resetChat`) }));
+vi.mock(`../chat/useChat-accounts`, () => ({ loadAccountStatus: record(`loadAccountStatus`) }));
 vi.mock(`../workspace/useEditBuffers`, () => ({ resetEditBuffers: record(`resetEditBuffers`) }));
 vi.mock(`../usePresence`, () => ({ resetPresence: record(`resetPresence`) }));
 vi.mock(`../workspace/usePushFlow`, () => ({ resetPushFlow: record(`resetPushFlow`) }));

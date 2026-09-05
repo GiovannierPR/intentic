@@ -1,7 +1,8 @@
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { defaultGit, type GitRunner } from "@intentic/scaffold";
-import { headSha, rebaseOnto, rebaseSince } from "../git/changes.js";
+import { headSha } from "../git/changes.js";
+import { rebaseOnto, rebaseSince } from "../git/changes-commits.js";
 import { AGENT_GIT_AUTHOR } from "../git/git.js";
 import { commitWorktreeRemainder } from "../git/root-repo.js";
 import type { AgentWorktrees } from "./worktrees.js";
@@ -23,7 +24,7 @@ import type { AgentWorktrees } from "./worktrees.js";
  * WHY THIS IS SAFE TO DO WITHOUT ASKING, three properties, and dropping any one of them would make it a
  * decision the user has to be in the room for:
  *
- *   · IT ABORTS. Both attempts below are runOrAbort (git/changes.ts): a rebase that hits a conflict is rolled
+ *   · IT ABORTS. Both attempts below are runOrAbort (git/changes-commits.ts): a rebase that hits a conflict is rolled
  *     back and the worktree is byte-identical again, which is also what makes it safe to stack the second one
  *     on the first. A branch that cannot be moved cleanly simply is not moved, and the turn runs exactly as it
  *     does today, the existing land-time conflict flow is still there behind it. Deliberately NOT resolved

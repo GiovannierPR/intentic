@@ -2,7 +2,7 @@ import { access } from "node:fs/promises";
 import { ConversationIdSchema } from "@intentic/sandbox-contract";
 import { ORPCError } from "@orpc/server";
 import { isIsolated, type PersistedAgent } from "../agents/agents-store.js";
-import { isControlPlanePath, realWithin, resolveWithin } from "./workspace-files.js";
+import { isControlPlanePath, realWithin, resolveWithin } from "./workspace-files-paths.js";
 
 /* WHOSE COPY OF THE WORKSPACE A READ MEANS, resolved once, here, for every route that serves a file.
  *

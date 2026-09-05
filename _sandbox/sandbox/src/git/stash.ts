@@ -1,6 +1,6 @@
 import { defaultGit, type GitRunner } from "@intentic/scaffold";
 import type { GitChange, StashEntry } from "@intentic/sandbox-contract";
-import { parseNameStatusZ, parseNumstatZ } from "./changes.js";
+import { parseNameStatusZ, parseNumstatZ } from "./changes-porcelain.js";
 
 /* THE STASH, work set aside without committing it.
  *

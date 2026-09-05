@@ -12,7 +12,8 @@ import { VueQueryPlugin } from "@tanstack/vue-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { type App, createApp, h, nextTick } from "vue";
 import { resetAgents } from "../composables/agents/useAgents";
-import { draftConversation, resetChat, reveal, useChat } from "../composables/chat/useChat";
+import { resetChat, useChat } from "../composables/chat/useChat";
+import { draftConversation, reveal } from "../composables/chat/useChat-reveal";
 // The store half of "New agent", as the summons applies it (agentActions.startAgent): the fixture these
 // suites open extra tabs with.
 const newChat = () => {

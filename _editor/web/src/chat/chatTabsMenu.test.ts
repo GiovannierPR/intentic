@@ -20,7 +20,8 @@ import { createApp, h, nextTick } from "vue";
 import ChatTabs from "./ChatTabs.vue";
 import { installUi } from "@intentic/ui";
 import { VueQueryPlugin } from "@tanstack/vue-query";
-import { draftConversation, resetChat, reveal, useChat } from "../composables/chat/useChat";
+import { resetChat, useChat } from "../composables/chat/useChat";
+import { draftConversation, reveal } from "../composables/chat/useChat-reveal";
 // The store half of "New agent", as the summons applies it (agentActions.startAgent): the fixture these
 // suites open extra tabs with.
 const newChat = () => {

@@ -10,13 +10,15 @@ import { createApp } from "../app.js";
 
 import type { TranscriptRow } from "@intentic/sandbox-contract";
 import type { AgentWorktrees } from "../agents/worktrees.js";
-import { attachedRows, clientFor, codexConnectedProxy, collect, errorCode, runAgentTurn, services, withTranslator } from "../route-testing.js";
+import { clientFor, collect, errorCode } from "../route-client.testing.js";
+import { codexConnectedProxy, services, withTranslator } from "../route-services.testing.js";
+import { attachedRows, runAgentTurn } from "../route-turns.testing.js";
 import { createRequest } from "./agent-requests.js";
 
 /* The agent routes, driven over the daemon's HTTP surface exactly as the browser drives them.
  * Split out of app.integration.test.ts, which had grown to 116 tests across every route in the daemon:
  * one file that two agents working on unrelated features collided in every time. The fakes and the client
- * are shared (route-testing.ts); what lives here is what these routes do. */
+ * are shared (route-services.testing.ts and its siblings); what lives here is what these routes do. */
 
 /* A WORKTREE SEAM OVER REAL GIT, for the one test that is about git.
  *
@@ -410,7 +412,7 @@ test("a steer taken mid-turn lands in the run's frames, and in the record, betwe
     const recorded: TranscriptRow[] = [];
     // Spread the harness's own transcripts fake rather than replacing it: the override is shallow, and a
     // transcripts object missing the members the TURN path reads fails the run with a bare "Internal server
-    // error" before the agent below is ever called (see route-testing's note on that fake).
+    // error" before the agent below is ever called (see route-services.testing.ts's note on that fake).
     const { transcripts } = services({});
     const client = clientFor(
         createApp(

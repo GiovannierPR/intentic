@@ -17,9 +17,11 @@ import type { AgentSummary } from "@intentic/sandbox-contract";
 import { VueQueryPlugin } from "@tanstack/vue-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { type App, createApp, h, nextTick } from "vue";
-import { openAgentConversation, resetChat, useChat } from "../composables/chat/useChat";
+import { resetChat, useChat } from "../composables/chat/useChat";
+import { openAgentConversation } from "../composables/chat/useChat-reveal";
 import { queryClient } from "../composables/queryPersistence";
-import { resetAgents, setAgents } from "../composables/agents/useAgents";
+import { resetAgents } from "../composables/agents/useAgents";
+import { setAgents } from "../composables/agents/useAgents-registry";
 import { router } from "../router";
 import AgentsView from "./AgentsView.vue";
 

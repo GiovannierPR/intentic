@@ -22,8 +22,8 @@ import type { AgentAdapter } from "./adapter.js";
  * WHAT DELIBERATELY STAYS ENUMERATED, and why each:
  *   - the ROUTER's per-provider mounts: implement(sandboxContract) type-checks each mount against the contract,
  *     and that forcing function (a contract without an implementation does not compile) is worth one line.
- *   - route-testing's doubles: a test double is a claim about behaviour, and deriving claims would test the
- *     derivation.
+ *   - the route harness's doubles (route-services.testing.ts): a test double is a claim about behaviour, and
+ *     deriving claims would test the derivation.
  *   - the web app's surfaces: a different program on the other side of the wire; the contract is its registry.
  *
  * The methods take the full Services on purpose. A provider arm genuinely reads across the daemon (its own

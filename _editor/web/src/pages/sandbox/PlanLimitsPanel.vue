@@ -4,7 +4,7 @@ import { RowGroup, RowNote, SearchBar, ui } from "@intentic/ui";
 import { computed, onMounted, ref } from "vue";
 import ProviderLogo from "../../chat/ProviderLogo.vue";
 import { accountsLoaded, providerAccounts, translatorAccounts } from "../../composables/chat/providerAccounts";
-import { refreshConnections } from "../../composables/chat/useChat";
+import { refreshConnections } from "../../composables/chat/useChat-accounts";
 import { useSandboxOutline } from "../../composables/sandbox/useSandboxOutline";
 import {
     formatAge,

@@ -2,8 +2,11 @@ import { upgradeWebSocket } from "@hono/node-server";
 import { type NeedsAction, RunnerHelloSchema, type RunnerSummary } from "@intentic/sandbox-contract";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/websocket";
+import type { Context } from "hono";
+import { ownerDenied } from "../auth/owner-gates.js";
 import type { Services } from "../composition.js";
-import { parseDefinitionToml, settingsDefinition, settingsDrift } from "../portability/definition.js";
+import type { AppEnv } from "../context.js";
+import { emitDefinitionToml, parseDefinitionToml, settingsDefinition, settingsDrift } from "../portability/definition.js";
 import type { RunnerClient } from "./runner-hub.js";
 import { runnerParity } from "./runner-parity.js";
 
@@ -141,3 +144,63 @@ export const runnerSummaries = async (services: Services): Promise<RunnerSummary
         );
     });
 };
+
+/* The owner's side of this sandbox's RUNNERS (docs/remote-runners-plan.md at the workspace root): the hosts
+ * block retold for a container this sandbox provisions on another machine. Pairing is owner-minted and bound
+ * to one runner id; enrollment is authorized by the pairing alone (the runner has no Google identity, only
+ * the env `ic runner up` wrote); the socket authenticates in its first frame. */
+export const createRunnerRoutes = (services: Services) => ({
+    /** POST /system/runners/pair */
+    pair: async (c: Context<AppEnv>): Promise<Response> => {
+        const denied = await ownerDenied(services, c);
+        if (denied !== undefined) {
+            return denied;
+        }
+        const id = c.req.query("id") ?? "";
+        if (id === "") {
+            return c.json({ error: "name the runner: /system/runners/pair?id=<name>" }, 400);
+        }
+        return c.json(services.runners.mintPairing(id));
+    },
+    /** POST /system/runners/enroll */
+    enroll: async (c: Context<AppEnv>): Promise<Response> => {
+        const enrolled = await services.runners.enroll(c.req.header("x-intentic-pair") ?? "");
+        if (enrolled === undefined) {
+            return c.json({ error: "pairing expired or already used, mint a fresh one from the parent sandbox." }, 401);
+        }
+        return c.json(enrolled);
+    },
+    /** GET /system/runners */
+    list: async (c: Context<AppEnv>): Promise<Response> => c.json({ runners: await runnerSummaries(services) }),
+    /** DELETE /system/runners/:id */
+    revoke: async (c: Context<AppEnv>): Promise<Response> => {
+        const denied = await ownerDenied(services, c);
+        if (denied !== undefined) {
+            return denied;
+        }
+        const id = c.req.param("id") ?? "";
+        services.runnerHub.disconnect(id, "this runner's access was revoked");
+        return (await services.runners.revoke(id)) ? c.json({ ok: true }) : c.json({ error: "no such runner" }, 404);
+    },
+    /* POST /system/runners/:id/definition/sync. Push this sandbox's settings onto one runner, the fix for the
+     * drift lines its summary carries: the settings-only definition travels down the runner's own live link
+     * and REPLACES the runner's settings (the runner contract says why replace). Owner-only like every other
+     * runner mutation, and refused rather than queued when the runner is offline — a deferred settings push
+     * landing hours later, after the owner changed their mind again, is drift manufactured by the fix. */
+    definitionSync: async (c: Context<AppEnv>): Promise<Response> => {
+        const denied = await ownerDenied(services, c);
+        if (denied !== undefined) {
+            return denied;
+        }
+        const id = c.req.param("id") ?? "";
+        const client = services.runnerHub.client(id);
+        if (client === undefined) {
+            return c.json({ error: "that runner is offline — wake its machine, then sync again." }, 409);
+        }
+        const toml = emitDefinitionToml(await settingsDefinition(services));
+        const report = await client.applyDefinition({ toml });
+        // The runner now runs exactly what was sent; adopting it here clears the drift without a reconnect.
+        services.runnerHub.adoptDefinition(id, toml);
+        return c.json(report);
+    },
+});

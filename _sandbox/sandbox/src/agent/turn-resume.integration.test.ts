@@ -20,7 +20,7 @@ import type { Services } from "../composition.js";
 import { unstubbed } from "@intentic/testing";
 import { SETTLES } from "@intentic/testing/vitest";
 import type { TranscriptAgent } from "../sessions/agent-transcript.js";
-import { testMintedSlices } from "../route-testing.js";
+import { testMintedSlices } from "../route-services.testing.js";
 import { fileTranscriptRecord } from "../sessions/transcript-record.js";
 import { fileSandboxSettingsStore } from "../settings/settings-store.js";
 import { resolveRequest } from "./agent-requests.js";

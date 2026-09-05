@@ -1,6 +1,7 @@
 import { defaultGit, type GitRunner } from "@intentic/scaffold";
 import type { Logger } from "pino";
-import { headSha, materializedPaths } from "../git/changes.js";
+import { headSha } from "../git/changes.js";
+import { materializedPaths } from "../git/changes-porcelain.js";
 import { anchorOf } from "./agent-changes.js";
 import type { IsolatedAgent } from "./agents-store.js";
 import { type ExpiryTracker, pathWeight } from "./expiry.js";

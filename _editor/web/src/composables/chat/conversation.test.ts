@@ -59,14 +59,14 @@ const sandboxRequestMock = vi.mocked(sandboxRequest);
 // Every path this conversation addressed at a given box, in order.
 const pathsAimedAt = (at: string | undefined): string[] => reachSpy.mock.calls.filter(([box]) => box === at).map(([, path]) => path);
 
-// A model-invalid error dynamically imports useChat to reload the provider's live catalog; stub it (and spy) so
-// the test doesn't pull in the whole useChat module (router/sandbox side effects). vi.hoisted so the spy exists
+// A model-invalid error dynamically imports useChat-catalog to reload the provider's live catalog; stub it (and spy)
+// so the test doesn't pull in the whole chat store (router/sandbox side effects). vi.hoisted so the spy exists
 // when the hoisted vi.mock factory runs.
 const { loadProviderModelsMock, loadTrialStatusMock } = vi.hoisted(() => ({
     loadProviderModelsMock: vi.fn(async () => {}),
     loadTrialStatusMock: vi.fn(async () => {}),
 }));
-vi.mock("./useChat", () => ({ loadProviderModels: loadProviderModelsMock, loadTrialStatus: loadTrialStatusMock }));
+vi.mock("./useChat-catalog", () => ({ loadProviderModels: loadProviderModelsMock, loadTrialStatus: loadTrialStatusMock }));
 
 // turnDefaults is a module singleton; reset the per-provider memory so tests stay order-independent. Grok's
 // default is loaded live (empty until then); a fresh test env has no loaded catalog.

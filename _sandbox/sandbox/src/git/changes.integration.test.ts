@@ -6,31 +6,20 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { defaultGit, type GitRunner } from "@intentic/scaffold";
 import { afterEach, expect, test } from "vitest";
+import { changedFiles, changesAgainstBase, changesBetweenRefs, dirtyPathsAcross } from "./changes.js";
 import {
-    changedFiles,
-    changesAgainstBase,
-    changesBetweenRefs,
     checkoutRef,
     cherryPick,
     commitChanges,
-    commitFileDiff,
-    commitIndex,
     commitLog,
-    conflictedFileDiff,
     createBranchAt,
     createTagAt,
-    dirtyPathsAcross,
-    discardPaths,
     dropCommit,
-    refFileDiff,
     resetTo,
     revertCommit,
-    stagePaths,
-    stagedFileDiff,
-    unstagePaths,
-    unstagedFileDiff,
-    workingFileDiff,
-} from "./changes.js";
+} from "./changes-commits.js";
+import { commitFileDiff, conflictedFileDiff, refFileDiff, stagedFileDiff, unstagedFileDiff, workingFileDiff } from "./changes-diff.js";
+import { commitIndex, discardPaths, stagePaths, unstagePaths } from "./changes-index.js";
 
 const exec = promisify(execFile);
 const sh = async (cwd: string, ...args: string[]): Promise<string> => (await exec("git", ["-C", cwd, ...args])).stdout.trim();

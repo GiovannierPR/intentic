@@ -2,7 +2,7 @@
 import { Button } from "@intentic/ui";
 import { ref } from "vue";
 import { requestModelPick } from "../composables/chat/hostModelPicker";
-import { usePaneView } from "../composables/chat/useChat";
+import { usePaneView } from "../composables/chat/useChat-view";
 
 /* THE DOOR TO THE MODEL LIST, drawn by whichever strip has taken the composer's place.
  *

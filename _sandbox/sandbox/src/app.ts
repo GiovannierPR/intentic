@@ -1,90 +1,61 @@
-import { join } from "node:path";
 import {
-    ArrivalApplySchema,
-    ArrivalScanSchema,
-    EngineChannelInputSchema,
-    EngineRevertInputSchema,
-    EngineUpdateInputSchema,
-    type EnrollHostInput,
-    EnrollHostInputSchema,
-    EnvironmentRuntimeDecisionSchema,
-    type GrantedRole,
-    GrantedRoleSchema,
-    DeviceReportSchema,
     REQUEST_ID_HEADER,
     roleAtLeast,
     runnerTranslatorPath,
-    WorkspacePublishSchema,
 } from "@intentic/sandbox-contract";
 import { sandboxIdFromToken } from "@intentic/sandbox-contract/tunnel-ids";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
 import { ORPCError } from "@orpc/server";
-import { type Context, Hono } from "hono";
+import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
-import { authorizeMaintainer, bearerFrom, ForbiddenError, tokenEquals } from "./auth/auth.js";
-import { CONTROL_SCOPES } from "./auth/control-tokens.js";
+import { bearerFrom, ForbiddenError } from "./auth/auth.js";
+import { createAccessRoutes } from "./auth/access.routes.js";
+import { createControlTokenRoutes } from "./auth/control-tokens.routes.js";
+import { createMembersRoutes } from "./auth/members.routes.js";
 import { routeFloor } from "./auth/role-floor.js";
 import { grantsOf } from "./auth/grants.js";
-import { streamAgent } from "./agent/agent.routes.js";
-import { fireAutomation, PAYLOAD_MAX } from "./automations/scheduler.js";
+import { createAutomationFireRoute } from "./automations/fire.routes.js";
 import { createCapabilityAskRoutes } from "./capabilities/ask.routes.js";
-import { extensionDir, extensionRead } from "./capabilities/extension-dirs.js";
-import { installedExtensions } from "./extensions/installed-extensions.js";
 import type { Services } from "./composition.js";
 import { type AppEnv, buildOrpcContext } from "./context.js";
 import { createDiffRawRoute } from "./git/diff-raw.js";
 import { createSpeechRoute } from "./speech/speech.routes.js";
-import { enrollHost } from "./inventory/enroll-host.js";
+import { createEnrollRoute } from "./inventory/enroll.routes.js";
 import { createRouter } from "./router.js";
-import {
-    enrollSyncKey,
-    isKeyEnrolled,
-    isValidAuthorizedKey,
-    deviceReports,
-    recordDeviceReport,
-    revokeEnrollmentByMachine,
-    revokeEnrollmentByToken,
-    type SyncMode,
-    verifySyncToken,
-} from "./platform/sync.js";
+import { verifySyncToken } from "./platform/sync.js";
+import { createSyncRoutes } from "./platform/sync.routes.js";
 import { createSyncSshRoute } from "./platform/sync-ssh.js";
-import { soleLiveConversation, turnRunOf } from "./agent/turn-runs.js";
-import { relayServiceCatalog, relayServiceRun, relayServiceWant } from "./platform/pool-services.js";
-import { gatedServiceRun } from "./platform/service-offer.js";
+import { createPoolRoutes } from "./platform/pool.routes.js";
 import { createWalletRoutes } from "./wallet/wallet.routes.js";
 import { createFleetRoutes } from "./agents/fleet.routes.js";
 import { createChildrenRoutes } from "./children/children.routes.js";
-import { readEnvironmentContents } from "./environment/contents.js";
-import { opt } from "./agent/opt.js";
-import { enginesView, revertEngine, setChannel, updateEngine } from "./engines/engines.js";
-import { approveEnvironment, decideRuntimeInstall, readEnvironment, rejectEnvironment } from "./environment/environment.js";
-import { clearVersionCache } from "./environment/version-probe.js";
-import { ExportBusyError, isReadyExport, listExports, openExport, removeExport, startExport } from "./portability/exports.js";
-import { createDefinitions } from "./portability/apply-definition.js";
-import { DefinitionFormatError, emitDefinitionToml, settingsDefinition } from "./portability/definition.js";
-import { publishWorkspace, workspaceRemote, WorkspaceRemoteError } from "./portability/workspace-repo.js";
-import { createArrivals } from "./portability/arrival.js";
-import { ArrivalFormatError, ArrivalStaleError } from "./arrival-error.js";
+import { createEnvironmentRoutes } from "./environment/environment.routes.js";
+import { createEnginesRoutes } from "./engines/engines.routes.js";
+import { createBundleRoutes } from "./portability/bundle.routes.js";
+import { createDefinitionRoutes } from "./portability/definition.routes.js";
+import { createArrivalRoutes } from "./portability/arrival.routes.js";
 import { createCiWebhookRoute } from "./ci/webhook.routes.js";
+import { createBackendProxyRoute } from "./extensions/backend/backend-proxy.routes.js";
+import { createExtensionBundleRoute } from "./extensions/extension-bundle.routes.js";
 import { createListenerRoutes } from "./extensions/listener.routes.js";
 import { createBrowserProfileRoute } from "./browser/browser-profile.js";
-import { createHostConnectRoute, createHostMcpRoute, hostSummaries } from "./hosts/host.routes.js";
+import { createHostConnectRoute, createHostMcpRoute, createHostRoutes } from "./hosts/host.routes.js";
+import { createDevicesRoute } from "./hosts/devices.routes.js";
 import {
     createWebExtConnectRoute,
     createWebExtLendRoute,
     createWebExtMcpRoute,
+    createWebExtRoutes,
     createWebExtSessionRoute,
-    webextSummaries,
 } from "./webext/webext.routes.js";
-import { createRunnerConnectRoute, runnerSummaries } from "./runners/runner.routes.js";
+import { createRunnerConnectRoute, createRunnerRoutes } from "./runners/runner.routes.js";
 import {
     createRunnerCredentialRefreshRoute,
     createRunnerCredentialsRoute,
     createRunnerTranslatorProxyRoute,
 } from "./runners/runner-credentials.routes.js";
 import { createRunnerGitRefsRoute, createRunnerGitRpcRoute } from "./runners/runner-git.routes.js";
-import { devices } from "./hosts/device-reports.js";
 import { createBrowserViewRoute } from "./browser/browser-view.js";
 import { createTerminalRoute } from "./terminal/terminal.js";
 import { createWebchatRoutes } from "./webchat/webchat.routes.js";
@@ -92,53 +63,9 @@ import { createWidgetRoute } from "./webchat/webchat-widget.js";
 import { createIntakeRoutes } from "./issues/intake.routes.js";
 import { createSdkRoute } from "./issues/issue-sdk.js";
 import { createGateRoute } from "./workflows/gate.routes.js";
-import { extractTarToWorkspace, PathEscapeError } from "./workspace/workspace-archive.js";
-import { computeUploadSkip, type UploadManifestEntry } from "./workspace/workspace-diff.js";
-import {
-    contentTypeForPath,
-    isControlPlanePath,
-    MAX_RAW_BYTES,
-    MAX_UPLOAD_BYTES,
-    openWorkspaceFileRange,
-    parseByteRange,
-    resolveWithin,
-    sha256Text,
-    UploadTooLargeError,
-} from "./workspace/workspace-files.js";
-import { scopedTarget } from "./workspace/workspace-scope.js";
+import { createWorkspaceBytesRoutes } from "./workspace/workspace-bytes.routes.js";
 import { reachPosture } from "./platform/ingress-tunnel.js";
 import { profileTraits } from "./platform/profile.js";
-
-/* Headers about ONE transport connection cannot cross the extension-backend proxy. The child host speaks
- * HTTP/1.1, whose server adds `Connection: keep-alive` and `Keep-Alive` to every answer; the browser-facing
- * loopback listener speaks HTTP/2, where Node refuses those fields and aborts the response before its body can
- * reach the browser. `Connection` may name additional hop-by-hop fields, so discover those before removing the
- * standard set. Apply the same boundary in both directions: HTTP/1 fallback clients can send them too. */
-const HOP_BY_HOP_HEADERS = [
-    "connection",
-    "keep-alive",
-    "proxy-authenticate",
-    "proxy-authorization",
-    "proxy-connection",
-    "te",
-    "trailer",
-    "transfer-encoding",
-    "upgrade",
-] as const;
-
-const endToEndHeaders = (source: Headers): Headers => {
-    const headers = new Headers(source);
-    for (const token of headers.get("connection")?.split(",") ?? []) {
-        const name = token.trim();
-        if (name !== "") {
-            headers.delete(name);
-        }
-    }
-    for (const name of HOP_BY_HOP_HEADERS) {
-        headers.delete(name);
-    }
-    return headers;
-};
 
 // Only genuine server faults (5xx) are logged; expected ORPCErrors (NOT_FOUND/BAD_REQUEST/…) are the routes'
 // normal control flow and would be noise.
@@ -228,23 +155,6 @@ const runnerPublicPath = (path: string): boolean =>
     path === "/system/runners/credentials/refresh" ||
     path.startsWith("/system/runners/translator/") ||
     runnerGitPath.test(path);
-
-// The lowercased email in a member-management request body, or undefined when absent/malformed.
-const memberEmail = async (c: Context): Promise<string | undefined> => {
-    const body = (await c.req.json().catch(() => undefined)) as { email?: unknown } | undefined;
-    return typeof body?.email === "string" ? body.email.toLowerCase() : undefined;
-};
-
-// A grant request's email + role, or undefined when either is absent/malformed. The role is required, a
-// grant IS a role decision, and a default picked here would be a policy nobody chose.
-const memberGrant = async (c: Context): Promise<{ email: string; role: GrantedRole } | undefined> => {
-    const body = (await c.req.json().catch(() => undefined)) as { email?: unknown; role?: unknown } | undefined;
-    const role = GrantedRoleSchema.safeParse(body?.role);
-    if (typeof body?.email !== "string" || !role.success) {
-        return undefined;
-    }
-    return { email: body.email.toLowerCase(), role: role.data };
-};
 
 /* The routes that answer BEFORE the boot chain converges (services.boot, driven by main.ts).
  *
@@ -570,247 +480,20 @@ export const createApp = (services: Services): Hono<AppEnv> => {
     // neighbours: the JSON contract has no business carrying audio (see speech/speech.routes.ts).
     app.route("/", createSpeechRoute(services));
 
-    /* The scoped read, in the shape these two byte routes can answer in. `scopedTarget` is the one resolver
-     * (workspace/workspace-scope.ts) and it signals through ORPCError, because every other caller is an oRPC
-     * handler; here the throw is translated once rather than at each of the two call sites, and an unexpected
-     * error still propagates as an error rather than being flattened into a 404. */
-    const scopedFileTarget = async (
-        path: string,
-        agent: string | undefined,
-    ): Promise<{ target: string } | { error: string; status: 400 | 404 | 412 }> => {
-        try {
-            return { target: (await scopedTarget(services.workspaceScope, agent, path)).target };
-        } catch (error) {
-            if (!(error instanceof ORPCError)) {
-                throw error;
-            }
-            if (error.code === "BAD_REQUEST") {
-                return { error: error.message, status: 400 };
-            }
-            if (error.code === "PRECONDITION_FAILED") {
-                return { error: error.message, status: 412 };
-            }
-            return { error: error.message, status: 404 };
-        }
-    };
+    /* The workspace's byte routes (workspace/workspace-bytes.routes.ts): the raw file read, the ranged media
+     * read a <video> talks to, and the three upload doors. Off oRPC because their bodies are streamed bytes,
+     * and registered before the catch-all for the same reason as /health. */
+    const workspaceBytes = createWorkspaceBytesRoutes(services);
+    app.get("/workspace/raw", workspaceBytes.raw);
+    app.get("/workspace/media", workspaceBytes.media);
+    app.post("/workspace/upload", workspaceBytes.upload);
+    app.post("/workspace/upload-diff", workspaceBytes.uploadDiff);
+    app.post("/workspace/upload-archive", workspaceBytes.uploadArchive);
 
-    // Raw bytes for any file under /work, with a Content-Type by extension, the browser previews images/PDF
-    // here (the text route utf8-decodes and would corrupt them). Same guards/order as workspace.file: 400 on
-    // escape, 404 on missing, 413 on oversize.
-    app.get("/workspace/raw", async (c) => {
-        const path = c.req.query("path");
-        if (path === undefined) {
-            return c.json({ error: "invalid path" }, 400);
-        }
-        // Whose copy, and the escape + control-plane guards with it (scopedTarget → containedIn). Shared with
-        // the oRPC file route so an image in a conversation's checkout previews from the same tree its text
-        // reads from; the guards throw ORPCError, which these byte routes translate to their own JSON shape.
-        const scoped = await scopedFileTarget(path, c.req.query("agent"));
-        if ("error" in scoped) {
-            return c.json({ error: scoped.error }, scoped.status);
-        }
-        const target = scoped.target;
-        const size = await services.files.size(target);
-        if (size === undefined) {
-            return c.json({ error: "not found" }, 404);
-        }
-        if (size > MAX_RAW_BYTES) {
-            return c.json({ error: "file too large" }, 413);
-        }
-        const bytes = await services.files.readBytes(target);
-        if (bytes === undefined) {
-            return c.json({ error: "not found" }, 404);
-        }
-        // Wrap in a fresh Uint8Array so the body type is exactly Uint8Array<ArrayBuffer> (a Buffer's backing is
-        // ArrayBufferLike, which Hono's body type rejects); bounded by MAX_RAW_BYTES, so the copy is cheap.
-        return c.body(new Uint8Array(bytes), 200, { "Content-Type": contentTypeForPath(target), "Content-Length": String(bytes.byteLength) });
-    });
-
-    /* THE ROUTE A <video> TALKS TO ITSELF: /workspace/raw's sibling for timed media, and separate from it
-     * because a media element is not a caller that wants a Blob.
-     *
-     * /workspace/raw answers one whole file into memory, and its 25 MiB ceiling exists precisely because it
-     * does. Under that contract a recording is either refused outright or must download in full before its
-     * first frame paints, and a seek to 40:00 can only wait for the 39 minutes in front of it. None of that is
-     * a size problem: it is the shape of the answer. So this route answers a RANGE, streamed off disk, the
-     * element asks for the header, then the index, then whatever window the user just dragged to, and each one
-     * costs a seek and a 64 KiB chunk instead of the file. There is no byte cap here for the same reason: what
-     * MAX_RAW_BYTES protects is the daemon's heap, and nothing is ever held.
-     *
-     * The credential is the other difference. Every other route on this daemon takes a bearer, and a media
-     * element cannot send one, so this one takes a ticket from the query string, minted over the ordinary
-     * authenticated contract (workspace.mediaTicket) and bound to a single path. See auth/media-tickets.ts for
-     * why that binding is what makes a longer-lived, replayable credential an acceptable trade here.
-     *
-     * Loopback mode has no `auth` and therefore no ticket to check, exactly like the WebSocket upgrades. */
-    app.get("/workspace/media", async (c) => {
-        const path = c.req.query("path");
-        if (path === undefined) {
-            return c.json({ error: "invalid path" }, 400);
-        }
-        const scoped = await scopedFileTarget(path, c.req.query("agent"));
-        if ("error" in scoped) {
-            return c.json({ error: scoped.error }, scoped.status);
-        }
-        const target = scoped.target;
-        // The ticket is checked against the RESOLVED file, which is what makes the binding hold under a scope:
-        // one minted for a conversation's copy of `demo.mp4` cannot be replayed for the shared tree's.
-        if (services.auth !== undefined && !services.mediaTickets.valid(c.req.query("ticket") ?? "", target)) {
-            return c.json({ error: "unauthorized" }, 401);
-        }
-        const size = await services.files.size(target);
-        if (size === undefined) {
-            return c.json({ error: "not found" }, 404);
-        }
-        const range = parseByteRange(c.req.header("range"), size);
-        if (range === "unsatisfiable") {
-            // 416 must state the real size, or the element retries the same doomed window forever.
-            return c.body(null, 416, { "Content-Range": `bytes */${size}` });
-        }
-        const length = size === 0 ? 0 : range.end - range.start + 1;
-        const headers: Record<string, string> = {
-            "Content-Type": contentTypeForPath(target),
-            "Content-Length": String(length),
-            // Without this the element never issues a Range at all, it downloads linearly and the scrubber
-            // can only reach what has already arrived.
-            "Accept-Ranges": "bytes",
-            // The agent rewrites files under the reader's feet; a cached window of a file that has since
-            // changed is a corrupt stream, not a stale one.
-            "Cache-Control": "no-store",
-        };
-        if (range.partial) {
-            headers["Content-Range"] = `bytes ${range.start}-${range.end}/${size}`;
-        }
-        /* SAVE THIS RATHER THAN PLAY IT. The browser's own `download` attribute is no use here, the daemon is
-         * a different origin, where it is ignored and the link merely navigates, so the intent has to come
-         * from the server. Which also makes this the download path for a file /workspace/raw would refuse:
-         * nothing is buffered, so size stops mattering. RFC 5987 encoding, because a workspace filename is
-         * whatever the user called it. */
-        if (c.req.query("download") !== undefined) {
-            headers["Content-Disposition"] = `attachment; filename*=UTF-8''${encodeURIComponent(path.slice(path.lastIndexOf("/") + 1))}`;
-        }
-        // An empty file has no range to open, createReadStream(start: 0, end: -1) would throw.
-        if (length === 0) {
-            return c.body(null, 200, headers);
-        }
-        return c.body(openWorkspaceFileRange(target, range.start, range.end), range.partial ? 206 : 200, headers);
-    });
-
-    // Write one file under /work, the drag-drop upload AND the editor's text save both post here (bytes / utf8
-    // body are the same to persist), so writes stay off oRPC like the raw read above. The body streams straight to
-    // disk (no full-buffer), so multi-GB uploads stay flat in memory; parent dirs are auto-created, so a nested
-    // dropped-folder path materializes its tree. Guards: 400 on escape, 413 on oversize (Content-Length first,
-    // then the running byte count as it streams).
-    app.post("/workspace/upload", async (c) => {
-        const path = c.req.query("path");
-        const target = path === undefined ? undefined : resolveWithin(services.workspace.root, path);
-        if (target === undefined) {
-            return c.json({ error: "invalid path" }, 400);
-        }
-        // Same floor as the raw read: the sandbox's private state is not writable through the generic upload,
-        // or any member could hand themselves the sandbox by posting a new owner.json.
-        if (isControlPlanePath(services.workspace.root, target)) {
-            return c.json({ error: "not found" }, 404);
-        }
-        // A big file arrives as sequential parts (the browser keeps each request under Cloudflare's ~100 MB edge
-        // body cap); ?offset says where this part lands, and the write goes in place instead of truncating.
-        const offset = Number(c.req.query("offset") ?? 0);
-        if (!Number.isInteger(offset) || offset < 0) {
-            return c.json({ error: "invalid offset" }, 400);
-        }
-        const declared = Number(c.req.header("content-length"));
-        if (Number.isFinite(declared) && offset + declared > MAX_UPLOAD_BYTES) {
-            return c.json({ error: "file too large" }, 413);
-        }
-        // The editor's guarded save: `x-intentic-base-hash` carries the sha256 of the text the browser last knew
-        // on disk (its baseline), and the write is refused when the file no longer matches, an agent or terminal
-        // write landed since that read, and a blind overwrite would clobber it. 409 keeps the file untouched; the
-        // browser shows its changed-on-disk banner with the user's edits preserved. Drag-drop uploads send no
-        // hash and overwrite as before. Check-then-write, not atomic, the guard shrinks the race window from
-        // the whole edit session to this handler, which is what the agent needs (its writes echo over the SSE in
-        // ~250ms; the guard covers exactly that gap).
-        const baseHash = c.req.header("x-intentic-base-hash");
-        if (baseHash !== undefined) {
-            const current = await services.files.read(target);
-            if (current === undefined || sha256Text(current) !== baseHash) {
-                return c.json({ error: "the file changed on disk since it was read" }, 409);
-            }
-        }
-        const body = c.req.raw.body;
-        // An empty body (a new empty file, or saving an emptied editor buffer) has no stream to pipe. Only at
-        // offset 0, an empty later part must not wipe the parts already written.
-        if (body === null) {
-            if (offset === 0) {
-                await services.files.write(target, "");
-            }
-        } else {
-            try {
-                await services.files.writeStream(target, body, MAX_UPLOAD_BYTES, offset);
-            } catch (error) {
-                if (error instanceof UploadTooLargeError) {
-                    return c.json({ error: "file too large" }, 413);
-                }
-                throw error;
-            }
-        }
-        // A dropped file passes its source mtime as ?mtime so a re-upload can skip it (upload-diff); the editor's
-        // text save sends none and keeps the write-time mtime.
-        const mtime = Number(c.req.query("mtime"));
-        if (Number.isFinite(mtime)) {
-            await services.files.setMtime(target, mtime);
-        }
-        services.history.notifyUserWrite();
-        return c.json({ ok: true });
-    });
-
-    // Re-upload diff: the client posts a manifest of what it's about to upload (path + source size + mtime) and
-    // we answer which paths are already identical on disk (same size + whole-second mtime), so the browser drops
-    // those and re-sends only what changed. Live-stats /work (unlike the filtered tree, this sees `.git` and has
-    // no entry cap). Read-only, never writes; escaping/denied paths simply aren't reported as skippable.
-    app.post("/workspace/upload-diff", async (c) => {
-        const { files } = await c.req.json<{ files?: UploadManifestEntry[] }>();
-        return c.json({ skip: await computeUploadSkip(services.workspace.root, files ?? []) });
-    });
-
-    // Bulk directory upload: the browser streams ONE tar of a large dropped tree here (over per-file POSTs, which
-    // cost a round-trip each) and we extract it entry-by-entry into /work. Same guards as the single upload,
-    // applied per entry: 400 on any escaping path (aborts), silently skips the daemon's control-plane files
-    // (isControlPlanePath), 413 once the running total passes the cap. `.git` IS written, a dropped repo keeps
-    // its own, so it stays connected to its remote. Streamed both ways, so a huge tree never lands in memory.
-    app.post("/workspace/upload-archive", async (c) => {
-        const body = c.req.raw.body;
-        if (body === null) {
-            return c.json({ error: "empty body" }, 400);
-        }
-        try {
-            await extractTarToWorkspace(services.workspace.root, body, MAX_UPLOAD_BYTES);
-        } catch (error) {
-            if (error instanceof PathEscapeError) {
-                return c.json({ error: "invalid path" }, 400);
-            }
-            if (error instanceof UploadTooLargeError) {
-                return c.json({ error: "file too large" }, 413);
-            }
-            throw error;
-        }
-        services.history.notifyUserWrite();
-        return c.json({ ok: true });
-    });
-
-    /* Mint the one-shot ticket the three WebSocket upgrades below redeem. This route is ordinary HTTP, so it
-     * rides the bearer middleware like everything else, which is the entire trick: the credential is presented
-     * in a header here, and what travels in the upgrade's query string is a value that is worthless the moment
-     * it is used. Identity comes from the middleware, never the body.
-     *
-     * Loopback mode has no identity to bind a ticket to and no gate on the upgrades either, so it 404s and the
-     * browser connects without one. */
-    app.post("/system/ws-ticket", (c) => {
-        const identity = c.get("identity");
-        if (services.auth === undefined || identity === undefined) {
-            return c.json({ error: "no verified identity to mint a ticket for" }, 404);
-        }
-        return c.json({ ticket: services.wsTickets.mint(identity) });
-    });
+    /* Browser credentials (auth/access.routes.ts): the one-shot ticket the three WebSocket upgrades below
+     * redeem, minted here over ordinary HTTP so the bearer middleware establishes the identity it binds to. */
+    const access = createAccessRoutes(services);
+    app.post("/system/ws-ticket", access.wsTicket);
 
     // Interactive PTY over a WebSocket. Paired with the `ws` server passed to serve() in main.ts (node-server's
     // upgradeWebSocket drives it); registered before the oRPC catch-all so the upgrade matches here.
@@ -830,61 +513,11 @@ export const createApp = (services: Services): Hono<AppEnv> => {
     // live `browser-*` session instead of the platform's own profile (see createBrowserViewRoute).
     app.get("/system/browser-view", createBrowserViewRoute(services));
 
-    // Deploy-target enrollment from the connect-host script (curl, not a browser): authenticated by the connect
-    // token alone (exempt from the bearer middleware above), so it self-registers a host without a Google login.
-    // Loopback mode (no services.auth) accepts any caller, like every other route.
-    app.post("/enroll", async (c) => {
-        if (services.auth !== undefined && !tokenEquals(c.req.header("x-intentic-connect") ?? "", services.config.connectToken)) {
-            return c.json({ error: "unauthorized" }, 401);
-        }
-        let input: EnrollHostInput;
-        try {
-            input = EnrollHostInputSchema.parse(await c.req.json());
-        } catch {
-            return c.json({ error: "invalid enrollment body" }, 400);
-        }
-        try {
-            await enrollHost(services, input);
-        } catch (error) {
-            if (error instanceof ORPCError && error.code === "PRECONDITION_FAILED") {
-                return c.json({ error: error.message }, 412);
-            }
-            throw error;
-        }
-        return c.json({ ok: true });
-    });
-
-    // Webhook fire for event automations: external systems (GitHub/Sentry/monitors) POST here to wake the
-    // agent, authenticated by the automation's own token as ?token=…, the only mechanism every webhook sender
-    // supports. Enforced ALWAYS (fail-closed even in loopback, unlike /enroll, the token always exists). The
-    // body (any format, capped) reaches the guard as AUTOMATION_PAYLOAD and is appended to the wake prompt.
-    // Responds immediately; the agent turn runs detached, exactly like a scheduler fire.
-    app.post("/automations/:id/fire", async (c) => {
-        const automation = await services.automations.get(c.req.param("id"));
-        if (automation === undefined || automation.trigger.kind !== "event") {
-            return c.json({ error: "no event automation with that id" }, 404);
-        }
-        const token = automation.trigger.token;
-        if (token === undefined || !tokenEquals(c.req.query("token") ?? "", token)) {
-            return c.json({ error: "unauthorized" }, 401);
-        }
-        if (!automation.enabled) {
-            return c.json({ error: "automation disabled" }, 409);
-        }
-        const declared = Number(c.req.header("content-length"));
-        if (Number.isFinite(declared) && declared > PAYLOAD_MAX) {
-            return c.json({ error: "payload too large" }, 413);
-        }
-        const payload = await c.req.text();
-        // A webhook is an outside message too, so its wake opens a surfaced conversation like a Discord mention's
-        // does, the sender is a system, not a person, so the origin carries no author or channel.
-        void fireAutomation(services, automation, streamAgent, {
-            ...(payload === "" ? {} : { payload }),
-            origin: { automationId: automation.id, provider: "webhook" },
-            title: `Webhook: ${automation.id}`,
-        }).catch((error: unknown) => services.logger.error({ err: error, automation: automation.id }, "automation run failed"));
-        return c.json({ ok: true });
-    });
+    // Deploy-target enrollment from the connect-host script, gated by the connect token alone
+    // (inventory/enroll.routes.ts), and the webhook fire for event automations, gated by the automation's own
+    // token (automations/fire.routes.ts). Both are exempt from the bearer middleware above.
+    app.post("/enroll", createEnrollRoute(services));
+    app.post("/automations/:id/fire", createAutomationFireRoute(services));
 
     /* The release gate: a pipeline runner POSTs here to run a workflow and WAIT for its verdict. Public
      * (gatePath above), authenticated by the workflow's own minted gate token, and the only route in the
@@ -920,590 +553,68 @@ export const createApp = (services: Services): Hono<AppEnv> => {
     app.get("/intake/:id/challenge", intake.challenge);
     app.post("/intake/:id/report", intake.report);
 
-    // The operating gate used by privileged sandbox controls. Maintainer is deliberately owner-equivalent here;
-    // ownership itself is kept separate below for the one thing a revokable grant cannot control: membership.
-    const ownerDenied = async (c: Context): Promise<Response | undefined> => {
-        if (services.auth === undefined) {
-            return undefined;
-        }
-        try {
-            await authorizeMaintainer(services.auth, bearerFrom(c.req.header("authorization")));
-            return undefined;
-        } catch (error) {
-            return error instanceof ForbiddenError ? c.json({ error: error.message }, 403) : c.json({ error: "unauthorized" }, 401);
-        }
-    };
-    const ownershipDenied = async (c: Context): Promise<Response | undefined> => {
-        if (services.auth === undefined) {
-            return undefined;
-        }
-        try {
-            await services.auth.authorizeOwner(bearerFrom(c.req.header("authorization")));
-            return undefined;
-        } catch (error) {
-            return error instanceof ForbiddenError ? c.json({ error: error.message }, 403) : c.json({ error: "unauthorized" }, 401);
-        }
-    };
-    const canOperate = async (c: Context): Promise<boolean> => (await ownerDenied(c)) === undefined;
-    app.get("/members", async (c) => {
-        const denied = await ownershipDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        /* THE OWNER RIDES ALONG, and the roster is the poorer without them: ownership is an identity fact
-         * rather than a grant, so the members file has never held it, which left every surface built on this
-         * answer unable to name the one person who is definitely allowed in. That was invisible until
-         * credential gates needed an approver list — "only Bob may release this" is picked from the people
-         * this route names, and the owner picking themselves was the obvious first case and the one that
-         * could not be expressed. Undefined before first sign-in has bound anybody (loopback and test
-         * daemons), which reads as a roster with no owner rather than an error. */
-        const owner = await services.ownerEmail();
-        return c.json({ members: await services.members.list(), ...(owner !== undefined ? { owner } : {}) });
-    });
-    app.post("/members", async (c) => {
-        const denied = await ownershipDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        const grant = await memberGrant(c);
-        if (grant === undefined) {
-            return c.json({ error: "email and role required" }, 400);
-        }
-        await services.members.add(grant.email, grant.role);
-        // A role is frozen into an already-open socket/ticket. Close both so the next transport re-enters the
-        // authorizer and picks up the new tier (especially a downgrade).
-        services.auth?.connections.revoke(grant.email);
-        services.wsTickets.revoke(grant.email);
-        return c.json({ members: await services.members.list() });
-    });
-    app.delete("/members", async (c) => {
-        const denied = await ownershipDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        const email = await memberEmail(c);
-        if (email === undefined) {
-            return c.json({ error: "email required" }, 400);
-        }
-        await services.members.remove(email);
-        services.auth?.connections.revoke(email);
-        services.wsTickets.revoke(email);
-        return c.json({ members: await services.members.list() });
-    });
-    app.delete("/members/self", async (c) => {
-        const identity = c.get("identity");
-        if (identity === undefined) {
-            return c.json({ error: "verified member required" }, 401);
-        }
-        if (identity.role === "owner") {
-            return c.json({ error: "the owner must retire the sandbox instead" }, 400);
-        }
-        // Normalized, because the roster only ever holds lowercase (memberGrant/memberEmail above) while the
-        // identity carries the claim as Google sent it: the raw form targets a row that cannot exist, so a
-        // mixed-case member's "remove me" reported success and left them granted.
-        await services.members.remove(identity.email.toLowerCase());
-        services.auth?.connections.revoke(identity.email);
-        services.wsTickets.revoke(identity.email);
-        return c.json({ ok: true });
-    });
+    // The shared-access roster (auth/members.routes.ts), gated by ownership rather than the maintainer-
+    // equivalent operating gate every other privileged route below uses (auth/owner-gates.ts).
+    const members = createMembersRoutes(services);
+    app.get("/members", members.list);
+    app.post("/members", members.add);
+    app.delete("/members", members.remove);
+    app.delete("/members/self", members.removeSelf);
 
-    // The agent-proposed overlay Dockerfile (.intentic/config/environment.Dockerfile). Members see the state; only the
-    // owner approves (copying it to the approved file) or rejects (deleting the proposal). The rebuild itself
-    // runs OUTSIDE the container, recreate.sh locally, the workspace provider on a server, pinned to the
-    // approved hash, so approval here never mutates the running sandbox.
-    app.get("/environment", async (c) => c.json(await readEnvironment(services)));
-    /* The same sandbox read as CONTENTS rather than as a recipe, what it has, with each tool's version read back
-     * from the tool. A route of its own because it costs process spawns: /environment above is polled by the
-     * shell's rebuild banner and re-fetched on every write under .intentic/environment., and making that pay for
-     * forty version checks would be a tax on the whole app for one tab. `refresh` re-probes, which is what the
-     * card's refresh button is for, a tool installed mid-session is otherwise cached as missing. */
-    app.get("/environment/contents", async (c) => {
-        if (c.req.query("refresh") !== undefined) {
-            clearVersionCache();
-            // The drift half of "it says X but I just changed it": re-probe now, not at the next idle tick.
-            // Not awaited — the sweep persists its snapshot and the watcher invalidates `environment`, so the
-            // card refetches when the answer lands rather than holding this response on a find walk.
-            void services.driftSweep.refresh();
-        }
-        return c.json(await readEnvironmentContents(services));
-    });
-    app.post("/environment/approve", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        const body = (await c.req.json().catch(() => undefined)) as { hash?: unknown } | undefined;
-        const hash = typeof body?.hash === "string" ? body.hash : undefined;
-        if (hash === undefined) {
-            return c.json({ error: "hash required" }, 400);
-        }
-        const failure = await approveEnvironment(services, hash);
-        if (failure === "missing") {
-            return c.json({ error: "no proposal to approve" }, 404);
-        }
-        if (failure === "mismatch") {
-            return c.json({ error: "the proposal changed since it was reviewed, refresh and re-approve" }, 409);
-        }
-        if (failure === "invalid") {
-            return c.json(
-                { error: "the proposal must contain only RUN/ENV content, no FROM (the daemon owns the base image) and no intentic:runtime lines" },
-                400,
-            );
-        }
-        return c.json(await readEnvironment(services));
-    });
-    app.post("/environment/reject", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        await rejectEnvironment(services);
-        return c.json(await readEnvironment(services));
-    });
-    /* The owner answering ONE line of the runtime-install list, which until now had no answer at all: rejecting
-     * a whole proposal was the only route to a tombstone, so a recurring install nobody wanted baked went on
-     * being reported forever. `adopt` writes the tool's overlay draft on the spot (the sweep's recurrence and
-     * corroboration gates exist to justify a draft nobody asked for; this owner asked), `dismiss` tombstones it
-     * and takes its auto-draft with it, `restore` undoes that. Owner-gated for the reason approve is: it decides
-     * what gets built into the image every turn then runs on. */
-    app.post("/environment/runtime-install", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        const body = EnvironmentRuntimeDecisionSchema.safeParse(await c.req.json().catch(() => undefined));
-        if (!body.success) {
-            return c.json({ error: "tool and decision required" }, 400);
-        }
-        if ((await decideRuntimeInstall(services, body.data)) === "unavailable") {
-            return c.json({ error: "no runtime install by that name has a mechanical overlay step" }, 404);
-        }
-        return c.json(await readEnvironment(services));
-    });
+    // The agent-proposed overlay Dockerfile (environment/environment.routes.ts): members read, the owner
+    // approves, rejects, or answers one runtime-install line.
+    const environment = createEnvironmentRoutes(services);
+    app.get("/environment", environment.read);
+    app.get("/environment/contents", environment.contents);
+    app.post("/environment/approve", environment.approve);
+    app.post("/environment/reject", environment.reject);
+    app.post("/environment/runtime-install", environment.runtimeInstall);
 
-    /* THE AGENT ENGINES: which version of Claude Code, codex, @cursor/sdk, opencode and the translator this
-     * sandbox runs, and where each of those versions comes from (engines/engines.ts).
-     *
-     * Beside /environment because it answers the same owner question — what is installed here — and because
-     * these four writes are the ones that end the era of "wait for an image". Members read; only the owner
-     * changes a channel, takes a version or reverts one, for the reason /environment/approve is owner-only:
-     * this installs code that every turn in this sandbox then runs.
-     *
-     * Update takes an optional version. Absent means what the channel offers, which is the row's button.
-     * Naming one is deliberate and takes a version nobody has blessed — the way past an upstream floor the
-     * blessed list has not caught up with, which is a decision a person makes with the reason in front of them. */
-    app.get("/engines", async (c) => c.json(await enginesView(services)));
-    app.post("/engines/channel", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        const parsed = EngineChannelInputSchema.safeParse(await c.req.json().catch(() => undefined));
-        if (parsed.data === undefined) {
-            return c.json({ error: "an engine id and a channel are required" }, 400);
-        }
-        const { id, kind, version } = parsed.data;
-        try {
-            await setChannel(services, id, { kind, ...opt("version", version) });
-        } catch (error) {
-            return c.json({ error: error instanceof Error ? error.message : "the channel could not be set" }, 400);
-        }
-        // The same shape all three writes answer with: what happened (nothing, for a channel that needs a
-        // download first) and the whole view, so a card never has to reconcile a patch with what it was drawing.
-        return c.json({ applied: null, engines: await enginesView(services) });
-    });
-    app.post("/engines/update", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        const parsed = EngineUpdateInputSchema.safeParse(await c.req.json().catch(() => undefined));
-        if (parsed.data === undefined) {
-            return c.json({ error: "an engine id is required" }, 400);
-        }
-        try {
-            const applied = await updateEngine(services, parsed.data.id, {
-                ...opt("version", parsed.data.version),
-                ...opt("floor", parsed.data.floor),
-            });
-            // Nothing to do is a 200 with the view, not an error: two tabs pressing Update on the same row is
-            // an ordinary race, and the second one is right about the state it is looking at.
-            return c.json({ applied: applied ?? null, engines: await enginesView(services) });
-        } catch (error) {
-            // The install itself refused (a bad download, a version that would not launch). The reason is the
-            // one the store recorded, and the row carries the quarantine that goes with it.
-            return c.json({ error: error instanceof Error ? error.message : "the engine could not be installed" }, 502);
-        }
-    });
-    app.post("/engines/revert", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        const parsed = EngineRevertInputSchema.safeParse(await c.req.json().catch(() => undefined));
-        if (parsed.data === undefined) {
-            return c.json({ error: "an engine id is required" }, 400);
-        }
-        const applied = await revertEngine(services, parsed.data.id);
-        return c.json({ applied, engines: await enginesView(services) });
-    });
+    // The agent engines (engines/engines.routes.ts), beside /environment because they answer the same owner
+    // question — what is installed here.
+    const engines = createEnginesRoutes(services);
+    app.get("/engines", engines.view);
+    app.post("/engines/channel", engines.channel);
+    app.post("/engines/update", engines.update);
+    app.post("/engines/revert", engines.revert);
 
-    /* The environment BUNDLE: this sandbox's two volumes packed for a move, and the restore that unpacks one.
-     *
-     * Raw Hono rather than oRPC for the same reason the upload routes are, a restore and a download are streams
-     * of arbitrary size, and neither end may hold one. Owner-only throughout and not merely by convention: an
-     * export reads every repo and (at the owner's choice) every credential the sandbox holds, and a restore
-     * overwrites the workspace a fleet may be working in.
-     *
-     * The EXPORT is an artifact, not a response. `POST /bundles` starts the pack and answers with its name at
-     * once; the bytes land in the daemon's export directory and `GET /bundles` reads that directory back. This
-     * is what makes an export survive the tab that asked for it, see portability/exports.ts for why the first
-     * cut, which streamed the pack down the click's own response, could not.
-     */
-    app.get("/bundles", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        return c.json({ exports: await listExports(services.config.historyRoot) });
-    });
+    // The environment bundle (portability/bundle.routes.ts): owner-only exports as artifacts, and the ticketed
+    // download the browser navigates to (exempt from the bearer middleware above).
+    const bundles = createBundleRoutes(services);
+    app.get("/bundles", bundles.list);
+    app.post("/bundles", bundles.start);
+    app.delete("/bundles", bundles.remove);
+    app.post("/bundles/ticket", bundles.ticket);
+    app.get("/bundles/download", bundles.download);
 
-    // Start one. `?secrets=1` is the owner's choice and it changes the BYTES, not the framing, the bundle
-    // records what it was made with, and the restore report explains what the choice cost. Default off: the
-    // safe bundle is the one you can hand to somebody else.
-    app.post("/bundles", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        try {
-            return c.json({ name: await startExport(services, { secrets: c.req.query("secrets") === "1", now: Date.now() }) });
-        } catch (error) {
-            if (error instanceof ExportBusyError) {
-                return c.json({ error: error.message }, 409);
-            }
-            throw error;
-        }
-    });
+    // The definition, outbound (portability/definition.routes.ts): `sandbox.toml` derived and diffed, and the
+    // workspace repo it names.
+    const definition = createDefinitionRoutes(services);
+    app.get("/definition", definition.derive);
+    app.post("/definition/diff", definition.diff);
+    app.get("/definition/workspace", definition.workspace);
+    app.post("/definition/workspace/publish", definition.publish);
 
-    app.delete("/bundles", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        const removed = await removeExport(services.config.historyRoot, c.req.query("name") ?? "");
-        return removed ? c.json({ ok: true }) : c.json({ error: "no such export" }, 404);
-    });
+    // Arrivals (portability/arrival.routes.ts): everything coming INTO this sandbox, through one preview-first
+    // pipeline.
+    const arrivals = createArrivalRoutes(services);
+    app.post("/arrivals/plan", arrivals.plan);
+    app.get("/arrivals/hosts", arrivals.hosts);
+    app.post("/arrivals/scan", arrivals.scan);
+    app.post("/arrivals/apply", arrivals.apply);
+    app.delete("/arrivals", arrivals.abandon);
 
-    /* Mint a ticket for ONE bundle, then serve it at the route below.
-     *
-     * A download has the same problem a <video> has (see /workspace/media): the browser must fetch it ITSELF for
-     * the bytes to stream to disk rather than through the tab's memory, and a navigation cannot carry an
-     * Authorization header. The containment is the same too, the ticket names one bundle and buys nothing else.
-     * Namespaced `bundle:` so a ticket minted here can never be replayed against a workspace path, nor a media
-     * ticket against a bundle.
-     */
-    app.post("/bundles/ticket", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        const name = c.req.query("name") ?? "";
-        if (!(await isReadyExport(services.config.historyRoot, name))) {
-            return c.json({ error: "no such export" }, 404);
-        }
-        return c.json(services.mediaTickets.mint(`bundle:${name}`));
-    });
+    // An extension's prebuilt ESM bundle, raw JS bytes (extensions/extension-bundle.routes.ts), and the
+    // extension backend namespaces /x/<id>/* proxied verbatim to the backend host
+    // (extensions/backend/backend-proxy.routes.ts).
+    app.get("/extensions/:id/bundle", createExtensionBundleRoute(services));
+    app.all("/x/*", createBackendProxyRoute(services));
 
-    app.get("/bundles/download", async (c) => {
-        const name = c.req.query("name") ?? "";
-        if (services.auth !== undefined && !services.mediaTickets.valid(c.req.query("ticket") ?? "", `bundle:${name}`)) {
-            return c.json({ error: "unauthorized" }, 401);
-        }
-        // Resolved through the export LIST, so only a finished bundle this daemon produced can be named here,
-        // a query string can never walk it onto another file.
-        const opened = await openExport(services.config.historyRoot, name);
-        if (opened === undefined) {
-            return c.json({ error: "no such export" }, 404);
-        }
-        return c.body(opened.body, 200, {
-            "Content-Type": "application/gzip",
-            // A real length, unlike the streamed-as-you-pack first cut: the browser can show a progress bar and
-            // resume, because the file already exists in full before anyone asks for it.
-            "Content-Length": String(opened.size),
-            "Content-Disposition": `attachment; filename="${name}"`,
-            "Cache-Control": "no-store",
-        });
-    });
-
-    /* THE DEFINITION, OUTBOUND: the declarable shape of this sandbox as `sandbox.toml`, the reference half of
-     * what a bundle carries whole (portability/definition.ts). Owner-only like the bundle export beside it: the
-     * derivation reads every connection's shape and every repo's remote.
-     *
-     * TWO ROUTES, BOTH READS. Deriving the document and comparing against one write nothing; APPLYING one is an
-     * arrival, and lives with the other three arrivals below rather than in a plan/apply/report trio of its
-     * own that did the same job as the bundle's, differently. */
-    const definitions = createDefinitions(services);
-    app.get("/definition", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        return c.json(await definitions.derive());
-    });
-    app.post("/definition/diff", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        try {
-            return c.json(await definitions.diff(await c.req.text()));
-        } catch (error) {
-            if (error instanceof DefinitionFormatError) {
-                return c.json({ error: error.message }, 400);
-            }
-            throw error;
-        }
-    });
-
-    /* THE WORKSPACE REPO, the half of the definition a document cannot supply for itself: `[workspace]` names a
-     * remote, and nothing can name one that does not exist. A read for the card's first render, and an
-     * owner-gated write that creates a PRIVATE repo on a connected git host and pushes /work to it. Its own
-     * route rather than a side effect of the export, because publishing is outward and deriving is read-only
-     * (portability/workspace-repo.ts argues both halves). */
-    app.get("/definition/workspace", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        return c.json(await workspaceRemote(services));
-    });
-    app.post("/definition/workspace/publish", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        const parsed = WorkspacePublishSchema.safeParse((await c.req.json().catch(() => undefined)) ?? {});
-        if (!parsed.success) {
-            return c.json({ error: "expected { remote?, name?, owner? }" }, 400);
-        }
-        try {
-            return c.json(await publishWorkspace(services, parsed.data));
-        } catch (error) {
-            // Already published, no connected host, a refused create, a rejected push: all things the owner
-            // can act on, none of them breakage.
-            if (error instanceof WorkspaceRemoteError) {
-                return c.json({ error: error.message }, 409);
-            }
-            throw error;
-        }
-    });
-
-    /* ARRIVALS: everything coming INTO this sandbox, through one preview-first pipeline
-     * (portability/arrival.ts). A `sandbox.toml`, an environment bundle, a packed Hermes or OpenClaw home
-     * directory — three surfaces once, with three sets of routes and three sets of schemas doing the same four
-     * things to different bytes.
-     *
-     * Raw Hono rather than oRPC because a plan's input is an upload STREAM of arbitrary size, and owner-only
-     * throughout: the artifact may be somebody's credential store, and the apply writes repositories, settings,
-     * skills, automations, capabilities and, for a bundle, the workspace itself.
-     *
-     * FOUR CALLS, AND THE FORMAT IS NOT ONE OF THEM. `plan` sniffs the upload and answers with a checklist,
-     * `scan` reads a connected device instead of a file, `apply` names the ticked ids, DELETE throws the
-     * held artifact away. Whoever is uploading knows what they have; the daemon can tell from two bytes and
-     * the first tar header, so asking them to pick a route for it was work with nothing on the other side. */
-    const arrivals = createArrivals(services);
-    // The two ways a caller can be wrong, told apart, because the answers differ: a file that is not what it
-    // claims is a 400 with the reader's own sentence, while a token that no longer matches means the FILE was
-    // fine and the preview went stale, which is a 409 and a re-read.
-    const arrivalFailed = (error: unknown): { readonly error: string; readonly status: 400 | 409 | 413 } | undefined => {
-        if (error instanceof ArrivalStaleError) {
-            return { error: error.message, status: 409 };
-        }
-        if (error instanceof ArrivalFormatError) {
-            return { error: error.message, status: 400 };
-        }
-        return error instanceof UploadTooLargeError ? { error: "that arrival is too large", status: 413 } : undefined;
-    };
-
-    app.post("/arrivals/plan", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        const body = c.req.raw.body;
-        if (body === null) {
-            return c.json({ error: "empty body" }, 400);
-        }
-        try {
-            return c.json(await arrivals.plan(body, MAX_UPLOAD_BYTES));
-        } catch (error) {
-            const failed = arrivalFailed(error);
-            if (failed === undefined) {
-                throw error;
-            }
-            return c.json({ error: failed.error }, failed.status);
-        }
-    });
-    /* The owner's own devices as arrival sources, probed live, because the whole value is that the offer
-     * appears BEFORE they read a packing instruction. Never fails the card: a machine that is asleep or holds
-     * nothing is a row saying so, which is why every probe is caught into its own `detail`. */
-    app.get("/arrivals/hosts", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        return c.json({ hosts: await arrivals.hosts() });
-    });
-    app.post("/arrivals/scan", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        const parsed = ArrivalScanSchema.safeParse(await c.req.json().catch(() => undefined));
-        if (!parsed.success) {
-            return c.json({ error: "expected { host }" }, 400);
-        }
-        try {
-            return c.json(await arrivals.scan(parsed.data.host));
-        } catch (error) {
-            const failed = arrivalFailed(error);
-            if (failed === undefined) {
-                throw error;
-            }
-            return c.json({ error: failed.error }, failed.status);
-        }
-    });
-    app.post("/arrivals/apply", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        const parsed = ArrivalApplySchema.safeParse(await c.req.json().catch(() => undefined));
-        if (!parsed.success) {
-            return c.json({ error: "expected { token, items, includeSecrets }" }, 400);
-        }
-        try {
-            return c.json(await arrivals.apply(parsed.data));
-        } catch (error) {
-            const failed = arrivalFailed(error);
-            if (failed === undefined) {
-                throw error;
-            }
-            return c.json({ error: failed.error }, failed.status);
-        }
-    });
-    app.delete("/arrivals", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        return c.json({ ok: await arrivals.abandon() });
-    });
-
-    // An extension's prebuilt ESM bundle, raw JS bytes, so a plain Hono route like /environment (oRPC is for
-    // JSON). The web loader fetches this with auth → Blob URL → import(). The ETag is the code identity: the
-    // pinned HEAD sha for a git-installed extension (sha-pinned installs make the bundle immutable per commit),
-    // and the content hash for a workspace one, whose dir is live-edited and has no commit to stand for it.
-    app.get("/extensions/:id/bundle", async (c) => {
-        const id = c.req.param("id");
-        const extension = (await installedExtensions(services)).find((entry) => entry.id === id);
-        if (extension === undefined) {
-            return c.json({ error: "no extension with that id" }, 404);
-        }
-        if (extension.manifest.entry === undefined) {
-            return c.json({ error: "the extension has no UI entry" }, 404);
-        }
-        const source = await extensionRead(join(extension.dir, extension.manifest.entry));
-        if (source === undefined) {
-            return c.json({ error: "the entry bundle is missing from the extension" }, 404);
-        }
-        const etag = extension.source === "installed" ? await services.git.head(extensionDir(services.workspace.root, id)) : sha256Text(source);
-        if (c.req.header("if-none-match") === etag) {
-            return c.body(null, 304);
-        }
-        return c.body(source, 200, { "content-type": "text/javascript; charset=utf-8", etag });
-    });
-
-    /* Extension backend namespaces: /x/<id>/* proxied verbatim to the backend host (extensions/backend/).
-     * The request has already been through everything above: the boot gate, CORS, and the bearer middleware
-     * with its role floor (an unlisted GET floors at viewer, an unlisted mutation at maintainer, the same
-     * defaults every unclassified core route gets). What is forwarded is the request MINUS its credentials:
-     * the backend acts on the daemon through its own scoped token, and handing it the owner's bearer would
-     * quietly re-grant everything the token model just took away. A host mid-restart answers 503 with the
-     * supervisor's own words, which is the web's cue to retry rather than to render an error state. */
-    app.all("/x/*", async (c) => {
-        const target = services.extensionBackend.proxyTarget();
-        if (target === undefined) {
-            const backend = services.extensionBackend.status();
-            return c.json({ error: `extension backends are ${backend.state}${backend.detail !== undefined ? `, ${backend.detail}` : ""}` }, 503);
-        }
-        const url = new URL(c.req.url);
-        const headers = endToEndHeaders(c.req.raw.headers);
-        headers.delete("authorization");
-        headers.set("x-intentic-backend", target.hostToken);
-        const body = c.req.method === "GET" || c.req.method === "HEAD" ? undefined : c.req.raw.body;
-        const upstream = await fetch(`http://127.0.0.1:${target.port}${url.pathname}${url.search}`, {
-            method: c.req.method,
-            headers,
-            ...(body !== undefined && body !== null ? { body, duplex: "half" } : {}),
-        } as RequestInit);
-        return new Response(upstream.body, { status: upstream.status, headers: endToEndHeaders(upstream.headers) });
-    });
-
-    /* The creator pool's metered services, relayed to the platform (platform/pool-services.ts), the catalog
-     * with the owner's credit meter, and one priced run. The daemon contributes the connect token; the
-     * platform holds the member gate, the meter and the refund discipline, and its refusals are already
-     * written for the reader. These are the routes an extension backend declares in `permissions.daemon` to
-     * spend the owner's credits, a mutation, so the bearer middleware floors the run at maintainer for
-     * browsers, like every unlisted POST.
-     *
-     * WHO GETS GATED: the AGENT's own run call, the request that presented the agent token, which commits it
-     * to that grant (grants.ts), parks on an owner-approval card before anything is spent
-     * (platform/service-offer.ts). An extension backend passes straight through: which services it may run is
-     * declared in its manifest and was approved at install. A browser session is the owner acting directly. */
-    app.get("/pool/services", async (c) => {
-        const answer = await relayServiceCatalog(services.config);
-        return c.newResponse(answer.body, answer.status as 200, { "content-type": answer.contentType });
-    });
-    // The wanted list: an agent that read the catalog and found nothing that answers files what it looked
-    // for. No spend, no card, the platform bounds it (length, a daily cap per owner) and publishes only the
-    // aggregate, so this relays as plainly as the catalog read above.
-    app.post("/pool/wanted", async (c) => {
-        const answer = await relayServiceWant(services.config, await c.req.text());
-        return c.newResponse(answer.body, answer.status as 200, { "content-type": answer.contentType });
-    });
-    app.post("/pool/services/:slug/run", async (c) => {
-        const viaAgent = (c.req.header("x-intentic-agent") ?? "") !== "";
-        const answer = viaAgent
-            ? await gatedServiceRun(
-                  {
-                      catalog: () => relayServiceCatalog(services.config),
-                      run: (slug, body, onStatus) => relayServiceRun(services.config, slug, body, onStatus),
-                      liveRun: (conversationId) => {
-                          const id = conversationId ?? soleLiveConversation();
-                          const run = id === undefined ? undefined : turnRunOf(id);
-                          return id === undefined || run === undefined || run.done
-                              ? undefined
-                              : { conversationId: id, push: (event) => run.push(event) };
-                      },
-                      observe: (conversationId, event) => services.agents.observe(conversationId, event),
-                  },
-                  {
-                      slug: c.req.param("slug"),
-                      body: await c.req.text(),
-                      conversationId: c.req.header("x-intentic-conversation"),
-                      why: c.req.query("why"),
-                      signal: c.req.raw.signal,
-                  },
-              )
-            : await relayServiceRun(services.config, c.req.param("slug"), await c.req.text());
-        return c.newResponse(answer.body, answer.status as 200, {
-            "content-type": answer.contentType,
-            // The platform's advisory meter header rides through, so every caller's receipt line works.
-            ...(answer.remaining !== undefined ? { "x-intentic-credits-remaining": answer.remaining } : {}),
-        });
-    });
+    // The creator pool's metered services, relayed to the platform (platform/pool.routes.ts).
+    const pool = createPoolRoutes(services);
+    app.get("/pool/services", pool.catalog);
+    app.post("/pool/wanted", pool.wanted);
+    app.post("/pool/services/:slug/run", pool.run);
 
     /* The capability setup gate, the `capabilities` CLI's two routes (capabilities/ask.routes.ts).
      * `connectable` is discovery (every card, whether it's connected, names only, never config); `ask` parks
@@ -1561,153 +672,42 @@ export const createApp = (services: Services): Hono<AppEnv> => {
     // pipelines freshen the runs cache and wake `ci` listener automations (see ci/webhook.routes.ts).
     app.post("/ci/webhook/:host", createCiWebhookRoute(services));
 
-    // Desktop enrollment (Mutagen). The browser mints a short-lived pairing token; the desktop agent redeems it
-    // once at /system/authorized-key to land its SSH key, so the agent needs no OAuth, and trust roots in the
-    // Google identity that minted the token. The pairing carries the MODE it may enroll: the owner gets full
-    // file "sync" (default, or "mirror" on request), a member (collaborator) can only get port "mirror", so
-    // live previews are everyone's while the single-holder file-sync lock stays owner-territory. The route runs
-    // through the bearer middleware (not exempt), so an unauthenticated caller is already 401'd here. Sits before
-    // the oRPC catch-all, like /members and /workspace/raw.
-    app.post("/system/sync/pair", async (c) => {
-        const requested = c.req.query("mode") === "mirror" ? "mirror" : "sync";
-        const mode: SyncMode = (await canOperate(c)) ? requested : "mirror";
-        return c.json({ ...services.syncPairings.mint(mode), mode });
-    });
+    // Desktop sync enrollment (platform/sync.routes.ts): the browser mints a pairing here, the desktop agent
+    // redeems it at /system/authorized-key below. Sits before the oRPC catch-all, like /members.
+    const sync = createSyncRoutes(services);
+    app.post("/system/sync/pair", sync.pair);
 
-    /* The user's own devices (hosts/). Same trust root as desktop sync, the owner mints a single-use pairing
-     * in the browser and the connect one-liner carries it, narrowed in one way that matters: a pairing is bound
-     * to ONE host capability, so a redeemed token can only ever become the machine the owner was looking at when
-     * they clicked Connect. Owner-only to mint: giving a member hands on the owner's laptop is not a collaboration
-     * feature. */
-    app.post("/system/hosts/pair", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        const id = c.req.query("id") ?? "";
-        const capability = (await services.capabilities.list()).find((entry) => entry.id === id && entry.kind === "host");
-        if (capability === undefined) {
-            return c.json({ error: "no connected-device capability with that id" }, 404);
-        }
-        return c.json(services.hosts.mintPairing(id));
-    });
-    // Redeemed by the machine's installer, authorized by the pairing alone (exempt from the bearer middleware),
-    // so nobody signs into Google on the machine being connected.
-    app.post("/system/hosts/enroll", async (c) => {
-        const enrolled = await services.hosts.enroll(c.req.header("x-intentic-pair") ?? "");
-        if (enrolled === undefined) {
-            return c.json({ error: "pairing expired, click Connect again in your browser for a fresh command." }, 401);
-        }
-        return c.json(enrolled);
-    });
-    app.get("/system/hosts", async (c) => c.json({ hosts: await hostSummaries(services) }));
-    // Revoke: the enrollment goes, and the live socket with it. The agent binary on that machine notices its
-    // reconnect being refused and stops; what stays is the installation, which only the machine's owner can remove.
-    app.delete("/system/hosts/:id", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        const id = c.req.param("id") ?? "";
-        services.hostHub.disconnect(id, "this device's access was revoked");
-        return (await services.hosts.revoke(id)) ? c.json({ ok: true }) : c.json({ error: "no such device" }, 404);
-    });
-    // The machine's own socket, and the agent's door onto it. Both before the oRPC catch-all, like the terminal.
+    /* The user's own devices (hosts/host.routes.ts): pairing, enrollment, roster and revoke, then the machine's
+     * own socket. All before the oRPC catch-all, like the terminal. */
+    const hosts = createHostRoutes(services);
+    app.post("/system/hosts/pair", hosts.pair);
+    app.post("/system/hosts/enroll", hosts.enroll);
+    app.get("/system/hosts", hosts.list);
+    app.delete("/system/hosts/:id", hosts.revoke);
     app.get("/system/hosts/connect", createHostConnectRoute(services));
 
-    /* The user's own BROWSERS (webext/): the hosts block retold for the extension installed in one. Same trust
-     * root — the owner mints a single-use pairing bound to ONE capability, and the code it produces can only
-     * ever connect the browser they were looking at when they clicked Connect. Owner-only to mint: handing a
-     * member the keys to the owner's signed-in browser is not a collaboration feature. */
-    app.post("/system/webext/pair", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        const id = c.req.query("id") ?? "";
-        const capability = (await services.capabilities.list()).find((entry) => entry.id === id && entry.kind === "webext");
-        if (capability === undefined) {
-            return c.json({ error: "no connected-browser capability with that id" }, 404);
-        }
-        return c.json(services.webexts.mintPairing(id));
-    });
-    // Redeemed by the extension, authorized by the pairing alone (exempt from the bearer middleware), so
-    // nobody signs into Google inside the extension itself.
-    app.post("/system/webext/enroll", async (c) => {
-        const enrolled = await services.webexts.enroll(c.req.header("x-intentic-pair") ?? "");
-        if (enrolled === undefined) {
-            return c.json({ error: "that code has expired, click Connect again in your sandbox for a fresh one." }, 401);
-        }
-        return c.json(enrolled);
-    });
-    app.get("/system/webext", async (c) => c.json({ browsers: await webextSummaries(services) }));
-    app.delete("/system/webext/:id", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        const id = c.req.param("id") ?? "";
-        services.webextHub.disconnect(id, "this browser's access was revoked");
-        return (await services.webexts.revoke(id)) ? c.json({ ok: true }) : c.json({ error: "no such browser" }, 404);
-    });
+    // The user's own BROWSERS (webext/webext.routes.ts): the hosts block retold for the extension installed in
+    // one, then the extension's socket and its two credential doors.
+    const webexts = createWebExtRoutes(services);
+    app.post("/system/webext/pair", webexts.pair);
+    app.post("/system/webext/enroll", webexts.enroll);
+    app.get("/system/webext", webexts.list);
+    app.delete("/system/webext/:id", webexts.revoke);
     app.get("/system/webext/connect", createWebExtConnectRoute(services));
     // A handed-over site session. Authenticated by the extension's own enrollment token, and deliberately not
     // an answer on the socket: see webext-protocol.ts.
     app.post("/system/webext/session", createWebExtSessionRoute(services));
     app.post("/system/webext/lend", createWebExtLendRoute(services));
-    /* This sandbox's RUNNERS (runners/, docs/remote-runners-plan.md at the workspace root): the hosts block
-     * retold for a container this sandbox provisions on another machine. Pairing is owner-minted and bound to
-     * one runner id; enrollment is authorized by the pairing alone (the runner has no Google identity, only
-     * the env `ic runner up` wrote); the socket authenticates in its first frame. */
-    app.post("/system/runners/pair", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        const id = c.req.query("id") ?? "";
-        if (id === "") {
-            return c.json({ error: "name the runner: /system/runners/pair?id=<name>" }, 400);
-        }
-        return c.json(services.runners.mintPairing(id));
-    });
-    app.post("/system/runners/enroll", async (c) => {
-        const enrolled = await services.runners.enroll(c.req.header("x-intentic-pair") ?? "");
-        if (enrolled === undefined) {
-            return c.json({ error: "pairing expired or already used, mint a fresh one from the parent sandbox." }, 401);
-        }
-        return c.json(enrolled);
-    });
-    app.get("/system/runners", async (c) => c.json({ runners: await runnerSummaries(services) }));
-    app.delete("/system/runners/:id", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        const id = c.req.param("id") ?? "";
-        services.runnerHub.disconnect(id, "this runner's access was revoked");
-        return (await services.runners.revoke(id)) ? c.json({ ok: true }) : c.json({ error: "no such runner" }, 404);
-    });
-    /* Push this sandbox's settings onto one runner, the fix for the drift lines its summary carries: the
-     * settings-only definition travels down the runner's own live link and REPLACES the runner's settings
-     * (the runner contract says why replace). Owner-only like every other runner mutation, and refused rather
-     * than queued when the runner is offline — a deferred settings push landing hours later, after the owner
-     * changed their mind again, is drift manufactured by the fix. */
-    app.post("/system/runners/:id/definition/sync", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        const id = c.req.param("id") ?? "";
-        const client = services.runnerHub.client(id);
-        if (client === undefined) {
-            return c.json({ error: "that runner is offline — wake its machine, then sync again." }, 409);
-        }
-        const toml = emitDefinitionToml(await settingsDefinition(services));
-        const report = await client.applyDefinition({ toml });
-        // The runner now runs exactly what was sent; adopting it here clears the drift without a reconnect.
-        services.runnerHub.adoptDefinition(id, toml);
-        return c.json(report);
-    });
+
+    // This sandbox's RUNNERS (runners/runner.routes.ts): pairing, enrollment, roster, revoke and the settings
+    // push, then the runner's socket, its git door and its credential doors.
+    const runners = createRunnerRoutes(services);
+    app.post("/system/runners/pair", runners.pair);
+    app.post("/system/runners/enroll", runners.enroll);
+    app.get("/system/runners", runners.list);
+    app.delete("/system/runners/:id", runners.revoke);
+    app.post("/system/runners/:id/definition/sync", runners.definitionSync);
+
     app.get("/system/runners/connect", createRunnerConnectRoute(services));
     // The git door runners fetch and push through (runner-git.routes.ts): stock smart HTTP off the real git
     // dirs, authenticated by the runner's own token, spawned per request. Before the oRPC catch-all.
@@ -1727,187 +727,26 @@ export const createApp = (services: Services): Hono<AppEnv> => {
     app.post("/mcp/webext/:id", webextMcp);
     app.get("/mcp/webext/:id", webextMcp);
     app.delete("/mcp/webext/:id", webextMcp);
-    /* Control tokens, owner-minted (the sync-pair trust model, made durable + revocable), raw value returned
-     * exactly once. What each scope reaches is auth/control-tokens.ts. Plain routes before the oRPC catch-all,
-     * like the pair block.
-     *
-     * The scope is REQUIRED rather than defaulted: every default here is wrong for somebody, and a mint that
-     * quietly picks the narrowest one produces a token that 403s on the caller's first real call, while a
-     * mint that picks a generous one hands out more reach than was asked for. Making the caller say it is one
-     * extra field and no ambiguity. */
-    app.post("/system/control/tokens", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        const body = (await c.req.json().catch(() => undefined)) as { label?: unknown; scope?: unknown } | undefined;
-        const scope = CONTROL_SCOPES.find((candidate) => candidate === body?.scope);
-        if (scope === undefined) {
-            return c.json({ error: `scope must be one of: ${CONTROL_SCOPES.join(", ")}` }, 400);
-        }
-        const label = typeof body?.label === "string" && body.label.trim() !== "" ? body.label.trim().slice(0, 60) : scope;
-        return c.json(await services.controlTokens.mint(label, scope));
-    });
-    app.get("/system/control/tokens", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        return c.json({ tokens: await services.controlTokens.list() });
-    });
-    app.delete("/system/control/tokens/:id", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        return (await services.controlTokens.revoke(c.req.param("id"))) ? c.json({ ok: true }) : c.json({ error: "no such token" }, 404);
-    });
-    /* Sign out every browser: re-key the session signer, so all sessions minted for this sandbox stop
-     * verifying at once (auth/session.ts). Owner-only, and the owner's OWN browser is included, it 401s on its
-     * next call and silently re-establishes from the Google credential it already holds, which is what makes
-     * this safe to offer as a button rather than a support procedure.
-     *
-     * Here rather than on the members routes because it is not about who may access the sandbox, it is about
-     * what is still holding a credential to it, which is the question a lost laptop actually asks. Loopback
-     * mode has no sessions to rotate and no owner to check, so it answers ok without doing anything. */
-    app.post("/system/sessions/revoke", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        await services.auth?.rotateSessions();
-        services.auth?.connections.revoke();
-        services.wsTickets.revoke();
-        return c.json({ ok: true });
-    });
-    // Account deletion, stronger than sign-out-everywhere: permanently refuse future browser authorization
-    // before rotating sessions and closing every live transport. A surviving Google proof/connect token can no
-    // longer re-establish. Local/control credentials remain available for machine-owner cleanup.
-    app.post("/system/access/disable", async (c) => {
-        if (services.auth !== undefined) {
-            try {
-                await services.auth.authorizeRetirement(bearerFrom(c.req.header("authorization")));
-            } catch (error) {
-                return error instanceof ForbiddenError ? c.json({ error: error.message }, 403) : c.json({ error: "unauthorized" }, 401);
-            }
-        }
-        await services.auth?.disableBrowserAccess();
-        await services.auth?.rotateSessions();
-        services.auth?.connections.revoke();
-        services.wsTickets.revoke();
-        return c.json({ ok: true });
-    });
-    app.post("/system/authorized-key", async (c) => {
-        // Authorized either by a valid pairing token (the agent's path) or the owner's Google token (fallback).
-        const pair = c.req.header("x-intentic-pair") ?? undefined;
-        // Read once, here: the mode this pairing grants is the one that authorized the request, and peeking
-        // for it again after the awaits below would let a token that expired mid-request enroll under a
-        // different mode than the one it was let in on.
-        const paired = pair === undefined ? undefined : services.syncPairings.peek(pair);
-        const viaPair = paired !== undefined;
-        if (!viaPair) {
-            const denied = await ownerDenied(c);
-            if (denied !== undefined) {
-                return denied;
-            }
-        }
-        const body = (await c.req.json().catch(() => undefined)) as { key?: unknown } | undefined;
-        const key = typeof body?.key === "string" ? body.key : undefined;
-        if (key === undefined || !isValidAuthorizedKey(key)) {
-            return c.json({ error: "invalid key" }, 400);
-        }
-        // The mode comes from the pairing (minted per the requester's role), never from the agent, so a member's
-        // pairing can only ever enroll "mirror". The owner-Google fallback path defaults to full "sync".
-        const mode: SyncMode = paired ?? "sync";
-        // A "sync" enroll is single-holder: if a different machine holds it and this isn't a takeover, 423 Locked
-        // (before consuming the token, so a retry with --takeover reuses the same pairing). Mirror enrolls never lock.
-        const takeover = c.req.header("x-intentic-sync-takeover") === "1";
-        const result = await enrollSyncKey({ historyRoot: services.config.historyRoot, key, mode, takeover });
-        if ("locked" in result) {
-            return c.json({ error: "sync already active", machine: result.locked }, 423);
-        }
-        // Burn the pairing token only on success, so a transient failure leaves it usable for a retry.
-        if (pair !== undefined) {
-            await services.syncPairings.consume(pair);
-        }
-        /* No address travels back any more, because there is no longer one to choose: the agent reaches sshd
-         * through THIS daemon (platform/sync-ssh.ts), at the public URL it is already talking to. That is what
-         * makes every sandbox sync the same way, the enroll used to answer 409 whenever the sandbox's
-         * reachability could not also carry TCP, which is every sandbox on the platform's own hub. */
-        return c.json({ ok: true, syncToken: result.syncToken, mode });
-    });
-    app.get("/system/sync", async (c) => {
-        // Any collaborator (owner or member) may read enrollment state, the bearer middleware already blocked a
-        // non-member, so a member's Desktop-sync card can render and mint its mirror-only pairing.
-        /* Always 200, and `available` is now always true: sync rides this daemon's own HTTPS surface, so every
-         * sandbox that can serve this response can also carry the transport (platform/sync-ssh.ts). It stays in
-         * the body because the pairing card branches on it, and because a sandbox that CANNOT do sync is a state
-         * worth being able to express again rather than one to delete the vocabulary for.
-         *
-         * WHICH MACHINE HOLDS WHAT IS NOT HERE ANY MORE. This route used to flatten the enrollment list into a
-         * `syncingFrom` holder and a `mirroredBy` list of names, for a card that presented a sandbox as having
-         * one desktop sync. Every one of those facts is per DEVICE, so it rides on the device's own row
-         * (/system/devices → DeviceSync), where the reader can also act on it. What is left here is what is
-         * genuinely about this sandbox.
-         *
-         * `machines` is what each enrolled device says about ITSELF (folders, ports, watcher). It stays because
-         * it is the cheap ambient read the rail's badge lives on: already in this daemon's memory, so a chip
-         * never costs a fan-out to somebody's laptop. Empty until a machine's watcher posts one, so every reader
-         * must render without it. */
-        return c.json({
-            enrolled: await isKeyEnrolled(services.config.historyRoot),
-            available: true,
-            machines: (await deviceReports(services.config.historyRoot)).map((entry) => entry.report),
-        });
-    });
-    /* Every device on the other end of this sandbox, the volunteered reports and the ones pulled through a
-     * host capability, merged (hosts/device-reports.ts). Readable by any collaborator, like /system/sync beside
-     * it: the bearer middleware already blocked a non-member, and a member's own mirroring machine appears here. */
-    app.get("/system/devices", async (c) => c.json({ devices: await devices(services) }));
-    // Acting on one of those devices' sandboxes is `system.manageDeviceSandbox` (system.routes.ts) rather than
-    // a plain route here: every op streams, because the slowest of them takes minutes, and a hand-rolled SSE
-    // response beside the oRPC surface would be a second shape for the browser to parse.
-    /* The machine's own report, filed on the same credential its ports poll uses (grants.ts scopes the sync token
-     * to exactly this route and that read). The agent posts on its watch tick, so the sandbox learns the folder,
-     * the ports and the watcher's liveness without ever asking for anything new from the device. */
-    app.post("/system/sync/report", async (c) => {
-        const sync = c.req.header("x-intentic-sync") ?? "";
-        const parsed = DeviceReportSchema.safeParse(await c.req.json().catch(() => undefined));
-        if (!parsed.success) {
-            return c.json({ error: "malformed report" }, 400);
-        }
-        return (await recordDeviceReport(services.config.historyRoot, sync, parsed.data))
-            ? c.json({ ok: true })
-            : c.json({ error: "unknown enrollment" }, 403);
-    });
-    /* THE AGENT'S OWN WAY OUT: `intentic-machine sync uninstall` presents its sync token and drops the one
-     * enrollment that token belongs to. Nobody else's, which is what lets a collaborator's laptop walk away from
-     * a shared sandbox without disturbing the owner's file sync. */
-    app.delete("/system/authorized-key", async (c) =>
-        (await revokeEnrollmentByToken(services.config.historyRoot, c.req.header("x-intentic-sync") ?? ""))
-            ? c.json({ ok: true })
-            : c.json({ error: "unknown enrollment" }, 404),
-    );
-    /* THE OWNER'S WAY OUT, ONE DEVICE AT A TIME, and the shape is the point: it is `DELETE /system/hosts/:id`
-     * for the sync door, which is what every other connection in this product already looks like.
-     *
-     * What it replaces cleared the WHOLE store, because it sat under a card that treated desktop sync as one
-     * property of the sandbox. So "I don't use that laptop any more" was spelled "cut off every device,
-     * including the ones mirroring ports for people who are not me", and the alternative was walking to the
-     * laptop. There is no fleet-wide kill switch behind this on purpose: revoking three devices is three
-     * deliberate acts, and each of them is a row the reader is already looking at.
-     *
-     * Owner-only, like the hosts revoke beside it: a member may hold a mirror enrollment of their own (and drops
-     * it from their own machine), but ending somebody else's is the owner's call. */
-    app.delete("/system/authorized-key/:machine", async (c) => {
-        const denied = await ownerDenied(c);
-        if (denied !== undefined) {
-            return denied;
-        }
-        return (await revokeEnrollmentByMachine(services.config.historyRoot, c.req.param("machine") ?? ""))
-            ? c.json({ ok: true })
-            : c.json({ error: "no device is enrolled under that name" }, 404);
-    });
+    // Control tokens (auth/control-tokens.routes.ts): owner-minted, durable, revocable machine credentials.
+    const controlTokens = createControlTokenRoutes(services);
+    app.post("/system/control/tokens", controlTokens.mint);
+    app.get("/system/control/tokens", controlTokens.list);
+    app.delete("/system/control/tokens/:id", controlTokens.revoke);
+
+    // Sign out every browser, and retire browser access for good (auth/access.routes.ts; the latter is exempt
+    // from the bearer middleware above so it stays repeatable after a partial attempt).
+    app.post("/system/sessions/revoke", access.revokeSessions);
+    app.post("/system/access/disable", access.disable);
+
+    // Desktop sync's enrollment surface (platform/sync.routes.ts) with the merged devices view beside it
+    // (hosts/devices.routes.ts). The two exact-path /system/authorized-key doors are the desktop-sync agent's
+    // and exempt from the bearer middleware above; the rest ride it.
+    app.post("/system/authorized-key", sync.enrollKey);
+    app.get("/system/sync", sync.state);
+    app.get("/system/devices", createDevicesRoute(services));
+    app.post("/system/sync/report", sync.report);
+    app.delete("/system/authorized-key", sync.revokeOwn);
+    app.delete("/system/authorized-key/:machine", sync.revokeMachine);
 
     // Everything else flows through the oRPC OpenAPI handler, mounted at the root (its contract paths ARE the
     // daemon's routes). Registered last so /health + /workspace/raw match first.

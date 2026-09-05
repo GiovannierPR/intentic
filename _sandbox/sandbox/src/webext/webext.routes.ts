@@ -12,7 +12,9 @@ import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/websocket";
 import type { Context } from "hono";
 import type { Services } from "../composition.js";
+import type { AppEnv } from "../context.js";
 import { bearerFrom, tokenEquals } from "../auth/auth.js";
+import { ownerDenied } from "../auth/owner-gates.js";
 import { wrapOutsideContent } from "@intentic/base/outside-text";
 import type { WebExtClient } from "./webext-hub.js";
 import { exportBrowserSession } from "./session-export.js";
@@ -275,3 +277,44 @@ export const webextSummaries = async (services: Services): Promise<WebExtSummary
             ),
     );
 };
+
+/* The owner's side of a connected browser: the hosts block retold for the extension installed in one. Same
+ * trust root — the owner mints a single-use pairing bound to ONE capability, and the code it produces can only
+ * ever connect the browser they were looking at when they clicked Connect. Owner-only to mint: handing a
+ * member the keys to the owner's signed-in browser is not a collaboration feature. */
+export const createWebExtRoutes = (services: Services) => ({
+    /** POST /system/webext/pair */
+    pair: async (c: Context<AppEnv>): Promise<Response> => {
+        const denied = await ownerDenied(services, c);
+        if (denied !== undefined) {
+            return denied;
+        }
+        const id = c.req.query("id") ?? "";
+        const capability = (await services.capabilities.list()).find((entry) => entry.id === id && entry.kind === "webext");
+        if (capability === undefined) {
+            return c.json({ error: "no connected-browser capability with that id" }, 404);
+        }
+        return c.json(services.webexts.mintPairing(id));
+    },
+    // POST /system/webext/enroll. Redeemed by the extension, authorized by the pairing alone (exempt from the
+    // bearer middleware), so nobody signs into Google inside the extension itself.
+    enroll: async (c: Context<AppEnv>): Promise<Response> => {
+        const enrolled = await services.webexts.enroll(c.req.header("x-intentic-pair") ?? "");
+        if (enrolled === undefined) {
+            return c.json({ error: "that code has expired, click Connect again in your sandbox for a fresh one." }, 401);
+        }
+        return c.json(enrolled);
+    },
+    /** GET /system/webext */
+    list: async (c: Context<AppEnv>): Promise<Response> => c.json({ browsers: await webextSummaries(services) }),
+    /** DELETE /system/webext/:id */
+    revoke: async (c: Context<AppEnv>): Promise<Response> => {
+        const denied = await ownerDenied(services, c);
+        if (denied !== undefined) {
+            return denied;
+        }
+        const id = c.req.param("id") ?? "";
+        services.webextHub.disconnect(id, "this browser's access was revoked");
+        return (await services.webexts.revoke(id)) ? c.json({ ok: true }) : c.json({ error: "no such browser" }, 404);
+    },
+});

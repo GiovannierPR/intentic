@@ -18,7 +18,8 @@ vi.mock("../sandbox/useSandbox", async () => {
 vi.mock("./sandboxClient", () => ({ sandboxJson: vi.fn(), sandboxRequest: vi.fn() }));
 
 import type { AgentSummary } from "@intentic/sandbox-contract";
-import { resetAgents, setAgents, useAgents } from "../agents/useAgents";
+import { resetAgents, useAgents } from "../agents/useAgents";
+import { setAgents } from "../agents/useAgents-registry";
 import { sandboxJson } from "./sandboxClient";
 import { applySystemEvent } from "./systemEvents";
 

@@ -117,33 +117,25 @@ import { createExpiryTracker } from "./agents/expiry.js";
 import { createLandedPresences } from "./agents/landed-presence.js";
 import { createLandStandings } from "./agents/standing.js";
 import { createAgentWorktrees, type AgentWorktrees } from "./agents/worktrees.js";
+import { changedFiles } from "./git/changes.js";
 import {
     type ActionResult,
-    changedFiles,
     checkoutRef,
     cherryPick,
     commitChanges,
-    commitFileDiff,
-    commitIndex,
     commitLog,
     createBranchAt,
     createTagAt,
     deleteTag,
-    discardPaths,
     dropCommit,
     mergeCommit,
     pushTag,
     rebaseOnto,
     resetTo,
     revertCommit,
-    conflictedFileDiff,
-    refFileDiff,
-    stagePaths,
-    stagedFileDiff,
-    unstagePaths,
-    unstagedFileDiff,
-    workingFileDiff,
-} from "./git/changes.js";
+} from "./git/changes-commits.js";
+import { commitFileDiff, conflictedFileDiff, refFileDiff, stagedFileDiff, unstagedFileDiff, workingFileDiff } from "./git/changes-diff.js";
+import { commitIndex, discardPaths, stagePaths, unstagePaths } from "./git/changes-index.js";
 import { collectRepoDiff, type CommitScope, type RepoDiff } from "./git/commit-message.js";
 import { createBranch, deleteBranch, listBranches, listRemoteBranches } from "./git/branches.js";
 import { abortOperation, type GitOperation, operationInProgress } from "./git/operation.js";
@@ -219,6 +211,7 @@ import { type SecretKeyResolver, vaultExtensionSettingSecrets } from "./extensio
 import { installedExtensions } from "./extensions/installed-extensions.js";
 import { workspaceArrivedEmpty } from "./scaffold/starter-site.js";
 import { type WorkspacePaths, workspacePaths } from "./workspace/workspace.js";
+import { writeWorkspaceFileStream } from "./workspace/workspace-files-upload.js";
 import {
     copyWorkspacePath,
     makeWorkspaceDir,
@@ -231,7 +224,6 @@ import {
     statWorkspaceFileSize,
     type WorkspaceFileWindow,
     writeWorkspaceFile,
-    writeWorkspaceFileStream,
 } from "./workspace/workspace-files.js";
 import { listWorkspaceChildren, walkWorkspaceTree } from "./workspace/workspace-tree.js";
 import type { WorkspaceScopeDeps } from "./workspace/workspace-scope.js";
@@ -605,8 +597,9 @@ export interface Services extends ClaudeSlice, CodexSlice, CursorSlice, GrokSlic
         // The unabbreviated HEAD sha, the form a sha-pinned capability config stores (extension revert).
         readonly fullHead: (dir: string) => Promise<string>;
         readonly sync: (dir: string) => Promise<GitSyncResult>;
-        // The Changes review verbs (git/changes.ts): working-tree status split into the index and worktree sides,
-        // the index moves, the two whole-repo commit shapes, per-path discard, and the per-side file diffs.
+        // The Changes review verbs (git/changes.ts, changes-index.ts, changes-diff.ts): working-tree status split
+        // into the index and worktree sides, the index moves, the two whole-repo commit shapes, per-path discard,
+        // and the per-side file diffs.
         // `head` rides along because the status read already carries it: the scan's other readers (attribution)
         // take it as an argument rather than spawning `rev-parse HEAD` for the answer it just had.
         readonly changedFiles: (dir: string) => Promise<{

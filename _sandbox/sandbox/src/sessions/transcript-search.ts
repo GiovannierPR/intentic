@@ -90,7 +90,7 @@ export const transcriptSearchMetrics = (): Readonly<Record<string, number>> => (
  *
  * Copied out of its parent, never sliced from it: the strip/parse steps above answer with V8 slices, views
  * that pin the WHOLE original message (a prompt with its preamble and history envelope runs to hundreds of KB)
- * for as long as one line lives. Same mechanics as git/changes.ts materializedPaths.
+ * for as long as one line lives. Same mechanics as git/changes-porcelain.ts materializedPaths.
  */
 const spoken = (text: string, speaker: Speaker): SpokenLine[] => {
     const collapsed = text.replace(/\s+/gu, " ").trim();

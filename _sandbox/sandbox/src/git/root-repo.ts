@@ -6,7 +6,7 @@ import { defaultGit, gitCommitAll, gitInit, gitStageAll, type GitRunner } from "
 import { repoGitDir, rootExcludes, syncRootExcludes } from "../history/history.js";
 import { discoverRepos } from "../workspace/repo-discovery.js";
 import type { WorkspacePaths } from "../workspace/workspace.js";
-import { commitIndex } from "./changes.js";
+import { commitIndex } from "./changes-index.js";
 import { AGENT_GIT_AUTHOR } from "./git.js";
 
 // The /work workspace repo ("root"): the ENTIRE workspace is under version control, not just the nested

@@ -292,7 +292,7 @@ reports the profile.
   (src/platform/pool-donate.ts: the donation IS the premium gate, keyed on the checkout's own manifest
   identity, refused installs leave no debris); enabling one re-checks the membership (src/platform/pool-status.ts);
   nothing about what runs on this machine is ever reported. Metered service runs relay through
-  src/platform/pool-services.ts: the daemon adds the connect token, the member gate, the credit meter and
+  src/platform/pool-services.ts (the `/pool` routes are `pool.routes.ts`): the daemon adds the connect token, the member gate, the credit meter and
   the refund discipline are the platform's. A run's answer is the platform's NDJSON stream (the contract's
   ServiceStreamEvent vocabulary plus its own receipt trailer), which the relay forks: provider `status`
   lines surface live, the buffered `result` is what the caller is answered with. The AGENT's own run is
@@ -375,18 +375,19 @@ reports the profile.
   fleet through it: `runner-up` ships a settings-only definition plus the approved overlay with its pinning
   hash (approval by provenance — this owner already reviewed those bytes, and a runner has no owner of its
   own), so a runner starts as this sandbox's twin, and the definition machinery is also what itemizes runner
-  drift and fixes the settings half over the live link.
+  drift and fixes the settings half over the live link. The HTTP doors are three plain-Hono route modules
+  beside the machinery they drive: `bundle.routes.ts`, `definition.routes.ts` and `arrival.routes.ts`.
 
 ## Key files
 
-- [src/app.ts](src/app.ts), the Hono HTTP API: every route the browser and the CLI reach the daemon through.
+- [src/app.ts](src/app.ts), the Hono HTTP API's composition root: the middleware stack (boot gate, CORS, the bearer check with its exemptions and role floor), `/health`, and every route the browser and the CLI reach the daemon through, mounted in one fixed order from the `*.routes.ts` module of the area that owns it. The order is behavior — Hono matches in registration order and the exemptions are keyed by path — so it stays in this one file while each handler lives beside the code it drives (`auth/members.routes.ts`, `environment/environment.routes.ts`, `portability/arrival.routes.ts`, `platform/sync.routes.ts`, `extensions/backend/backend-proxy.routes.ts`, …).
 - [src/agent](src/agent), **singular**: one conversation. The turn loop, its tools, steering, terminals and diagnostics.
 - [src/agent/provider-registry.ts](src/agent/provider-registry.ts): the provider list, once. Each native provider's directory exports one `ProviderModule` (its adapter row, turn arm, Services slice, catalog, readiness rung, boot tasks, pack wants and secrets rows — src/agent/provider-module.ts is the seam), and the shared surfaces DERIVE from the aggregation instead of each keeping its own enumeration. Adding a provider is its contract row (the one-row-per-provider table in `@intentic/sandbox-contract`'s provider-specs.ts), its directory, and one import line here; the registry throws at init on a missing or duplicate module, so forgetting the line fails every suite rather than shipping a provider whose secrets rows and readiness silently do not exist (which happened twice while these lists were hand-kept).
 - [src/minted/](src/minted): the providers whose SIGN-IN MINTS their key (Meta's Muse Code, Z.ai's GLM Coding Plan). The token their sign-in issues is not an inference credential — either vendor's model endpoint refuses it — so the flow has a second half the user never sees: mint the vendor's own API key from it and store that, which is exactly what those vendors' own CLIs do. Nobody pastes a key; a raw key against somebody's own gateway is still an `endpoint` capability and always was. The key then points the Claude Code loop straight at the vendor's Anthropic Messages endpoint — no translator hop, no adapter, no new runtime, the same road an `anthropic`-protocol endpoint capability takes. One store, one login machine, one catalog per ESTATE and one module FACTORY serve all of them: what differs between two minted providers is a login driver and a seed list, and Z.ai's two estates (api.z.ai and open.bigmodel.cn, whose hosts refuse each other's keys) differ only in a pair of URLs on the spec row. A third provider is a contract row, a seed and a driver.
 - [src/agent/model-catalog.ts](src/agent/model-catalog.ts): "what can this account run", once, for all six providers that have to answer it (Claude, Codex, Cursor, Gemini, Kimi, Grok). The ladder is live discovery → the persisted last-known-good list → a compile-time seed floor, and the two properties each provider used to re-derive are true here instead: only a REAL answer is cached (so a seeded read retries on the next call, rather than pinning a placeholder row for a minute), and the file goes through [src/store/json-file.ts](src/store/json-file.ts), read via the caller's schema and written atomically (so a self-heal write cannot be caught half-done by the read that falls back on it). A provider brings its own `discover`, what it keeps on disk, its floor, and how each rung renders; Cursor also keeps the raw vendor items, because a turn needs their parameter definitions to translate an effort tier. [src/agent/model-discovery.ts](src/agent/model-discovery.ts) is the ASKING, shared by the four providers that ask an OpenAI-compatible endpoint: the bearer GET that answers `undefined` instead of throwing, the `{ data: [{ id }] }` unwrap, the id→label humanizer (one, where three had drifted over whether `gpt` is an acronym), and the "Did you mean: …" reader that is the only catalog some subscription accounts ever produce.
 - [src/agents](src/agents), **plural**: the fleet. The registry, `worktrees.ts`, `isolation.ts`, `land.ts`, `origins.ts`, `landed-presence.ts`, `landed-history.ts`, and `fleet-recall.ts` + `fleet.routes.ts` (what one conversation can learn about another, see below).
 - [src/cursor](src/cursor), the Cursor runtime, run in this process: the account store and its browser sign-in (`cursor-credentials.ts`), the adapter (`cursor-agent.ts`), the delta→frame mapping (`cursor-events.ts`), the socket-backed command gate Cursor calls back into (`cursor-hooks.ts`), the dynamic module resolution that lets the daemon boot without it (`cursor-sdk.ts`), and the provider module that registers all of it (`cursor-provider.ts`).
-- [src/git/git.routes.ts](src/git/git.routes.ts) (status/commit/push over the wire; [src/workspace](src/workspace)) the repo layout the daemon serves. The push is not a request but a RUN ([src/git/push-run.ts](src/git/push-run.ts)): it runs the repository's own pre-push hook, which in a gated workspace is the whole suite, so it starts at once in the same terminal as the pre-push check ([src/prepush](src/prepush)), is polled for its verdict, and settles with git's last word and who refused it (the hook, the remote, or the transport: `pushRefusal` in `git.ts`, read off real transcripts). Both runs are one shape (`CommandRun` in the contract) over one engine (`rules/rule-command.ts`), which is what lets the app show a refused push with the card, the terminal link and the proposed fix a red check already gets. [src/workspace/workspace-scope.ts](src/workspace/workspace-scope.ts) decides WHOSE copy a file read means: the shared `/work` tree, or one conversation's own checkout when the request names it (`?agent=`). Reads only (no write route can name a checkout) and a request naming one that was archived away says so specifically instead of reporting a missing file.
+- [src/git/git.routes.ts](src/git/git.routes.ts) (status/commit/push over the wire; [src/workspace](src/workspace)) the repo layout the daemon serves; `workspace-bytes.routes.ts` is its byte surface, the raw and ranged-media reads and the three upload doors, off oRPC because their bodies are streamed bytes. The push is not a request but a RUN ([src/git/push-run.ts](src/git/push-run.ts)): it runs the repository's own pre-push hook, which in a gated workspace is the whole suite, so it starts at once in the same terminal as the pre-push check ([src/prepush](src/prepush)), is polled for its verdict, and settles with git's last word and who refused it (the hook, the remote, or the transport: `pushRefusal` in `git.ts`, read off real transcripts). Both runs are one shape (`CommandRun` in the contract) over one engine (`rules/rule-command.ts`), which is what lets the app show a refused push with the card, the terminal link and the proposed fix a red check already gets. [src/workspace/workspace-scope.ts](src/workspace/workspace-scope.ts) decides WHOSE copy a file read means: the shared `/work` tree, or one conversation's own checkout when the request names it (`?agent=`). Reads only (no write route can name a checkout) and a request naming one that was archived away says so specifically instead of reporting a missing file.
 - [src/composition.ts](src/composition.ts) (what is wired to what; [src/main.ts](src/main.ts)) the entrypoint that builds it and serves.
 - [src/environment](src/environment): the overlay Dockerfile pipeline (capability fragments + the owner-approved
   custom section), and the image boundary held by the harness rather than by prose. The install-steering hook
@@ -397,6 +398,7 @@ reports the profile.
   dpkg's own log for apt, an mtime sweep for everything else); and an install that recurs across sessions, is
   corroborated by drift, and has a mechanical template is auto-drafted into the owner's proposal (`auto-drafts.ts`).
   Rejection tombstones the tool in the ledger so the machine never re-proposes what the owner already declined.
+  The `/environment` routes (read, contents, approve, reject, one runtime-install decision) are `environment.routes.ts`.
 - [docs/env-contract.md](docs/env-contract.md): the environment every command a turn starts receives, layer by
   layer — the image's `ENV` block, the turn's live-derived connector credentials, extension settings and `PATH`
   (narrowed by the persona in `personas/personas.ts`), the workload stamp — and the short list an extension
@@ -415,7 +417,7 @@ reports the profile.
   repo root and read hourly, so blessing one is a commit rather than a release — with `latest`, a pin and the
   image itself as the alternatives. [src/claude/claude-sdk.ts](src/claude/claude-sdk.ts) is the loader that
   makes it real for the engine loaded IN this process: both halves of the Claude SDK come from one installed
-  prefix, resolved at turn start so a version can never change under a turn already running.
+  prefix, resolved at turn start so a version can never change under a turn already running. Its `/engines` routes are `engines.routes.ts`.
 - [src/dependencies](src/dependencies): whether the version an agent is about to pin is the one its registry
   actually has. [src/agent/agent-freshness.ts](src/agent/agent-freshness.ts) reads the pins out of an install
   command or a manifest edit and hands the difference back as context, never as a refusal — matching a version the
@@ -531,11 +533,11 @@ reports the profile.
   the baked `fileq` CLI (`_sandbox/fileq`) to keep a markdown shadow of every binary workspace file (docx,
   pdf, images, audio) converged under `.intentic/local/cache/derived/` — gated by the `sidecars` setting,
   serialized to one child at a time, and sweeping the whole tree when the setting flips on.
-- [src/hosts](src/hosts), the user's own computers: the socket each one holds open, the Devices view's data
-  (`machine-reports.ts`), and `host-seed.ts`: the card the setup flow creates for the machine that installed
+- [src/hosts](src/hosts), the user's own computers: the socket each one holds open (`host.routes.ts`, which also
+  holds the owner's pairing, roster and revoke routes), the Devices view's data (`device-reports.ts`, served by `devices.routes.ts`), and `host-seed.ts`: the card the setup flow creates for the machine that installed
   this sandbox, granted its sandboxes and nothing else. Acting on one of those sandboxes STREAMS, because the
   slowest of those actions pulls an image for minutes; the scope behind it is checked on the machine and never
-  here. `machine-commands.ts` is the other door: one of the machine's OWN CLI actions run from a button rather
+  here. `device-commands.ts` is the other door: one of the machine's OWN CLI actions run from a button rather
   than through an agent, answering with the sentence the CLI printed instead of a stream. Five of them, and they
   are the two halves of one pairing plus its end — port mirroring off/on, file syncing paused/resumed, and
   unpairing, which asks the agent to terminate its sessions and self-revoke rather than having the key pulled
@@ -555,7 +557,8 @@ reports the profile.
   websites and an old or tampered extension must not be able to skip that. And `session-import.ts` is the one
   door a credential comes IN through: a site's cookies, handed over by the owner's click, written into a
   `browser` capability's Chromium profile by launching that profile headless — never a tool result, because a
-  tool result is something the model reads.
+  tool result is something the model reads. The owner's pairing, roster and revoke routes sit beside the socket
+  in `webext.routes.ts`.
 - [src/runners](src/runners), this sandbox's own execution containers on other machines — both halves, since
   a runner IS this daemon in another posture. Parent half: enrollment on /history (the pairing-and-enrollment
   mechanic is one module, `store/enrollment.ts`, shared with hosts, webext and desktop sync — what is left
@@ -570,7 +573,8 @@ reports the profile.
   machine. Parity is itemized through the definition surface: a runner's hello declares its settings as a
   settings-only `sandbox.toml`, the parent diffs that (plus the overlay hashes) into per-line drift on the
   runner's summary, and the sync door pushes this sandbox's settings down the live link (replace semantics —
-  the parent is a runner's whole authority). `docs/remote-runners-plan.md` at the workspace root says why
+  the parent is a runner's whole authority). The owner's pairing, roster, revoke and settings-push routes are
+  `runner.routes.ts`, beside the socket. `docs/remote-runners-plan.md` at the workspace root says why
   every seam sits where it does.
 - [src/guard/guard.ts](src/guard/guard.ts): the one gate every gated action consults (fail-closed); [src/guard/actions.ts](src/guard/actions.ts) is the catalog of decisions, and [src/guard/command-gate.ts](src/guard/command-gate.ts) is the one that can park a running turn on a card. It runs four tiers and only the last interrupts anybody: TRIAGE (the classifier), the HARD RULE (`commandRun`, un-waivable, one class), the JUDGE (a model reading the owner's policy), and the PERSON. The last two are the owner's to decline (`settings.commandJudge`: `off` never calls the judge, `watch` calls it and records every verdict while holding nothing, `on` lets the verdict decide) — a tier that spends money and interrupts people has to be refusable, and the redesign had quietly made itself the one part of the sandbox you could only opt further into. The hard rule is outside all three, so no setting can leave a turn with nothing between it and a formatted disk, which is what makes the switch offerable. THE CARD'S TITLE IS THE JUDGE'S OWN SENTENCE, not a class: it used to be `This command would ${LABEL[matches[0]]}`, the first class the catalog matched, in the catalog's own order — so a command that cleaned a build directory and then published a package read "This command would delete files recursively" over a sentence about npm, with the `rm -rf` marked beneath it as the fragment it was stopped for. Every word of that card except the sentence was about the wrong half of the command, and it is how a gate comes to look like it is crying wolf about deletions when it never was. Only the hard rule still titles a consequence, because it alone is a typed verdict over a named class. `credentialUse` is the catalog's fifth action and the only one whose sole DENY is "there is nobody to ask": a gate is never a ban, so an unattended turn and a turn with no live conversation are refusals while everything else is a hold that asks a named person (src/secrets/credential-gate.ts). WHAT a command is, as opposed to what may be done about it, lives one package out in
   [sandbox-contract/src/command-classes.ts](../sandbox-contract/src/command-classes.ts): the same table the
@@ -749,7 +753,7 @@ reports the profile.
   never invented. It is REGENERATED and never stored, which is the whole argument for it being a mechanism
   instead of a paragraph: over the ten days that motivated it, this repo's two busiest top-level directories
   stopped existing and ten sessions went on naming them.
-- [src/auth/role-floor.ts](src/auth/role-floor.ts): the minimum trust tier per route, in one table. [src/auth/auth.ts](src/auth/auth.ts) resolves who a caller is (owner TOFU, members with granted roles); the floor decides what that tier reaches.
+- [src/auth/role-floor.ts](src/auth/role-floor.ts): the minimum trust tier per route, in one table. [src/auth/auth.ts](src/auth/auth.ts) resolves who a caller is (owner TOFU, members with granted roles); the floor decides what that tier reaches. The plain-Hono routes that gate on the owner share one pair of gates (`owner-gates.ts`: the maintainer-equivalent operating gate, and the ownership gate reserved for membership) and sit beside it: the roster (`members.routes.ts`), control tokens (`control-tokens.routes.ts`), and browser credentials — the WebSocket ticket, sign-out-everywhere and retirement (`access.routes.ts`).
 - [src/workflows](src/workflows): workflow scheduling, immutable run snapshots, restart recovery, run-ledger
   retention, and complete, resolved handoff artifacts; [src/loops](src/loops) drives each individual step.
 

@@ -43,7 +43,8 @@ const { sandboxRequest, sandboxUpload } = await import("../sandbox/sandboxClient
 const sandboxRequestMock = vi.mocked(sandboxRequest);
 const sandboxUploadMock = vi.mocked(sandboxUpload);
 const { revealConversation } = await import("./agentActions");
-const { draftConversation, resetChat, reveal, useChat } = await import("../chat/useChat");
+const { resetChat, useChat } = await import("../chat/useChat");
+const { draftConversation, reveal } = await import("../chat/useChat-reveal");
 // The store half of "New agent", as the summons applies it (agentActions.startAgent): the fixture these
 // suites open extra tabs with.
 const newChat = () => {

@@ -3,7 +3,7 @@ import { useNow } from "@intentic/ui/async";
 import { computed } from "vue";
 import { formatElapsed } from "../composables/agents/agentStatus";
 import { useAgents } from "../composables/agents/useAgents";
-import { usePaneView } from "../composables/chat/useChat";
+import { usePaneView } from "../composables/chat/useChat-view";
 
 /* THE LIVE TURN'S ONE STATUS LINE: a spinner, what the turn is doing, and how long it has been doing it.
  *

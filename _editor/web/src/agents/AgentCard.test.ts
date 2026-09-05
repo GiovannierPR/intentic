@@ -12,7 +12,7 @@ import type { AgentSummary } from "@intentic/sandbox-contract";
 import { afterEach, expect, it, vi } from "vitest";
 import { type App, createApp, defineComponent, h, nextTick } from "vue";
 import type { PendingAction } from "../composables/agents/laneDrop";
-import type { FleetAgent } from "../composables/agents/useAgents";
+import type { FleetAgent } from "../composables/agents/useAgents-fleet";
 
 // The card's import chain pulls in app-wide singletons that read browser globals at import time, stood up
 // for the package by vitest.setup.ts, whose matches:false keeps the device DESKTOP, the form factor that

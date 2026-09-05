@@ -6,7 +6,7 @@ import { creditSummary, formatCredits } from "../composables/membership/creditMe
 import { useMembership } from "../composables/membership/useMembership";
 import { effectiveAccount } from "../composables/chat/providerAccounts";
 import { formatReset, formatUtilization, planHeadroom, SPENT_PERCENT, usageStatusFor } from "../composables/chat/usageStatus";
-import { usePaneView } from "../composables/chat/useChat";
+import { usePaneView } from "../composables/chat/useChat-view";
 import { sandboxAvailabilityVisual } from "../composables/sandbox/availability";
 import { useSandboxAvailability } from "../composables/sandbox/useSandboxAvailability";
 import { useWorkspaceTree } from "../composables/workspace/useWorkspaceTree";

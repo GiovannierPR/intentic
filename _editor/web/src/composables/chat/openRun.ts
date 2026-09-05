@@ -1,9 +1,11 @@
 import { type WorkflowRun, WorkflowRunsListSchema } from "@intentic/sandbox-contract";
-import { agentSeed, useAgents } from "../agents/useAgents";
+import { useAgents } from "../agents/useAgents";
+import { agentSeed } from "../agents/useAgents-actions";
 import { sandboxJson } from "../sandbox/sandboxClient";
 import type { RunSession } from "./chatRun";
 import { summonChat } from "./summon";
-import { agentTabOf, reveal, useChat } from "./useChat";
+import { useChat } from "./useChat";
+import { agentTabOf, reveal } from "./useChat-reveal";
 
 /* OPENING A RUN INTO THE CHAT, from wherever it was pressed, the fleet board's card, the rail's row, a column
  * of the diagram. One act, one module, because the three surfaces must not drift on it: a run opened from the

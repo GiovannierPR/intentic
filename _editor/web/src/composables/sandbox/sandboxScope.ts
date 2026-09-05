@@ -1,6 +1,8 @@
 import { watch } from "vue";
-import { loadArchived, resetAgents, resetArchive } from "../agents/useAgents";
-import { loadAccountStatus, resetChat } from "../chat/useChat";
+import { resetAgents } from "../agents/useAgents";
+import { loadArchived, resetArchive } from "../agents/useAgents-registry";
+import { resetChat } from "../chat/useChat";
+import { loadAccountStatus } from "../chat/useChat-accounts";
 import { resetEditBuffers } from "../workspace/useEditBuffers";
 import { resetPreviewSurface } from "../preview/previewSurface";
 import { resetPresence } from "../usePresence";

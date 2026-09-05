@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { defaultGit } from "@intentic/scaffold";
 import { afterEach, expect, test } from "vitest";
 import { ensureRootRepo } from "../git/root-repo.js";
-import { discardPaths } from "../git/changes.js";
+import { discardPaths } from "../git/changes-index.js";
 import { createLogger } from "../logger.js";
 import { createPerfTracker } from "../platform/perf.js";
 import { isolatedAgent, noIsolation } from "../testing.js";

@@ -1,7 +1,7 @@
 import type { AgentReply, EditorContext } from "@intentic/sandbox-contract";
 import type { Caller } from "../auth/auth.js";
 import type { Services } from "../composition.js";
-import { resolveWithin } from "../workspace/workspace-files.js";
+import { resolveWithin } from "../workspace/workspace-files-paths.js";
 import { conversationOf, resolveRequest } from "./agent-requests.js";
 import { steerTurn, stopTurn } from "./agent-steering.js";
 import { withAttachmentNote } from "./attachment-note.js";

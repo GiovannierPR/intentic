@@ -5,7 +5,8 @@ import { Conversation } from "./conversation";
 import { traceFocus } from "./focusTrace";
 import { showRun } from "./chatRun";
 import { snapshotTab, type StoredTab } from "./tabSnapshot";
-import { closeConversations, type Reveal, reveal, type RevealEntry } from "./useChat";
+import { closeConversations } from "./useChat-tabs";
+import { type Reveal, reveal, type RevealEntry } from "./useChat-reveal";
 
 /* SUMMONING THE CHAT, FOR EVERY WINDOW AT ONCE, the one way a surface outside the panel puts something on it.
  *

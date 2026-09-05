@@ -4,7 +4,7 @@ import { defaultGit, type GitRunner } from "@intentic/scaffold";
 
 /* THE OPERATION A WORKTREE IS HALTED IN THE MIDDLE OF, and the way out of it.
  *
- * Every git verb this daemon runs itself aborts cleanly on failure (changes.ts runOrAbort), so nothing the UI
+ * Every git verb this daemon runs itself aborts cleanly on failure (changes-commits.ts runOrAbort), so nothing the UI
  * starts can leave a repo mid-operation. What CAN is everything else: an agent running `git rebase` in a
  * terminal, a user in a shell, a `land` that hit a conflict. Those leave a worktree git refuses to do almost
  * anything with, no commit, no checkout, no clean diff, and until now no surface named the state or offered a

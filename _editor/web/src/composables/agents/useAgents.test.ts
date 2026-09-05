@@ -25,7 +25,9 @@ import type { Strip, TabFacts } from "../chat/tabFacts";
 import { useChat } from "../chat/useChat";
 import { useNotifications } from "../notifications";
 import { queryClient } from "../queryPersistence";
-import { canArchive, FINISHED_WINDOW, type FleetAgent, resetAgents, resetArchive, setAgents, useAgents, windowFinished } from "./useAgents";
+import { resetAgents, useAgents } from "./useAgents";
+import { canArchive, FINISHED_WINDOW, type FleetAgent, windowFinished } from "./useAgents-fleet";
+import { resetArchive, setAgents } from "./useAgents-registry";
 
 /* The Finished lane's cap, and the one card it is never allowed to drop. The board draws a ring on whatever the
  * docked chat is pointing at, so a lane that culls that card leaves the ring nowhere at all, which reads as

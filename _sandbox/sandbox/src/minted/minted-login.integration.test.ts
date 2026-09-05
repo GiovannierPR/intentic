@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createLogger } from "../logger.js";
-import { memoryMintedStore } from "../route-testing.js";
+import { memoryMintedStore } from "../route-stores.testing.js";
 import { metaLoginDriver } from "./meta-login.js";
 import { cancelAllMintedLogins, cancelMintedLogin, completeMintedLogin, startMintedLogin } from "./minted-login.js";
 import { zaiLoginDriver } from "./zai-login.js";

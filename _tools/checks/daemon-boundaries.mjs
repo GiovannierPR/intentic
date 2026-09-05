@@ -25,8 +25,8 @@
  *      module evaluate before its dependency, and the composition root's `Services` type reaching every module
  *      is by design. A VALUE cycle is the one that decides load order by accident, and the one that makes
  *      either side impossible to lift out (a provider into its own package, say) without taking the other.
- *      Files at the root of src/ (composition.ts, app.ts, main.ts, route-testing.ts) are the composition root
- *      and are left out of the graph: reaching everything is their job.
+ *      Files at the root of src/ (composition.ts, app.ts, main.ts, the route-*.testing.ts harness) are the
+ *      composition root and are left out of the graph: reaching everything is their job.
  *
  * Read with regular expressions over import statements rather than a parser, for the reason lib/lockfile.mjs
  * gives: this runs from the pre-push hook and the CI preflight job, before any install, so it cannot import
@@ -61,7 +61,6 @@ const NARROW_TAKERS = new Set([
     "scaffold/ensure-intent.ts",
     "scaffold/starter-site.ts",
     "system/workspace-identity.ts",
-    "webext/webext.routes.ts",
     "workspace/sync-repos.ts",
 ]);
 

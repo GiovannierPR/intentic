@@ -9,22 +9,15 @@ import { expect, test } from "vitest";
 import { createApp } from "../app.js";
 import { hasSession, markConnected, sessionDir } from "../browser/session-store.js";
 
-import {
-    clientFor,
-    collect,
-    errorCode,
-    fakeFiles,
-    memoryCapabilitiesStore,
-    memoryDismissalsStore,
-    memoryPersonasStore,
-    services,
-    tempWorkspace,
-} from "../route-testing.js";
+import { clientFor, collect, errorCode } from "../route-client.testing.js";
+import { fakeFiles, tempWorkspace } from "../route-fakes.testing.js";
+import { services } from "../route-services.testing.js";
+import { memoryCapabilitiesStore, memoryDismissalsStore, memoryPersonasStore } from "../route-stores.testing.js";
 
 /* The capabilities routes, driven over the daemon's HTTP surface exactly as the browser drives them.
  * Split out of app.integration.test.ts, which had grown to 116 tests across every route in the daemon:
  * one file that two agents working on unrelated features collided in every time. The fakes and the client
- * are shared (route-testing.ts); what lives here is what these routes do. */
+ * are shared (route-services.testing.ts and its siblings); what lives here is what these routes do. */
 
 test("capabilities.list reports each capability with its status; devops can't be removed, unknown is NOT_FOUND", async () => {
     // An isolated workspace, so the derived recommendations depend on this test's tree rather than on whatever

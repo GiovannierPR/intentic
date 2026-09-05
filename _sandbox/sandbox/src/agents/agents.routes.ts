@@ -18,7 +18,7 @@ import type { Services } from "../composition.js";
 import type { OrpcContext } from "../context.js";
 import { deliverToListenerChannel } from "../extensions/listener-deliver.js";
 import { conversationLines, matchLines } from "../sessions/transcript-search.js";
-import { resolveWithin } from "../workspace/workspace-files.js";
+import { resolveWithin } from "../workspace/workspace-files-paths.js";
 import { headSha } from "../git/changes.js";
 import { agentRepoReview, agentRepoModules, anchorOf, presentInMain } from "./agent-changes.js";
 import { commitsCarrying, historySpanStart } from "./landed-history.js";

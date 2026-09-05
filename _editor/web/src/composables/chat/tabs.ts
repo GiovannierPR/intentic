@@ -1,5 +1,6 @@
 import type { AgentOrigin } from "@intentic/sandbox-contract";
-import { type FleetAgent, useAgents } from "../agents/useAgents";
+import { useAgents } from "../agents/useAgents";
+import type { FleetAgent } from "../agents/useAgents-fleet";
 import { type FleetLane, laneOf } from "../agents/agentStatus";
 import type { Conversation } from "./conversation";
 import { draftPreview } from "./draftPreview";

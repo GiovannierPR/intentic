@@ -2,7 +2,7 @@ import { REQUEST_ID_HEADER } from "@intentic/sandbox-contract";
 import { expect, test } from "vitest";
 import { createApp } from "../app.js";
 import { createPerfTracker, type PerfFields } from "../platform/perf.js";
-import { services } from "../route-testing.js";
+import { services } from "../route-services.testing.js";
 import { pino } from "pino";
 
 /* THE CORRELATION, ACROSS THE WIRE. Both halves of a slow interaction were already measured and could not be

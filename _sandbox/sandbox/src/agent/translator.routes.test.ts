@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import { createApp } from "../app.js";
-import { clientFor, postJson, services, withTranslator } from "../route-testing.js";
+import { clientFor, postJson } from "../route-client.testing.js";
+import { services, withTranslator } from "../route-services.testing.js";
 import { TRANSLATOR_BINARY_MISSING } from "./translator.js";
 
 /* THE SENTENCE THE TRANSLATOR WROTE IS THE SENTENCE THE USER READS.

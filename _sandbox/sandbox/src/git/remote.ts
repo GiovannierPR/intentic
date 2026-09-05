@@ -1,7 +1,7 @@
 import type { GitRemoteState } from "@intentic/sandbox-contract";
 import { defaultGit, type GitRunner } from "@intentic/scaffold";
 import { upstreamOf } from "./branches.js";
-import type { ActionResult } from "./changes.js";
+import type { ActionResult } from "./changes-commits.js";
 import { gitFailureReason } from "./git.js";
 
 /* Talking to the remote: where the current branch stands relative to its upstream, and the three verbs that

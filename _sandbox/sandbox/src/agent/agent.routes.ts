@@ -26,7 +26,7 @@ import type { OrpcContext } from "../context.js";
 import type { DependencyLandOrigin } from "../workspace/dependency-origin.js";
 import { queueVerify, type VerifyDeps } from "../workspace/verify-deps.js";
 import { REPO_SYNC_NOTE_TITLE, syncAdvisory, syncWorkspaceRepos } from "../workspace/sync-repos.js";
-import { resolveWithin } from "../workspace/workspace-files.js";
+import { resolveWithin } from "../workspace/workspace-files-paths.js";
 import { startAnchor, type TurnPlacement } from "../agents/isolation.js";
 import { holdAccount } from "../claude/claude-credentials.js";
 import { isIsolated } from "../agents/agents-store.js";

@@ -6,7 +6,7 @@ import { useAgents } from "../composables/agents/useAgents";
 import { fallbackAccount, fallbackLabel } from "../composables/chat/limitFallback";
 import { pickUpStatus } from "../composables/chat/pickUp";
 import { formatWait } from "../composables/chat/usageStatus";
-import { usePaneView } from "../composables/chat/useChat";
+import { usePaneView } from "../composables/chat/useChat-view";
 import { useSandbox } from "../composables/sandbox/useSandbox";
 
 /* WHAT HAPPENED TO THE LAST TURN, AND THE WAY ON, one strip for every ending that leaves work behind.

@@ -22,15 +22,19 @@ import type { ManagedProcesses, ProcessSpec } from "../processes/managed-process
 import { unstubbed } from "@intentic/testing";
 
 import { workspacePaths } from "./workspace.js";
-import { MAX_RAW_BYTES, sha256Text, statWorkspaceFileSize, UploadTooLargeError } from "./workspace-files.js";
+import { MAX_RAW_BYTES } from "./workspace-files-download.js";
+import { UploadTooLargeError } from "./workspace-files-upload.js";
+import { sha256Text, statWorkspaceFileSize } from "./workspace-files.js";
 
-import { clientFor, errorCode, fakeFiles, fakeHistory, services, tempWorkspace } from "../route-testing.js";
+import { clientFor, errorCode } from "../route-client.testing.js";
+import { fakeFiles, fakeHistory, tempWorkspace } from "../route-fakes.testing.js";
+import { services } from "../route-services.testing.js";
 import { testConfig } from "../testing.js";
 
 /* The workspace routes, driven over the daemon's HTTP surface exactly as the browser drives them.
  * Split out of app.integration.test.ts, which had grown to 116 tests across every route in the daemon:
  * one file that two agents working on unrelated features collided in every time. The fakes and the client
- * are shared (route-testing.ts); what lives here is what these routes do. */
+ * are shared (route-services.testing.ts and its siblings); what lives here is what these routes do. */
 
 test("workspace dependency installs join the coordinator queue instead of starting a panel directly", async () => {
     const requested: string[][] = [];
@@ -436,7 +440,7 @@ test("POST /workspace/upload streams any contained path to disk, 400s escape, 41
 
     // A body past the cap surfaces as UploadTooLargeError from the streaming write → 413 (the write itself deletes
     // the partial; here the fake just throws). The declared-length short-circuit + real cap are unit-tested in
-    // workspace-files.integration.test.ts / workspace-archive.integration.test.ts.
+    // workspace-files-upload.integration.test.ts / workspace-archive.integration.test.ts.
     const capped = createApp(
         services({
             files: fakeFiles({

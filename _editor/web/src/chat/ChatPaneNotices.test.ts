@@ -24,8 +24,8 @@ const resume = vi.fn(async () => {});
 const loadTrialStatus = vi.fn(async () => {});
 
 // The pane's own view, which the real strip injects from its ChatPane: mounted bare here, so it is handed over.
-vi.mock(`../composables/chat/useChat`, () => ({
-    loadTrialStatus,
+vi.mock(`../composables/chat/useChat-catalog`, () => ({ loadTrialStatus }));
+vi.mock(`../composables/chat/useChat-view`, () => ({
     usePaneView: () => ({
         conversation: ref({ conversationId: `agent-1`, resume }),
         provider,

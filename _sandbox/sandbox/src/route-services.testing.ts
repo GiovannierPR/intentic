@@ -1,66 +1,52 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HISTORY_ROOT, STATE_DIR, WORKSPACE_ROOT } from "@intentic/constants";
-import { stateRelPath } from "./workspace/state-paths.js";
-
-import type { AttachFrame, Capability, CredentialGate, Persona, TranscriptRow, TurnFact } from "@intentic/sandbox-contract";
-import { capabilitiesOf, DEFAULT_SAFETY_POLICY, SandboxSettingsSchema, sandboxContract } from "@intentic/sandbox-contract";
-import { applyTranscriptPatch } from "@intentic/sandbox-contract/transcript-fold";
+import type { CredentialGate } from "@intentic/sandbox-contract";
+import { capabilitiesOf, DEFAULT_SAFETY_POLICY, SandboxSettingsSchema } from "@intentic/sandbox-contract";
 import { portSlotsFromToken } from "@intentic/sandbox-contract/tunnel-ids";
+import { unstubbed } from "@intentic/testing";
+import { createAgentsRegistry } from "./agents/agents-registry.js";
+import { createAuthConnections } from "./auth/connections.js";
 import type { ControlScope } from "./auth/control-tokens.js";
 import { createMediaTickets } from "./auth/media-tickets.js";
-import { type MintedStore, type StoredKeyAccount, toMintedAccount } from "./minted/minted-credentials.js";
 import { createWsTickets } from "./auth/ws-tickets.js";
-
-import { createORPCClient } from "@orpc/client";
-import type { AnyContractRouter, ContractRouterClient } from "@orpc/contract";
-import type { AnyRouter } from "@orpc/server";
-import { OpenAPIHandler } from "@orpc/openapi/fetch";
-import { OpenAPILink } from "@orpc/openapi-client/fetch";
-import type { Hono } from "hono";
-import { afterEach, expect, vi } from "vitest";
-import { createAgentsRegistry } from "./agents/agents-registry.js";
-
-import { ForbiddenError } from "./auth/auth.js";
-import { createAuthConnections } from "./auth/connections.js";
-
-import type { AppEnv, OrpcContext } from "./context.js";
-import type { AutomationRecord, AutomationsStore } from "./automations/automations-store.js";
-import type { CapabilitiesStore } from "./capabilities/capabilities-store.js";
-import type { PersonasStore } from "./personas/personas-store.js";
-import type { DismissalsStore, DismissedRecommendation } from "./capabilities/dismissals-store.js";
-import type { SecretVault } from "./capabilities/secret-vault.js";
 import type { Services } from "./composition.js";
 import { createLogger } from "./logger.js";
-import type { ManagedProcesses } from "./processes/managed-processes.js";
-import type { ServiceProcesses, ServiceStatus } from "./processes/service-processes.js";
-import { createPortForwards } from "./ports/port-forwards.js";
 import { createAnnouncer } from "./platform/announce.js";
-import { createReachReporter } from "./platform/reach-report.js";
 import { createBootTracker } from "./platform/boot.js";
 import { createPerfTracker } from "./platform/perf.js";
-
-import { spokenLinesOf } from "./sessions/transcript-search.js";
-import { windowOf } from "./sessions/transcript-record.js";
-import { IN_MEMORY, openSearchIndex } from "./sessions/search-index.js";
-import type { ThreadSession, ThreadSessionsStore } from "./sessions/thread-sessions.js";
-import { createTerminalRunner } from "./terminal/terminal-run.js";
-import type { SecretUse } from "./secrets/secret-uses.js";
-import { createCredentialGrants } from "./secrets/credential-grants.js";
-
-import { unstubbed } from "@intentic/testing";
+import { createReachReporter } from "./platform/reach-report.js";
 import { syncPairBurnPath, type SyncMode } from "./platform/sync.js";
+import { createPortForwards } from "./ports/port-forwards.js";
+import { rejectAuth } from "./route-client.testing.js";
+import { fakeFiles, fakeHistory, fakeProcesses, fakeServiceProcesses } from "./route-fakes.testing.js";
+import {
+    memoryAutomationsStore,
+    memoryCapabilitiesStore,
+    memoryDismissalsStore,
+    memoryMintedStore,
+    memoryPersonasStore,
+    memorySecretVault,
+    memoryThreadSessionsStore,
+} from "./route-stores.testing.js";
+import { createCredentialGrants } from "./secrets/credential-grants.js";
+import type { SecretUse } from "./secrets/secret-uses.js";
+import { IN_MEMORY, openSearchIndex } from "./sessions/search-index.js";
+import { windowOf } from "./sessions/transcript-record.js";
+import { spokenLinesOf } from "./sessions/transcript-search.js";
 import { pairings } from "./store/enrollment.js";
+import { createTerminalRunner } from "./terminal/terminal-run.js";
 import { noIsolation, testConfig } from "./testing.js";
+import { stateRelPath } from "./workspace/state-paths.js";
 import { workspacePaths } from "./workspace/workspace.js";
 
-/* The route harness: the fakes and the client that every suite driving the daemon's HTTP surface builds on.
- * Lifted out of app.integration.test.ts when that file reached 3,632 lines and 116 tests, one file that 92 of
- * the last 573 commits had to touch, so two agents working on unrelated routes collided in it every time. The
- * route suites live next to the routes they drive now; this is what they share. Not part of the build
- * (tsconfig `exclude`), type-checked with the tests (tsconfig.test.json). */
+/* The route harness: the daemon's `Services`, composed for a test, which every suite driving the daemon's HTTP
+ * surface builds on. Lifted out of app.integration.test.ts when that file reached 3,632 lines and 116 tests, one
+ * file that 92 of the last 573 commits had to touch, so two agents working on unrelated routes collided in it
+ * every time. The route suites live next to the routes they drive now; this is what they share, split by what a
+ * suite reaches for: the in-memory stores (route-stores.testing.ts), the recording fakes (route-fakes.testing.ts),
+ * the client and its auth stubs (route-client.testing.ts) and the turn runner (route-turns.testing.ts). Not part
+ * of the build (tsconfig excludes `*.testing.ts`), type-checked with the tests (tsconfig.test.json). */
 
 /* Where the agent worktrees' MAIN checkouts would be, a path under tmpdir that is never created, so on every
  * host it is definitively absent. This suite drives the ROUTES; the worktree and land git mechanics have their
@@ -75,237 +61,6 @@ const ABSENT_MAIN = join(tmpdir(), "intentic-absent-main");
 // Where a conversation's checkout lives, in the layout the daemon uses. Shared by the worktree fake and by the
 // workspace scope composed from it, so the two cannot name different directories for the same conversation.
 const conversationDir = (id: string): string => `${HISTORY_ROOT}/worktrees/${id}`;
-
-// An in-memory capabilities store so the capability routes + turn merge are testable without the fs.
-export const memoryCapabilitiesStore = (initial: Capability[] = []): CapabilitiesStore => {
-    let capabilities = [...initial];
-    return {
-        list: async () => capabilities,
-        get: async (id) => capabilities.find((capability) => capability.id === id),
-        upsert: async (capability) => {
-            capabilities = [...capabilities.filter((existing) => existing.id !== capability.id), capability];
-        },
-        remove: async (id) => {
-            const next = capabilities.filter((capability) => capability.id !== id);
-            const existed = next.length !== capabilities.length;
-            capabilities = next;
-            return existed;
-        },
-    };
-};
-
-/* An in-memory credential vault. In-memory rather than `unstubbed` for the reason the capability store above is:
- * it sits on a path every TURN takes, not just the routes that are about it. An extension setting declared
- * `secret` lives here now, `env` is how such a value reaches the agent's shell, and so composing a turn's
- * environment reads the vault, a fake that threw its own name there failed the agent suites on a seam none of
- * them are testing. */
-export const memorySecretVault = (initial: Record<string, Record<string, string>> = {}): SecretVault => {
-    const rows = new Map(Object.entries(initial));
-    return {
-        get: async (id) => rows.get(id) ?? {},
-        all: async () => Object.fromEntries(rows),
-        // An empty map drops the row, like the file vault: the store stays a list of what actually holds a secret.
-        set: async (id, values) => {
-            if (Object.keys(values).length === 0) {
-                rows.delete(id);
-            } else {
-                rows.set(id, values);
-            }
-        },
-        remove: async (id) => {
-            rows.delete(id);
-        },
-        values: async () => [...rows.values()].flatMap((row) => Object.values(row)),
-    };
-};
-
-// An in-memory personas store, the sandbox's named personas, without the fs.
-export const memoryPersonasStore = (initial: Persona[] = []): PersonasStore => {
-    let personas = [...initial];
-    return {
-        list: async () => personas,
-        get: async (id) => personas.find((persona) => persona.id === id),
-        upsert: async (persona) => {
-            personas = [...personas.filter((existing) => existing.id !== persona.id), persona];
-        },
-        remove: async (id) => {
-            const next = personas.filter((persona) => persona.id !== id);
-            const existed = next.length !== personas.length;
-            personas = next;
-            return existed;
-        },
-    };
-};
-
-// An in-memory dismissals store, what the catalog's "not needed" writes to, without the fs.
-export const memoryDismissalsStore = (initial: DismissedRecommendation[] = []): DismissalsStore => {
-    let dismissed = [...initial];
-    return {
-        list: async () => dismissed,
-        dismiss: async (entry) => {
-            dismissed = [...dismissed.filter((existing) => existing.card !== entry.card), entry];
-        },
-    };
-};
-
-// An in-memory automations store so the fire route is testable without the fs.
-export const memoryAutomationsStore = (initial: AutomationRecord[] = []): AutomationsStore => {
-    let automations = [...initial];
-    return {
-        list: async () => automations,
-        get: async (id) => automations.find((automation) => automation.id === id),
-        upsert: async (automation) => {
-            const runs = automations.find((existing) => existing.id === automation.id)?.runs ?? [];
-            automations = [...automations.filter((existing) => existing.id !== automation.id), { ...automation, runs }];
-        },
-        setEnabled: async (id, enabled) => {
-            const existing = automations.find((automation) => automation.id === id);
-            if (existing === undefined) {
-                return false;
-            }
-            existing.enabled = enabled;
-            return true;
-        },
-        remove: async (id) => {
-            const next = automations.filter((automation) => automation.id !== id);
-            const existed = next.length !== automations.length;
-            automations = next;
-            return existed;
-        },
-        recordRun: async (id, run) => {
-            const record = automations.find((automation) => automation.id === id);
-            if (record !== undefined) {
-                record.runs = [run, ...record.runs];
-            }
-        },
-    };
-};
-
-// An in-memory thread-session store, so the routes that turn an inbound message into a CONVERSATION (the
-// Front Desk, a listener gateway's dispatch) are testable without the fs. Honours the TTL, because "a quiet
-// thread starts over" is behaviour and not bookkeeping.
-const memoryThreadSessionsStore = (): ThreadSessionsStore => {
-    const sessions = new Map<string, ThreadSession>();
-    const live = (key: string, ttlMs: number, now: number): ThreadSession | undefined => {
-        const record = sessions.get(key);
-        return record !== undefined && now - record.lastAt <= ttlMs ? record : undefined;
-    };
-    return {
-        get: async (key, ttlMs, now) => live(key, ttlMs, now),
-        open: async (key, mintConversationId, ttlMs, now) => {
-            const existing = live(key, ttlMs, now);
-            const record: ThreadSession = existing
-                ? { ...existing, lastAt: now, messages: existing.messages + 1 }
-                : { conversationId: mintConversationId(), startedAt: now, lastAt: now, messages: 1 };
-            sessions.set(key, record);
-            return record;
-        },
-        settle: async (key, sessionId, now) => {
-            const existing = sessions.get(key);
-            if (existing !== undefined) {
-                sessions.set(key, { ...existing, lastAt: now, ...(sessionId !== undefined ? { sessionId } : {}) });
-            }
-        },
-    };
-};
-
-// The service supervisor's fake, same recording shape as fakeProcesses below: seeded keys read as running
-// services on the seeded port.
-export const fakeServiceProcesses = (
-    ports: Record<string, number> = {},
-): ServiceProcesses & { started: { key: string; cwd: string }[]; stopped: string[] } => {
-    const started: { key: string; cwd: string }[] = [];
-    const stopped: string[] = [];
-    const statusOf = (key: string): ServiceStatus | undefined =>
-        key in ports ? { key, state: "running", port: ports[key] ?? 0, restarts: 0, since: 0 } : undefined;
-    return Object.assign(
-        unstubbed<ServiceProcesses>("serviceProcesses", {
-            start: async (key, spec) => {
-                started.push({ key, cwd: spec.cwd });
-            },
-            stop: (key) => {
-                stopped.push(key);
-            },
-            running: (key) => key in ports,
-            portOf: (key) => ports[key],
-            statusOf,
-            list: () => Object.keys(ports).flatMap((key) => statusOf(key) ?? []),
-            logPathOf: () => undefined,
-            stopAll: () => {},
-        }),
-        { started, stopped },
-    );
-};
-
-// Records starts/stops; `portOf` returns the seeded port so a repo reads as running (the list route derives
-// running/healthy from portOf, not running()).
-export const fakeProcesses = (
-    ports: Record<string, number> = {},
-): ManagedProcesses & { started: { repo: string; cwd: string }[]; stopped: string[] } => {
-    const started: { repo: string; cwd: string }[] = [];
-    const stopped: string[] = [];
-    return Object.assign(
-        unstubbed<ManagedProcesses>("processes", {
-            start: async (repo, spec) => {
-                started.push({ repo, cwd: spec.cwd });
-            },
-            stop: (repo) => {
-                stopped.push(repo);
-            },
-            running: (repo) => repo in ports,
-            portOf: (repo) => ports[repo],
-            // A stubbed panel is never mid-start: the routes drop the field, which is also the common case.
-            launchOf: () => undefined,
-            stopAll: () => {},
-        }),
-        { started, stopped },
-    );
-};
-
-// A temp workspace on disk (repo discovery reads it): each entry names a repo, a dir owning a .git, role and
-// clone alike, and whether it gets an operator/ panel (a package.json with a dev script).
-export const tempWorkspace = (repos: { name: string; panel?: boolean }[]): ReturnType<typeof workspacePaths> => {
-    const root = mkdtempSync(join(tmpdir(), "panels-"));
-    for (const repo of repos) {
-        const dir = join(root, repo.name);
-        mkdirSync(join(dir, ".git"), { recursive: true });
-        if (repo.panel === true) {
-            mkdirSync(join(dir, "operator"), { recursive: true });
-            writeFileSync(join(dir, "operator", "package.json"), JSON.stringify({ scripts: { dev: "vite" } }));
-        }
-    }
-    return workspacePaths(root);
-};
-
-// Inert history, no snapshots recorded, every id unknown; a test overrides just the members it asserts on.
-export const fakeHistory = (overrides: Partial<Services["history"]> = {}): Services["history"] =>
-    unstubbed("history", {
-        start: () => {},
-        stop: () => {},
-        snapshot: async () => undefined,
-        notifyUserWrite: () => {},
-        list: async () => [],
-        diff: async () => undefined,
-        fileDiff: async () => undefined,
-        restore: async () => false,
-        ...overrides,
-    });
-
-// The files seam with every method a no-op by default; a test overrides just the ones it asserts on.
-export const fakeFiles = (overrides: Partial<Services["files"]> = {}): Services["files"] =>
-    unstubbed("files", {
-        read: async () => undefined,
-        readWindow: async () => undefined,
-        write: async () => {},
-        writeStream: async () => {},
-        readBytes: async () => undefined,
-        size: async () => undefined,
-        mkdir: async () => {},
-        remove: async () => {},
-        move: async () => {},
-        copy: async () => {},
-        ...overrides,
-    });
 
 /* The seams a route test names but never exhausts. `auth` has five members and a test cares about one; `git`
  * has thirty-seven and a route touches two. Spelling the rest out per call site is what rotted: each new
@@ -323,50 +78,6 @@ export interface WideSeamOverrides {
     readonly iq?: Partial<Services["iq"]>;
 }
 export type ServiceOverrides = Partial<Omit<Services, keyof WideSeamOverrides>> & WideSeamOverrides;
-
-/* One minted provider's store, in memory, starting empty. A REAL implementation of the seam rather than a stub
- * that throws, because the thing a suite most often wants from it is to record a connected plan and then ask
- * what a turn resolves — and a double that refuses the first half forces every such test to hand-build a store,
- * which is how doubles drift from the contract they stand in for.
- *
- * Empty is still the default state, which matters: no guard depends on these providers, so the honest starting
- * point is a sandbox where nobody has signed in.
- *
- * `variant` is required, exactly as it is on the real store: a test that connects an account has to say which
- * estate minted it, because that is what the turn dials.
- */
-export const memoryMintedStore = (providerName: string): MintedStore => {
-    let accounts: StoredKeyAccount[] = [];
-    const row = (stored: StoredKeyAccount) => toMintedAccount(stored, providerName);
-    return {
-        list: async () => accounts.map(row),
-        credentials: async () => accounts,
-        connect: async ({ apiKey, variant, email }) => {
-            const stored: StoredKeyAccount = {
-                id: `${providerName}-${accounts.length + 1}`,
-                apiKey,
-                variant,
-                connectedAt: accounts.length + 1,
-                ...(email !== undefined && email.trim() !== "" ? { email: email.trim() } : {}),
-            };
-            accounts = [...accounts, stored];
-            return row(stored);
-        },
-        rename: async (id, label) => {
-            const stored = accounts.find((account) => account.id === id);
-            if (stored === undefined) {
-                return undefined;
-            }
-            const { label: _dropped, ...rest } = stored;
-            const renamed = label.trim() === "" ? rest : { ...rest, label: label.trim() };
-            accounts = accounts.map((account) => (account.id === id ? renamed : account));
-            return row(renamed);
-        },
-        disconnect: async (id) => {
-            accounts = accounts.filter((account) => account.id !== id);
-        },
-    };
-};
 
 // Never-empty catalog fakes matching the daemon's contract, so a native turn always resolves a model. Exported
 // because `providerCatalogs` is one field holding a row per provider: a test that needs ONE provider to answer
@@ -922,87 +633,6 @@ export const services = (overrides: ServiceOverrides = {}): Services => {
     return merged;
 };
 
-// A typed oRPC client over the in-process Hono app, the same OpenAPILink the browser uses, so streams round-
-// trip through the real SSE encode/decode. JSON routes resolve to their output; thrown ORPCErrors carry `.code`.
-export const clientFor = (app: Hono<AppEnv>): ContractRouterClient<typeof sandboxContract> =>
-    createORPCClient(new OpenAPILink(sandboxContract, { url: "http://sandbox", fetch: async (request) => app.request(request) }));
-
-// Without a vitest config there is no unstubEnvs, so a stubbed var would outlive the test that set it.
-afterEach(() => vi.unstubAllEnvs());
-
-// An auth stub that refuses every bearer as an AUTHENTICATION failure (→ 401), proves a route's gate (or its
-// exemption from the bearer middleware).
-export const rejectAuth = async (): Promise<never> => {
-    throw new Error("no bearer");
-};
-
-// An auth stub for a verified-but-unauthorized caller (→ 403): the bearer is valid, the identity just isn't
-// allowed (wrong Google account / member hitting an owner-only route).
-export const rejectForbidden = async (): Promise<never> => {
-    throw new ForbiddenError("not the sandbox owner");
-};
-
-// A JSON POST against the in-process app, for the plain (non-oRPC) routes.
-export const postJson = async (app: Hono<AppEnv>, path: string, body?: unknown): Promise<Response> =>
-    app.request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
-
-export const errorCode = async (run: Promise<unknown>): Promise<string | undefined> => {
-    try {
-        await run;
-    } catch (error) {
-        return (error as { code?: string }).code;
-    }
-    return undefined;
-};
-
-export const collect = async <T>(stream: AsyncIterable<T>): Promise<T[]> => {
-    const events: T[] = [];
-    for await (const event of stream) {
-        events.push(event);
-    }
-    return events;
-};
-
-// What one turn said over the attach stream, in the shapes a test asks about.
-export interface TurnOutcome {
-    readonly head: Extract<AttachFrame, { kind: "attached" }>;
-    readonly entries: Extract<AttachFrame, { kind: "patch" | "fact" }>[];
-    // The facts the turn stated, in order: worktree, session, tier, error and the rest (TURN_FACT_KINDS).
-    readonly facts: TurnFact[];
-    // The run's rows once every patch has landed, which is what its record holds.
-    readonly rows: TranscriptRow[];
-}
-
-// Drive a chat turn over the detached-run protocol exactly as the browser does: start (acked with the run
-// id), attach, and keep what the stream said. Awaiting the attach to its `end` is also the settle barrier the
-// old in-request stream gave these tests. Ids are minted per turn unless the test pins one (the run registry
-// is keyed by conversationId across the whole test process).
-let turnCounter = 0;
-export const runAgentTurn = async (
-    client: ContractRouterClient<typeof sandboxContract>,
-    input: Record<string, unknown> & { prompt: string; conversationId?: string },
-): Promise<TurnOutcome> => {
-    const conversationId = input.conversationId ?? `turn-${(turnCounter += 1)}`;
-    const { run } = await client.agent.run({ ...input, conversationId });
-    const frames = await collect(await client.agent.attach({ conversationId }));
-    const head = frames[0];
-    if (head?.kind !== "attached" || head.run !== run) {
-        throw new Error(`attach did not open on run ${run}: ${JSON.stringify(head)}`);
-    }
-    expect(frames.at(-1)).toEqual({ kind: "end" });
-    const entries = frames.flatMap((frame) => (frame.kind === "patch" || frame.kind === "fact" ? [frame] : []));
-    return { head, entries, facts: entries.flatMap((entry) => (entry.kind === "fact" ? [entry.fact] : [])), rows: attachedRows(frames) };
-};
-
-// The rows an attach stream leaves a reader holding: the head's, with every patch after it applied.
-export const attachedRows = (frames: readonly AttachFrame[]): TranscriptRow[] =>
-    frames.reduce<TranscriptRow[]>((rows, frame) => {
-        if (frame.kind === "attached") {
-            return frame.rows;
-        }
-        return frame.kind === "patch" ? applyTranscriptPatch(rows, frame.patch) : rows;
-    }, []);
-
 // A translator-backed config and a proxy with a connected Codex account, the pair every subscription-path
 // turn test stands on, in the daemon's own shape.
 export const withTranslator = { ...testConfig, translator: { url: "http://127.0.0.1:8788", token: "local-bearer" } };
@@ -1012,29 +642,4 @@ export const codexConnectedProxy = {
     complete: async () => {},
     disconnect: async () => {},
     models: async () => [],
-};
-
-/* A client for ONE feature's routes, over that feature's own deps.
- *
- * `clientFor(createApp(services(...)))` builds the whole daemon to ask a question about one route: it needs a
- * hundred-and-thirty-member Services, and every service the daemon grows breaks a suite
- * that never mentions it. A route factory that declares what it reads (composition.ts, "WHAT A MODULE SHOULD
- * TAKE OF IT") can be stood up on exactly that, a plain object literal the compiler checks in full, with no
- * stand-in and nothing unstubbed to reach past.
- *
- * The app-level middleware is deliberately absent: auth, CORS and the boot gate belong to the app and are
- * tested there (app.integration.test.ts). What is left here is the route and its own deps. */
-export const routesClient = <TContract extends AnyContractRouter>(contract: TContract, router: AnyRouter): ContractRouterClient<TContract> => {
-    const handler = new OpenAPIHandler(router);
-    return createORPCClient(
-        new OpenAPILink(contract, {
-            url: "http://sandbox",
-            fetch: async (request) => {
-                const url = new URL(request.url);
-                const context: OrpcContext = { headers: request.headers, method: request.method, url: url.pathname + url.search };
-                const { response } = await handler.handle(request, { context });
-                return response ?? new Response("no matching procedure", { status: 404 });
-            },
-        }),
-    );
 };

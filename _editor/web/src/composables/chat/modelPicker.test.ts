@@ -9,7 +9,7 @@ import { endpointProviders, LOCAL_MODELS_GROUP } from "./providerCatalog";
 
 // modelPicker pulls in conversation.ts for the live catalogs; stub its side-effecting seams so the import is inert.
 vi.mock("../sandbox/sandboxClient", () => ({ sandboxRequest: vi.fn() }));
-vi.mock("./useChat", () => ({ loadProviderModels: vi.fn(async () => {}) }));
+vi.mock("./useChat-catalog", () => ({ loadProviderModels: vi.fn(async () => {}) }));
 
 const entry = (provider: AgentProvider, value: string, label: string): PickerEntry => ({ key: `${provider}:${value}`, provider, value, label });
 

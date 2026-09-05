@@ -79,6 +79,9 @@ vi.mock("../composables/chat/useChat", async () => {
         }),
     };
 });
+// The strip fleetScope reads for the page's fleet: nothing open, and stubbed rather than real so this mount does
+// not stand up the whole tab store behind a header test.
+vi.mock("../composables/chat/useChat-strip", () => ({ chatStrip: { value: { active: undefined, panes: [], tabs: [] } } }));
 
 vi.mock("../composables/inlineRename", async () => {
     const { reactive } = await import("vue");

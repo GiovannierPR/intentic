@@ -13,7 +13,9 @@ import { dropActionLabel, dropRejection, type PendingAction } from "../composabl
 import { useAgentDrag } from "../composables/agents/useAgentDrag";
 import { useAgentFilter } from "../composables/agents/useAgentFilter";
 import { type FleetLane, reviewAction, unregistered, watching } from "../composables/agents/agentStatus";
-import { agentSeed, canArchive, FINISHED_WINDOW, type FleetAgent, laneGroups, useAgents, windowFinished } from "../composables/agents/useAgents";
+import { useAgents } from "../composables/agents/useAgents";
+import { agentSeed } from "../composables/agents/useAgents-actions";
+import { canArchive, FINISHED_WINDOW, type FleetAgent, laneGroups, windowFinished } from "../composables/agents/useAgents-fleet";
 import {
     boxNameOf,
     fleetScope,
@@ -33,7 +35,9 @@ import { chatWide } from "../composables/chat/chatSurface";
 import { openRunInChat } from "../composables/chat/openRun";
 import { traceFocus } from "../composables/chat/focusTrace";
 import { summonChat } from "../composables/chat/summon";
-import { agentTabOf, chatStrip, useChat } from "../composables/chat/useChat";
+import { useChat } from "../composables/chat/useChat";
+import { chatStrip } from "../composables/chat/useChat-strip";
+import { agentTabOf } from "../composables/chat/useChat-reveal";
 import { publishContextKey } from "../composables/commands/contextKeys";
 import { commandShortcut, registerCommand } from "../composables/commands/useCommands";
 import MatchLine from "../components/MatchLine.vue";

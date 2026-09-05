@@ -6,7 +6,7 @@ import { jsonBody } from "../sandbox/jsonBody";
 import { WORKFLOW_DESIGNS, WORKFLOW_RUNS } from "../queryKeys";
 import { useSandboxQuery } from "../sandbox/useSandboxQuery";
 import { blocked, type FleetLane } from "./agentStatus";
-import type { FleetAgent } from "./useAgents";
+import type { FleetAgent } from "./useAgents-fleet";
 
 /* WORKFLOW RUNS, FOR THE SURFACES THAT ARE NOT THE WORKFLOWS PAGE, the fleet board and the chat composer.
  *

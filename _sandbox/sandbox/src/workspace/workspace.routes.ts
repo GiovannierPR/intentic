@@ -17,7 +17,7 @@ import { resolveReference } from "./resolve-reference.js";
 import { missingCount } from "./workspace-setup.js";
 import { syncWorkspaceRepos } from "./sync-repos.js";
 import { listTemplates, loadManifest, readTemplatesConfig } from "../scaffold/templates-config.js";
-import { isControlPlanePath, resolveWithin } from "./workspace-files.js";
+import { isControlPlanePath, resolveWithin } from "./workspace-files-paths.js";
 import { containedIn, scopedTarget, workspaceRootFor } from "./workspace-scope.js";
 
 /* What one page of /workspace/search costs, in the unit the caller actually pays: rows in a scrollable list.

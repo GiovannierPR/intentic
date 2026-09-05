@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 // No mocks. laneDrop reads the lane machine from agentStatus: a leaf of pure functions, and its only tie to
 // the fleet store is a type-only import, which the transform erases. Nothing here reaches the app shell.
 import { dropActionFor, dropActionLabel, dropRejection, type DropAction } from "./laneDrop";
-import type { FleetAgent } from "./useAgents";
+import type { FleetAgent } from "./useAgents-fleet";
 
 // A drop can't assign a status: the lanes are projections, so it runs the action that CAUSES one, and most
 // drops have no action behind them at all.

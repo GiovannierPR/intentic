@@ -16,7 +16,8 @@ import {
     pickerEntries,
     pickerSections,
 } from "../composables/chat/modelPicker";
-import { loadAllProviderModels, loadProviderModels, refreshConnections } from "../composables/chat/useChat";
+import { loadAllProviderModels, loadProviderModels } from "../composables/chat/useChat-catalog";
+import { refreshConnections } from "../composables/chat/useChat-accounts";
 import { useSandboxVersion } from "../composables/sandbox/useSandboxVersion";
 import ProviderLogo from "./ProviderLogo.vue";
 

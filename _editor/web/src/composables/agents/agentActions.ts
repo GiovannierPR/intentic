@@ -3,7 +3,8 @@ import type { AgentSpan, AgentSummary, LandMode, LandResult } from "@intentic/sa
 import { useDevice } from "@intentic/ui";
 import type { Conversation } from "../chat/conversation";
 import { summonChat } from "../chat/summon";
-import { composingConversation, draftConversation, useChat } from "../chat/useChat";
+import { useChat } from "../chat/useChat";
+import { composingConversation, draftConversation } from "../chat/useChat-reveal";
 import { queryClient } from "../queryPersistence";
 import { router } from "../../router";
 import { refreshAcross } from "../sandbox/fleetAcross";

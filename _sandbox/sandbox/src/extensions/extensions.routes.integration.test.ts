@@ -15,12 +15,14 @@ import { listenerProvidersOf } from "./installed-extensions.js";
 
 import { workspacePaths } from "../workspace/workspace.js";
 
-import { clientFor, errorCode, memoryCapabilitiesStore, services } from "../route-testing.js";
+import { clientFor, errorCode } from "../route-client.testing.js";
+import { services } from "../route-services.testing.js";
+import { memoryCapabilitiesStore } from "../route-stores.testing.js";
 
 /* The extensions routes, driven over the daemon's HTTP surface exactly as the browser drives them.
  * Split out of app.integration.test.ts, which had grown to 116 tests across every route in the daemon:
  * one file that two agents working on unrelated features collided in every time. The fakes and the client
- * are shared (route-testing.ts); what lives here is what these routes do. */
+ * are shared (route-services.testing.ts and its siblings); what lives here is what these routes do. */
 
 test("extensions.setEnabled keeps the extension listed, switches it off, and unwires it daemon-side", async () => {
     // A real workspace root, because the switch persists to <root>/.intentic/config/extension-enablement.json. The

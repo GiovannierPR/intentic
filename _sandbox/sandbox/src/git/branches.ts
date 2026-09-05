@@ -4,7 +4,7 @@ import { defaultGit, type GitRunner } from "@intentic/scaffold";
 /* Branch management over a real repo: the list the switcher renders, plus create and delete. Reading is one
  * `for-each-ref`, it reports each branch's upstream and its ahead/behind counts in the same pass, and (unlike
  * `rev-list @{upstream}...`) it simply leaves them empty for a branch with no upstream instead of failing.
- * Checkout lives in changes.ts with the other HEAD-movers, because it is auto-checkpointed like they are. */
+ * Checkout lives in changes-commits.ts with the other HEAD-movers, because it is auto-checkpointed like they are. */
 
 // Field separator for the for-each-ref format. A branch name can't contain US, and neither can any of the
 // other fields, so a plain split is exact, the same trick commitLog uses for its log records.

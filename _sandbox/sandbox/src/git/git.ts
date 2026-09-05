@@ -24,6 +24,11 @@ export const terminalGit =
 // routes). One source of truth so the workspace history reads consistently regardless of which route wrote it.
 export const AGENT_GIT_AUTHOR = { name: "intentic", email: "agent@intentic.dev" } as const;
 
+// The `-c user.*` prefix that makes `author` the committer of the commit a command creates: the panel's commit
+// (changes-index.ts), the publisher's (publish-file.ts) and the sequence ops that replay commits
+// (changes-commits.ts, git preserving the original authorship). One source, matching every route commit.
+export const identity = (author: { readonly name: string; readonly email: string }): string[] => ["-c", `user.name=${author.name}`, "-c", `user.email=${author.email}`];
+
 // git prefixes its verdicts and nothing else: `fatal:`, `error:`/`ERROR:`, `warning:`, and `remote:` for a line
 // relayed from the server. Advice, `hint:` blocks, the `Please make sure you have the correct access rights /
 // and the repository exists.` couplet, carries no prefix, which is exactly what makes it separable.

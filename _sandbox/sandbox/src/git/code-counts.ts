@@ -46,7 +46,7 @@ export interface Sides {
     readonly after: Side;
 }
 
-/** Per path, the object names `git status` already reported (changes.ts' StatusV2). */
+/** Per path, the object names `git status` already reported (changes-porcelain.ts' StatusV2). */
 export type BlobNames = ReadonlyMap<string, { head?: string; index?: string }>;
 
 const ABSENT: Side = { kind: "absent" };
@@ -57,7 +57,7 @@ const ABSENT: Side = { kind: "absent" };
 const blobSide = (spec: string, name: string | undefined): Side => ({ kind: "blob", spec, id: name ?? spec });
 
 /* WHICH TWO THINGS A ROW COMPARES, one pairing per surface, and each is the SAME pairing the diff body uses
- * (changes.ts' stagedFileDiff / unstagedFileDiff / conflictedFileDiff / workingFileDiff / refFileDiff). They have
+ * (changes-diff.ts' stagedFileDiff / unstagedFileDiff / conflictedFileDiff / workingFileDiff / refFileDiff). They have
  * to be: the count on a row and the diff it opens are two readings of one comparison, and a row whose badge
  * describes index-vs-HEAD over a pane showing HEAD-vs-worktree is worse than no badge at all.
  *

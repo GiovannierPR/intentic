@@ -56,7 +56,9 @@ import { effectScope, nextTick, unref, type EffectScope, type Ref } from "vue";
 import { Conversation } from "../chat/conversation";
 import { useChat } from "../chat/useChat";
 import { useAgentFilter } from "./useAgentFilter";
-import { type FleetAgent, resetAgents, setAgents, useAgents } from "./useAgents";
+import { resetAgents, useAgents } from "./useAgents";
+import type { FleetAgent } from "./useAgents-fleet";
+import { setAgents } from "./useAgents-registry";
 
 const none = { plan: false, question: false, permission: false, service: false, capability: false, credential: false, conflict: false };
 const agent = (id: string, extra: Partial<AgentSummary> = {}): AgentSummary => ({

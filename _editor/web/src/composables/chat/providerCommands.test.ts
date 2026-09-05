@@ -30,7 +30,8 @@ vi.mock(`../sandbox/sandboxClient`, () => ({
 
 // Static, because vitest.setup.ts has already installed the globals these modules read at import scope.
 import { providerCommands } from "./providerCatalog";
-import { ensureProviderCommands, resetChat } from "./useChat";
+import { resetChat } from "./useChat";
+import { ensureProviderCommands } from "./useChat-catalog";
 
 const commandReads = (): string[] => reads.paths.filter((path) => path.startsWith(`/agent/commands`));
 

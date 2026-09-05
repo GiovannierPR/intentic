@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { relativeTime } from "../composables/chat/catalog";
-import type { ChatSession } from "../composables/chat/useChat";
+import type { ChatSession } from "../composables/chat/useChat-sessions";
 import MatchLine from "../components/MatchLine.vue";
 import { viewersOfSession } from "../composables/usePresence";
 import PresenceAvatars from "../presence/PresenceAvatars.vue";

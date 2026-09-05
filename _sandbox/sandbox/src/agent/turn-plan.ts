@@ -44,7 +44,7 @@ import {
 } from "../personas/personas.js";
 import { personaScopeOf } from "../personas/persona-scope.js";
 import { jsExecutionPlanOf } from "../execution/js-runtime.js";
-import { resolveWithin } from "../workspace/workspace-files.js";
+import { resolveWithin } from "../workspace/workspace-files-paths.js";
 import { hostToolsOf } from "../capabilities/host-tools.js";
 import { webextToolsOf } from "../capabilities/webext-tools.js";
 import { mcpToolsOf } from "../capabilities/mcp-tools.js";

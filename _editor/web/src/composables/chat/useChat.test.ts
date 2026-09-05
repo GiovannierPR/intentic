@@ -82,8 +82,10 @@ const mockConnections = (connections: { subscriptions?: Subscriptions; accounts?
 };
 const { useSandbox } = await import("../sandbox/useSandbox");
 const { setDaemonRoutes } = await import("../sandbox/useDaemonRoutes");
-const { draftConversation, hydrateOnce, loadAccountStatus, openAgentConversation, refreshConnections, resetChat, reveal, useChat } =
-    await import("./useChat");
+const { resetChat, useChat } = await import("./useChat");
+const { draftConversation, openAgentConversation, reveal } = await import("./useChat-reveal");
+const { hydrateOnce } = await import("./useChat-sessions");
+const { loadAccountStatus, refreshConnections } = await import("./useChat-accounts");
 // The store half of "New agent", as the summons applies it (agentActions.startAgent): the fixture these
 // suites open extra tabs with.
 const newChat = () => {
@@ -995,7 +997,7 @@ describe(`abandoned drafts`, () => {
      * one fact from the copy and another from the echo: a draft card swept because the copy looked empty, an
      * unsent chip kept because the copy still held sent words. So the copy is not consulted at all. */
     it(`answers for the strip from whichever window draws the chat`, async () => {
-        const { chatStrip } = await import("./useChat");
+        const { chatStrip } = await import("./useChat-strip");
         const { receiveChatNote } = await import("./chatChannel");
         const { receiveFloatingNote } = await import("../floating");
         const chat = useChat();

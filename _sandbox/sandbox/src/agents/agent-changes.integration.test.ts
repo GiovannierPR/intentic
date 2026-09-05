@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, expect, test } from "vitest";
-import { discardPaths } from "../git/changes.js";
+import { discardPaths } from "../git/changes-index.js";
 import { ensureRootRepo } from "../git/root-repo.js";
 import { createLogger } from "../logger.js";
 import { createPerfTracker } from "../platform/perf.js";

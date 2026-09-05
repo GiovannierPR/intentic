@@ -1,4 +1,5 @@
-import { resolveWithin, statWorkspaceSizeMtime } from "./workspace-files.js";
+import { resolveWithin } from "./workspace-files-paths.js";
+import { statWorkspaceSizeMtime } from "./workspace-files.js";
 
 // One entry of the client's pre-upload manifest: a dropped file's destination path + its source size and mtime
 // (ms, from File.lastModified). Backs /workspace/upload-diff so a re-drop only re-sends what actually changed.

@@ -2,10 +2,12 @@ import type { AgentSearchResult, MatchSnippet, Speaker } from "@intentic/sandbox
 import { keepPreviousData, useQuery } from "@tanstack/vue-query";
 import { computed, onScopeDispose, ref, watch } from "vue";
 import type { Conversation } from "../chat/conversation";
-import { type ChatSession, useChat } from "../chat/useChat";
+import { useChat } from "../chat/useChat";
+import type { ChatSession } from "../chat/useChat-sessions";
 import { sandboxJson } from "../sandbox/sandboxClient";
 import { useSandbox } from "../sandbox/useSandbox";
-import { type FleetAgent, useAgents } from "./useAgents";
+import { useAgents } from "./useAgents";
+import type { FleetAgent } from "./useAgents-fleet";
 import { AGENTS, SESSIONS } from "../queryKeys";
 
 /* Filter the fleet by what was SAID in it: the board's header field, and the chat rail's.

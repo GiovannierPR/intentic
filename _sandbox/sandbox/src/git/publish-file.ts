@@ -1,6 +1,6 @@
 import { defaultGit, type GitRunner } from "@intentic/scaffold";
 import type { GitPublishFileResult } from "@intentic/sandbox-contract";
-import { AGENT_GIT_AUTHOR, gitFailureReason } from "./git.js";
+import { AGENT_GIT_AUTHOR, gitFailureReason, identity } from "./git.js";
 import { operationInProgress } from "./operation.js";
 import { pushBranch, remoteState } from "./remote.js";
 
@@ -35,13 +35,6 @@ export const defaultBranchOf = async (dir: string, remote: string, git: GitRunne
     return advertised === undefined || advertised === "" ? undefined : advertised;
 };
 
-const identity = (author: { readonly name: string; readonly email: string }): string[] => [
-    "-c",
-    `user.name=${author.name}`,
-    "-c",
-    `user.email=${author.email}`,
-];
-
 // Does the worktree differ from HEAD at this one path? Asked AFTER the write, to decide whether there is a
 // commit to make at all, a creator who clicks twice, or who committed the file themselves and only failed to
 // push it, must reach the push rather than a "nothing to commit" failure.
@@ -71,7 +64,7 @@ export const publishFile = async (
 
     // Mid-sequence is checked first and refused rather than worked around: a partial commit is exactly what git
     // rejects while MERGE_HEAD exists, and it rejects it only after staging, so trying costs the user a moved
-    // index for nothing (see changes.ts commitIndex, which was rewritten for the same reason).
+    // index for nothing (see changes-index.ts commitIndex, which was rewritten for the same reason).
     const operation = await operationInProgress(dir);
     if (operation !== undefined) {
         return { ...idle, reason: `this repo is part-way through a ${operation}, finish or abort that first` };

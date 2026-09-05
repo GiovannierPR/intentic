@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { pack } from "tar-stream";
 import { expect, test } from "vitest";
 import { extractTarToWorkspace, PathEscapeError } from "./workspace-archive.js";
-import { UploadTooLargeError } from "./workspace-files.js";
+import { UploadTooLargeError } from "./workspace-files-upload.js";
 
 // Build a tar and hand it back as a web ReadableStream (what the route feeds the extractor). Buffering the whole
 // archive is fine in a test: the extractor still streams it back in.

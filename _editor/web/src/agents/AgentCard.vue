@@ -42,7 +42,8 @@ import { accountBadge } from "./accountChip";
 import { providerAccounts } from "../composables/chat/providerAccounts";
 import { createInlineRename } from "../composables/inlineRename";
 import { markSegments } from "../composables/agents/markSegments";
-import { canArchive, useAgents, type FleetAgent } from "../composables/agents/useAgents";
+import { useAgents } from "../composables/agents/useAgents";
+import { canArchive, type FleetAgent } from "../composables/agents/useAgents-fleet";
 import { relativeTime } from "../composables/chat/catalog";
 import { modelLabelFor } from "../composables/chat/providerCatalog";
 

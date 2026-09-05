@@ -5,7 +5,9 @@ import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/websocket";
 import type { Context } from "hono";
 import type { Services } from "../composition.js";
+import type { AppEnv } from "../context.js";
 import { bearerFrom, tokenEquals } from "../auth/auth.js";
+import { ownerDenied } from "../auth/owner-gates.js";
 import { commandInCall, judgeHostCommand } from "./host-command-gate.js";
 import type { HostClient } from "./host-hub.js";
 
@@ -199,3 +201,47 @@ export const hostSummaries = async (services: Services): Promise<HostSummary[]> 
         .filter((capability): capability is Extract<Capability, { kind: "host" }> => capability.kind === "host")
         .map((capability) => Object.assign({ id: capability.id, platform: capability.config.platform }, services.hostHub.state(capability.id)));
 };
+
+/* The owner's side of a connected device: the pairing it is enrolled through, the roster, and the revoke.
+ * Same trust root as desktop sync, the owner mints a single-use pairing in the browser and the connect
+ * one-liner carries it, narrowed in one way that matters: a pairing is bound to ONE host capability, so a
+ * redeemed token can only ever become the machine the owner was looking at when they clicked Connect.
+ * Owner-only to mint: giving a member hands on the owner's laptop is not a collaboration feature. */
+export const createHostRoutes = (services: Services) => ({
+    /** POST /system/hosts/pair */
+    pair: async (c: Context<AppEnv>): Promise<Response> => {
+        const denied = await ownerDenied(services, c);
+        if (denied !== undefined) {
+            return denied;
+        }
+        const id = c.req.query("id") ?? "";
+        const capability = (await services.capabilities.list()).find((entry) => entry.id === id && entry.kind === "host");
+        if (capability === undefined) {
+            return c.json({ error: "no connected-device capability with that id" }, 404);
+        }
+        return c.json(services.hosts.mintPairing(id));
+    },
+    // POST /system/hosts/enroll. Redeemed by the machine's installer, authorized by the pairing alone (exempt
+    // from the bearer middleware), so nobody signs into Google on the machine being connected.
+    enroll: async (c: Context<AppEnv>): Promise<Response> => {
+        const enrolled = await services.hosts.enroll(c.req.header("x-intentic-pair") ?? "");
+        if (enrolled === undefined) {
+            return c.json({ error: "pairing expired, click Connect again in your browser for a fresh command." }, 401);
+        }
+        return c.json(enrolled);
+    },
+    /** GET /system/hosts */
+    list: async (c: Context<AppEnv>): Promise<Response> => c.json({ hosts: await hostSummaries(services) }),
+    // DELETE /system/hosts/:id. Revoke: the enrollment goes, and the live socket with it. The agent binary on
+    // that machine notices its reconnect being refused and stops; what stays is the installation, which only
+    // the machine's owner can remove.
+    revoke: async (c: Context<AppEnv>): Promise<Response> => {
+        const denied = await ownerDenied(services, c);
+        if (denied !== undefined) {
+            return denied;
+        }
+        const id = c.req.param("id") ?? "";
+        services.hostHub.disconnect(id, "this device's access was revoked");
+        return (await services.hosts.revoke(id)) ? c.json({ ok: true }) : c.json({ error: "no such device" }, 404);
+    },
+});

@@ -19,11 +19,11 @@ import { type App, createApp, defineComponent, h, nextTick } from "vue";
 
 // The catalogs are daemon-owned; the picker refreshes them on open. Mocked to no-ops so the mount is about what
 // the panel RENDERS from the module state each test seeds, not about a fetch.
-vi.mock(`../composables/chat/useChat`, () => ({
+vi.mock(`../composables/chat/useChat-catalog`, () => ({
     loadAllProviderModels: () => Promise.resolve(),
     loadProviderModels: () => Promise.resolve(),
-    refreshConnections: () => Promise.resolve(),
 }));
+vi.mock(`../composables/chat/useChat-accounts`, () => ({ refreshConnections: () => Promise.resolve() }));
 // The runtime-health probe is the daemon's; silent here, which is its own "not probed yet" state.
 vi.mock(`../composables/sandbox/useSandboxVersion`, () => ({ useSandboxVersion: () => ({ runtimeIssue: () => undefined }) }));
 vi.mock(import(`vue-router`), async (importOriginal) => ({

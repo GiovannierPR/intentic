@@ -4,7 +4,8 @@ import { Hono } from "hono";
 import type { Services } from "../composition.js";
 import type { AppEnv } from "../context.js";
 import { isValidRepoId } from "../workspace/repo-discovery.js";
-import { contentTypeForPath, isControlPlanePath, isReviewableStatePath, MAX_RAW_BYTES, resolveWithin } from "../workspace/workspace-files.js";
+import { contentTypeForPath, MAX_RAW_BYTES } from "../workspace/workspace-files-download.js";
+import { isControlPlanePath, isReviewableStatePath, resolveWithin } from "../workspace/workspace-files-paths.js";
 
 /* THE BYTES BEHIND A BINARY DIFF, /diff/raw, the sibling of /workspace/raw, and for the same reason: an image
  * is rendered from its bytes, and the JSON diff contract can only carry text. Every file-diff route in this
@@ -15,7 +16,7 @@ import { contentTypeForPath, isControlPlanePath, isReviewableStatePath, MAX_RAW_
  * ONE ROUTE, FOUR SOURCES, because there are four places a diff comes from and a reviewer cannot tell them
  * apart, the Changes panel, an agent's review, a commit in the graph, a checkpoint, and a viewer that worked
  * in one of them would read as broken in the other three. `source` picks which, and each branch resolves the
- * SAME rev-specs its JSON counterpart reads (git/changes.ts, agents.routes.ts, history.ts): a staged row is
+ * SAME rev-specs its JSON counterpart reads (git/changes-diff.ts, agents.routes.ts, history.ts): a staged row is
  * HEAD↔index there, so it is HEAD↔index here, and the image never disagrees with the row it was opened from.
  *
  * The client sends no rev-spec and no directory, only the identifiers it already used to fetch the JSON diff.

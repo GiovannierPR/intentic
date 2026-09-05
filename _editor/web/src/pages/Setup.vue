@@ -23,7 +23,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { revealConversation } from "../composables/agents/agentActions";
 import { track } from "../composables/analytics";
-import { composingConversation } from "../composables/chat/useChat";
+import { composingConversation } from "../composables/chat/useChat-reveal";
 import { apiClient } from "../composables/useApi";
 import { useAuth } from "../composables/useAuth";
 import { useGoogleIdentity } from "../composables/useGoogleIdentity";

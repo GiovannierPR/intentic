@@ -56,6 +56,8 @@ vi.mock(`../composables/chat/useChat`, () => ({
         completeConnect: () => {},
         completeTranslator: () => {},
     }),
+}));
+vi.mock(`../composables/chat/useChat-view`, () => ({
     usePaneView: () => ({
         connected,
         provider,

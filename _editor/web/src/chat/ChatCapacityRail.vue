@@ -4,7 +4,7 @@ import { computed, onMounted, ref } from "vue";
 import { CAPACITY_RAIL_PX, type CapacityLane, type CapacityProvider, type CapacityRow, chatCapacity } from "../composables/chat/chatCapacity";
 import { accountsLoaded } from "../composables/chat/providerAccounts";
 import { formatAge, formatReset, formatUtilization, usageTone } from "../composables/chat/usageStatus";
-import { refreshConnections } from "../composables/chat/useChat";
+import { refreshConnections } from "../composables/chat/useChat-accounts";
 import { uiLength } from "../composables/uiScale";
 import ProviderLogo from "./ProviderLogo.vue";
 

@@ -19,7 +19,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { type App, createApp, h, nextTick } from "vue";
 import { resetChat } from "../composables/chat/useChat";
 import { queryClient } from "../composables/queryPersistence";
-import { resetAgents, resetArchive, setAgents, useAgents } from "../composables/agents/useAgents";
+import { resetAgents, useAgents } from "../composables/agents/useAgents";
+import { resetArchive, setAgents } from "../composables/agents/useAgents-registry";
 import { router } from "../router";
 import AgentsView from "./AgentsView.vue";
 

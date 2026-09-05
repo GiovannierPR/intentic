@@ -192,7 +192,7 @@ export class TurnFailures {
                 // The platform did not deliver this message and has already refunded it. Hold the user's words
                 // for an explicit retry; trial failures never enter the generic outage auto-resume loop.
                 this.host.requeue(turn.userMessageId);
-                void import(`./useChat`).then(async (chat) => {
+                void import(`./useChat-catalog`).then(async (chat) => {
                     await chat.loadTrialStatus();
                     if (code === `trial-model-unavailable`) {
                         await chat.loadProviderModels(this.host.provider.value);
@@ -205,8 +205,9 @@ export class TurnFailures {
                 // named), so its code reaches us only when that failed; Codex can't (OpenAI names no alternative),
                 // so its code always lands here. Either way: surface it (red) and reload the provider's live catalog
                 // so the picker, and any conversation still pinning the dead id, repoints to what the daemon
-                // actually serves. Dynamic import breaks the static cycle (useChat imports the conversation).
-                void import(`./useChat`).then((chat) => chat.loadProviderModels(this.host.provider.value));
+                // actually serves. Dynamic import breaks the static cycle (the catalog reaches the conversation through the
+                // tab store).
+                void import(`./useChat-catalog`).then((chat) => chat.loadProviderModels(this.host.provider.value));
                 this.host.error.value = message;
                 return;
             default:
@@ -253,7 +254,7 @@ export class TurnFailures {
              * request away before a token was spent, so the message is not part of the conversation yet, and
              * making somebody retype a prompt over a billing tier would be the one part of this that was ours.
              * They wait in the composer, ready to send at whatever model comes next. */
-            void import(`./useChat`).then((chat) => chat.loadProviderModels(this.host.provider.value));
+            void import(`./useChat-catalog`).then((chat) => chat.loadProviderModels(this.host.provider.value));
             this.host.requeue(turn.userMessageId);
             this.host.error.value = message;
             return;

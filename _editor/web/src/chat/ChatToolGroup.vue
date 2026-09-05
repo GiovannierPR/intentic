@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { TranscriptTool } from "@intentic/sandbox-contract";
-import { usePaneView } from "../composables/chat/useChat";
+import { usePaneView } from "../composables/chat/useChat-view";
 import { openWorkspaceRef } from "../composables/workspace/openFileRef";
 import ChatToolCard from "./ChatToolCard.vue";
 import { type ToolGroup, groupDiffSummary } from "./toolGrouping";

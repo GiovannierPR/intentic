@@ -26,7 +26,10 @@ import { type ChatMessage, cutsAboveOf, dayMarksOf, forkCutsOf, liveBubbleOf, tu
 import { withShortcut } from "../composables/commands/useCommands";
 import { navigateInApp } from "../composables/mainWindow";
 import { invalidateAgentTranscript } from "../composables/chat/agentTranscript";
-import { conversationView, ensureProviderCommands, hydrateOnce, PANE_VIEW, useChat } from "../composables/chat/useChat";
+import { useChat } from "../composables/chat/useChat";
+import { ensureProviderCommands } from "../composables/chat/useChat-catalog";
+import { hydrateOnce } from "../composables/chat/useChat-sessions";
+import { conversationView, PANE_VIEW } from "../composables/chat/useChat-view";
 import { CHAT_SURFACE } from "./chatSurface";
 import { workspaceSurface } from "./workspaceSurface";
 import { usePersonas } from "../composables/sandbox/usePersonas";

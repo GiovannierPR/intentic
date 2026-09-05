@@ -11,7 +11,8 @@ import {
 import { describe, expect, test } from "vitest";
 import type { Services } from "../composition.js";
 import type { SeatRefusal } from "../claude/claude-seats.js";
-import { memoryCapabilitiesStore, services, withTranslator } from "../route-testing.js";
+import { services, withTranslator } from "../route-services.testing.js";
+import { memoryCapabilitiesStore } from "../route-stores.testing.js";
 import { harnessEnv, resolveHarnessCredentials } from "./harness-credentials.js";
 
 /* What a harness process is told about models, and the reason it matters beyond the turn's own `--model`: a

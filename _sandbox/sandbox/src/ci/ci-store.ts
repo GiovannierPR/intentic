@@ -7,7 +7,7 @@ import { objectParse } from "../store/unknown-keys.js";
 // last TERMINAL conclusion per repo+branch, what makes a success after a failure read as `pipeline_fixed`, and
 // a failure after a success as `pipeline_broken`, across daemon restarts, and the poller's memory of which
 // runs it has already announced. It carries a secret, so the file rides the CONTROL_PLANE_ENTRIES denylist
-// (workspace-files.ts) like capabilities.json.
+// (workspace-files-paths.ts) like capabilities.json.
 //
 // Nothing records that the owner has LOOKED at the board: the rail badge stands for the state of CI, not for
 // unread news, so the only thing that clears it is a commit that passes (ext-pipelines' ciStreaks.ts).

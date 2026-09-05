@@ -1,6 +1,6 @@
 import type { WorkflowRun } from "@intentic/sandbox-contract";
 import { describe, expect, it, vi } from "vitest";
-import type { FleetAgent } from "./useAgents";
+import type { FleetAgent } from "./useAgents-fleet";
 import { insideRun, laneOfRun, runIdsInLedger, runMatches, runsInLane } from "./useWorkflowRuns";
 
 // The same module-eval cuts the sibling suites make: these are pure functions, but importing them pulls the

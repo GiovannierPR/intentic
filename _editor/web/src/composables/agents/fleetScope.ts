@@ -6,8 +6,9 @@ import { connectedSandboxes } from "../sandbox/roster";
 import { landOnAfterSwitch } from "../sandbox/sandboxScreen";
 import { useSandbox } from "../sandbox/useSandbox";
 import { turnInFlight } from "./agentStatus";
-import type { FleetAgent } from "./useAgents";
-import { chatStrip, useChat } from "../chat/useChat";
+import type { FleetAgent } from "./useAgents-fleet";
+import { useChat } from "../chat/useChat";
+import { chatStrip } from "../chat/useChat-strip";
 
 /* HOW MUCH OF THE ACCOUNT THE FLEET BOARD IS ABOUT: the sandbox you are standing in, or all of them.
  *

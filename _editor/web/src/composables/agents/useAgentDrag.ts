@@ -5,7 +5,8 @@ import { refreshAcross } from "../sandbox/fleetAcross";
 import { otherFleet } from "./fleetScope";
 import { unregistered } from "./agentStatus";
 import { dropActionFor, type DropAction, type DropTarget, type PendingAction } from "./laneDrop";
-import { useAgents, type FleetAgent } from "./useAgents";
+import { useAgents } from "./useAgents";
+import type { FleetAgent } from "./useAgents-fleet";
 
 /* Pointer-driven card drag for the board. Pointer Events rather than HTML5 drag-and-drop: the ghost is a real
  * AgentCard instead of a browser drag image, Escape cancels, and the drop target is hit-tested against the

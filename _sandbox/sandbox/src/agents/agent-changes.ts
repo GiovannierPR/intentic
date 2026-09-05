@@ -1,6 +1,7 @@
 import type { AgentSpan, GitChange, WorkspaceModule } from "@intentic/sandbox-contract";
 import { defaultGit, type GitRunner } from "@intentic/scaffold";
-import { changesAgainstBase, changesBetweenRefs, headSha, materializedPaths } from "../git/changes.js";
+import { changesAgainstBase, changesBetweenRefs, headSha } from "../git/changes.js";
+import { materializedPaths } from "../git/changes-porcelain.js";
 import { refAgainstRef, withCodeCounts, worktreeAgainstRef } from "../git/code-counts.js";
 import { readModules } from "../workspace/modules.js";
 import type { IsolatedAgent, PersistedAgent } from "./agents-store.js";

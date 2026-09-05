@@ -3,7 +3,9 @@ import type { Hono } from "hono";
 import { expect, test } from "vitest";
 import { createApp } from "../app.js";
 import type { AppEnv } from "../context.js";
-import { clientFor, runAgentTurn, services } from "../route-testing.js";
+import { clientFor } from "../route-client.testing.js";
+import { services } from "../route-services.testing.js";
+import { runAgentTurn } from "../route-turns.testing.js";
 import { testConfig } from "../testing.js";
 import { recordPathOf, type FleetMessage, type FleetRecall, type FleetRow } from "./fleet-recall.js";
 

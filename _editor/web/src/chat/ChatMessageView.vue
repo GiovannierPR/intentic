@@ -20,7 +20,7 @@ import { navigateInApp } from "../composables/mainWindow";
 import { useMarkdown } from "../composables/useMarkdown";
 import { openFileRefFromEvent } from "../composables/workspace/openFileRef";
 import { invalidateWorkspace } from "../composables/workspace/useHistory";
-import { usePaneView } from "../composables/chat/useChat";
+import { usePaneView } from "../composables/chat/useChat-view";
 import { landsByDefault } from "../composables/sandbox/rules";
 import { useSandboxSettings } from "../composables/sandbox/useSandboxSettings";
 import { openWorkTerminal, useWorkTerminals } from "../composables/terminal/useWorkTerminals";

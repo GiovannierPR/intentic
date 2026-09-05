@@ -1,7 +1,7 @@
 import { claudeContract } from "@intentic/sandbox-contract";
 import { unstubbed } from "@intentic/testing";
 import { expect, test } from "vitest";
-import { errorCode, routesClient } from "../route-testing.js";
+import { errorCode, routesClient } from "../route-client.testing.js";
 import { displayLabel, type StoredAccount } from "./claude-credentials.js";
 import type { SeatRefusal } from "./claude-seats.js";
 import { type ClaudeRoutesDeps, createClaudeRoutes } from "./claude.routes.js";

@@ -18,7 +18,8 @@ import { nextTick } from "vue";
 import { Conversation } from "../chat/conversation";
 import { useChat } from "../chat/useChat";
 import { sandboxJson } from "../sandbox/sandboxClient";
-import { resetAgents, setAgents } from "./useAgents";
+import { resetAgents } from "./useAgents";
+import { setAgents } from "./useAgents-registry";
 
 /* READING A CHAT IS READING IT. A turn that lands while you are watching its conversation is not news, so the
  * card must not badge under your cursor, and what counts as watching is this window being on screen with that

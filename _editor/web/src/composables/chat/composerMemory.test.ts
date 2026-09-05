@@ -98,8 +98,9 @@ const openWindow = async () => {
     const { receivePreferenceChange } = await import("@intentic/ui/preference");
     windows.push(receivePreferenceChange);
     const chat = await import("./useChat");
+    const { loadAccountStatus } = await import("./useChat-accounts");
     const { Conversation } = await import("./conversation");
-    await chat.loadAccountStatus();
+    await loadAccountStatus();
     return { chat, Conversation };
 };
 

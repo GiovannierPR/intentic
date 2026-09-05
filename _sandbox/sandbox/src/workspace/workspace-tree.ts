@@ -10,7 +10,7 @@ import {
 } from "@intentic/sandbox-contract";
 import { createIgnoreScope, type IgnoreScope, toRelPath } from "@intentic/workspace-ignore";
 import { scanBarrenDirs } from "./empty-dirs.js";
-import { isUnder, realPathOf, realWithin, resolveWithin } from "./workspace-files.js";
+import { isUnder, realPathOf, realWithin, resolveWithin } from "./workspace-files-paths.js";
 
 // WorkspaceTree / WorkspaceTreeEntry (the full /work tree the agent sees, untracked files, generated
 // artifacts, and .intentic/ included, distinct from the git-tracked listing) are the /workspace/tree wire

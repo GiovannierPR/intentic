@@ -120,7 +120,7 @@ const parseRecord = (record: string): { commit: Omit<HistoryCommit, "paths">; pa
         // truncating the message, which is what commitLog does with the same format for the same reason.
         commit: { sha, short: short ?? "", subject: fields.slice(4).join(US), author: author ?? "", at: Number(at ?? "0") * 1000 },
         // Every path is its own allocation, never a slice of the record: these outlive the call frame in the
-        // response, and a sliced path pins the whole log output (see git/changes.ts materializedPaths).
+        // response, and a sliced path pins the whole log output (see git/changes-porcelain.ts materializedPaths).
         paths: rest.map((path) => Buffer.from(path.startsWith("\n") ? path.slice(1) : path, "utf8").toString("utf8")).filter((path) => path !== ""),
     };
 };

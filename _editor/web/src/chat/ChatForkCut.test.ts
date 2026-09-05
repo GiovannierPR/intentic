@@ -54,7 +54,7 @@ vi.mock("@intentic/ui", async () => {
 vi.mock("../composables/workspace/useHistory", () => ({ invalidateWorkspace: vi.fn() }));
 /* Built fresh per mount rather than once for the file: `state` is a plain object, so a computed over it caches
  * its first reading forever, which silently gave every test the first one's chat. */
-vi.mock("../composables/chat/useChat", async () => {
+vi.mock("../composables/chat/useChat-view", async () => {
     const { computed, shallowRef } = await import("vue");
     return {
         usePaneView: () => ({
@@ -67,10 +67,13 @@ vi.mock("../composables/chat/useChat", async () => {
             beginEdit,
             editing: computed(() => state.editing),
         }),
-        useChat: () => ({ conversations: computed(() => []), setActive: (id: string) => opened.ids.push(id) }),
-        openAgentConversation: (agent: { id: string }) => opened.ids.push(agent.id),
     };
 });
+vi.mock("../composables/chat/useChat", async () => {
+    const { computed } = await import("vue");
+    return { useChat: () => ({ conversations: computed(() => []), setActive: (id: string) => opened.ids.push(id) }) };
+});
+vi.mock("../composables/chat/useChat-reveal", () => ({ openAgentConversation: (agent: { id: string }) => opened.ids.push(agent.id) }));
 // The forks taken from this conversation are read off the fleet, not off the open tabs: that is what makes the
 // mark survive a closed tab, and what lets it count a colleague's fork.
 vi.mock("../composables/agents/useAgents", async () => {

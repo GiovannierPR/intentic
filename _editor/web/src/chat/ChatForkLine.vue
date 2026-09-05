@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useAgents } from "../composables/agents/useAgents";
-import { openAgentConversation, useChat, usePaneView } from "../composables/chat/useChat";
+import { useChat } from "../composables/chat/useChat";
+import { usePaneView } from "../composables/chat/useChat-view";
+import { openAgentConversation } from "../composables/chat/useChat-reveal";
 
 /* WHERE THIS CHAT CAME FROM, at the top of the transcript it inherited.
  *

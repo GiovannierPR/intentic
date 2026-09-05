@@ -1,5 +1,5 @@
 import { defaultGit, type GitRunner } from "@intentic/scaffold";
-import { materializedPaths } from "../git/changes.js";
+import { materializedPaths } from "../git/changes-porcelain.js";
 
 /* WHICH PATHS HISTORY HAS TOUCHED SINCE A LANDING WENT IN, the one span in the whole attribution machinery
  * whose far end is the MOVING head, shared by both of its readers (agents/origins.ts, which reads a touched

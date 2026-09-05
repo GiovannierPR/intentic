@@ -122,7 +122,7 @@ vi.mock("./ChatToolGroup.vue", () => ({ default: { render: () => undefined } }))
 
 // The row reads its PANE's conversation, not the focused one (useChat's PANE_VIEW), so what stands in for the
 // store here is the pane's view, and `conversation` is the chat this row belongs to.
-vi.mock("../composables/chat/useChat", async () => {
+vi.mock("../composables/chat/useChat-view", async () => {
     const { computed, ref, shallowRef } = await import("vue");
     const conversation = shallowRef({
         conversationId: `agent-1`,

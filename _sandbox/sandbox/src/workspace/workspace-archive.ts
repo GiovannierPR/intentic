@@ -3,7 +3,9 @@ import { dirname } from "node:path";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { extract, type Headers } from "tar-stream";
-import { isControlPlanePath, MAX_UPLOAD_BYTES, resolveWithin, setWorkspaceMtime, writeStreamCounted } from "./workspace-files.js";
+import { isControlPlanePath, resolveWithin } from "./workspace-files-paths.js";
+import { MAX_UPLOAD_BYTES, writeStreamCounted } from "./workspace-files-upload.js";
+import { setWorkspaceMtime } from "./workspace-files.js";
 
 // A tar entry whose path climbs out of /work, the route answers 400 (same as the single-file upload's escape
 // guard), aborting the whole extraction rather than writing a partial tree outside the workspace.

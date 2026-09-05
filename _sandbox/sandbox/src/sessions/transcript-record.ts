@@ -173,8 +173,8 @@ const scanBack = (at: (index: number) => TranscriptRow[], end: number, turns: nu
 };
 
 /* THE SAME WINDOW OVER ROWS ALREADY IN HAND, for a caller holding the record rather than the file: the route
- * fake in route-testing.ts, so its `page` cannot answer a different shape than the daemon's, and any reader
- * that has already paid for the whole record and wants the tail of it. */
+ * fake in route-services.testing.ts, so its `page` cannot answer a different shape than the daemon's, and any
+ * reader that has already paid for the whole record and wants the tail of it. */
 export const windowOf = (rows: readonly TranscriptRow[], { before, turns = DEFAULT_WINDOW_TURNS, maxRows = MAX_WINDOW_ROWS }: TranscriptWindow): TranscriptPage =>
     scanBack((index) => (rows[index] === undefined ? [] : [rows[index]]), pageEnd(before, rows.length), turns, maxRows);
 

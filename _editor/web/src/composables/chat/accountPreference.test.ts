@@ -89,7 +89,9 @@ vi.mocked(sandboxJson).mockImplementation((path: string) =>
 );
 
 // Imported last, so the seeded stores are what its module-scope restore reads.
-const { draftConversation, loadAccountStatus, reveal, useChat } = await import("./useChat");
+const { useChat } = await import("./useChat");
+const { draftConversation, reveal } = await import("./useChat-reveal");
+const { loadAccountStatus } = await import("./useChat-accounts");
 // The store half of "New agent", as the summons applies it (agentActions.startAgent): the fixture these
 // suites open extra tabs with.
 const newChat = () => {

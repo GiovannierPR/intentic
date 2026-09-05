@@ -10,7 +10,11 @@ import type { PlanHeadroom } from "./usageStatus";
 
 // pickerAccounts reaches useChat for the live account lists; stub its side-effecting seams so the import is inert.
 vi.mock("../sandbox/sandboxClient", () => ({ sandboxRequest: vi.fn() }));
-vi.mock("./useChat", () => ({ accountsOf: vi.fn(() => []), refreshConnections: vi.fn(async () => {}), subscriptionOnly: vi.fn(() => false) }));
+vi.mock("./useChat-accounts", () => ({
+    accountsOf: vi.fn(() => []),
+    refreshConnections: vi.fn(async () => {}),
+    subscriptionOnly: vi.fn(() => false),
+}));
 
 const headroom = (percent: number): PlanHeadroom => ({
     percent,

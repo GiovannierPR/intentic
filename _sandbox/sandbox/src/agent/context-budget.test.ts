@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { Services } from "../composition.js";
-import { services } from "../route-testing.js";
+import { services } from "../route-services.testing.js";
 import { contextShortfall } from "./context-budget.js";
 
 /* WHETHER A TURN IS SENT AT ALL, when the model has published how much it will take.
