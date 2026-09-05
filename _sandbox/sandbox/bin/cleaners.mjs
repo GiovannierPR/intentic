@@ -30,6 +30,21 @@ const strip = (id, match, patterns) => ({
     apply: (lines) => lines.filter((line) => !patterns.some((re) => re.test(line))),
 });
 
+/* A command word, not a filename that happens to contain it. `\bpnpm\b` reads `node_modules/.pnpm/@cursor+sdk`
+ * and `':!pnpm-lock.yaml'` as pnpm runs, and `\bvitest\b` reads `cat _editor/web/vitest.setup.ts` as a test run:
+ * over one ledger window that was 90 of 318 pnpm matches and 66 of 266 test matches, and on four of them the
+ * stripper reached into output it was never written for and deleted 2 KB of it. It also corrupts the gaps
+ * report, which asks "which high-volume commands did no handler claim": a command wrongly claimed is a handler
+ * opportunity hidden.
+ *
+ * Anchored the way READ_COMMAND is, and for the same reason: what the match is offered may be the agent's line
+ * or the launcher that wraps it (`nsenter … -- bash -c '…'`), so requiring a statement start is a coin flip on
+ * quoting the model never chose. The lookbehind buys the only thing that anchor was for, that the word is not
+ * the tail of a path or an identifier, while accepting the quote, the `&&` and the line start alike. `/` is in
+ * the set on purpose: `/usr/bin/pnpm` is a real invocation, but excluding it costs one missed strip while
+ * including it re-admits every store path. */
+const invocation = (word) => new RegExp(String.raw`(?<![\w.\-/])(?:${word})(?![\w.-])`);
+
 // What a line array would weigh once joined with newlines: measured without building the string, because the
 // pipeline measures it after EVERY stage and materialising a 500k-line capture per stage would cost more than
 // the cleaning does.
@@ -186,6 +201,67 @@ const foldPathRuns = (lines) => {
     return out;
 };
 
+/* A grep hit repeats its file on every line, and a search that lands 40 times in one file pays for that path 40
+ * times. `discover` has named `grep`/`rg` grouping the biggest remaining gap for a while: 1,523 search commands
+ * in one ledger window carried 20 MB of raw output, and the ones that land between "a few hits" and the byte
+ * cap are where the repetition sits, too small for `cap` to notice, too big to be free.
+ *
+ * So the path is said once and its later hits are indented under it. Nothing is summarised: every line number
+ * and every matched line survives, which is what separates this from folding hits into a count. Measured over
+ * 906 real search results pulled from the session corpus: 15.3% smaller, and a round-trip of all 906 recovers
+ * every (file, line, content) triple exactly.
+ *
+ * CONSECUTIVE hits only, never a regroup: grep already emits its hits grouped by file, so gathering scattered
+ * ones would buy another 0.9 points and pay for it by REORDERING the output, and a result whose line order is
+ * not the tool's own is a worse thing to hand a reader than a repeated prefix.
+ *
+ * The first hit keeps its full `path:line:` spelling rather than becoming a bare header. It costs nothing (the
+ * header would have cost a line of its own) and it leaves every group headed by an anchor that can be copied
+ * straight into an editor, which is what a search result is mostly read for. */
+const HIT_LINE = /^([^\s:][^:]{0,240}):(\d+):(?:(\d+):)?(.*)$/;
+// A run has to be worth a fold, and a key has to be a filename. `Note:12:00` and a `12:34:56` timestamp parse as
+// `path:line:` perfectly well and are not hits; requiring a `/` or a `.` in the key is what tells them apart.
+const HIT_RUN_MIN = 6;
+const isHitKey = (key) => key.includes("/") || key.includes(".");
+const parseHit = (line) => {
+    const match = HIT_LINE.exec(line);
+    return match !== null && isHitKey(match[1]) ? match : undefined;
+};
+
+// One run of hits, already known to be long enough: the first hit of each file keeps its path, the rest are
+// indented under it. `run` is uniform (every line parses), so this never has to re-check for a non-hit.
+const foldHitRun = (run) => {
+    const folded = [];
+    for (let start = 0; start < run.length; ) {
+        const file = parseHit(run[start])[1];
+        folded.push(run[start]);
+        let next = start + 1;
+        while (next < run.length && parseHit(run[next])[1] === file) {
+            const hit = parseHit(run[next]);
+            folded.push(`  ${hit[2]}${hit[3] === undefined ? "" : `:${hit[3]}`}:${hit[4]}`);
+            next++;
+        }
+        start = next;
+    }
+    // One hit per file folds to exactly what it replaced; then the fold is simply not taken.
+    return bodyBytes(folded) < bodyBytes(run) ? folded : run;
+};
+
+const foldHitRuns = (lines) => {
+    const out = [];
+    for (let i = 0; i < lines.length; ) {
+        let end = i;
+        while (end < lines.length && parseHit(lines[end]) !== undefined) {
+            end++;
+        }
+        // Not a run at all (end === i) steps one line; a run too short to fold is emitted as it came.
+        const stop = Math.max(end, i + 1);
+        out.push(...(end - i >= HIT_RUN_MIN ? foldHitRun(lines.slice(i, end)) : lines.slice(i, stop)));
+        i = stop;
+    }
+    return out;
+};
+
 // The registry: command-scoped cleaners (id ↔ command regex ↔ transform) and shape cleaners (no `match`, so
 // they are offered on every success and gate themselves on the text). Composable: every enabled cleaner that
 // applies runs, in array order.
@@ -195,7 +271,7 @@ const foldPathRuns = (lines) => {
 // that fires constantly and removes nothing is registry surface with a maintenance cost, a switch on the
 // settings page and no payer. Adding one back is three lines: `discover` says when a corpus asks for it.
 const COMMAND_CLEANERS = [
-    strip("pnpm", /\bpnpm\b/, [
+    strip("pnpm", invocation(String.raw`pnpm`), [
         /^\s*Progress: /,
         /^Packages: [+-]/,
         /^Downloading /,
@@ -203,10 +279,14 @@ const COMMAND_CLEANERS = [
         /^Virtual store is at/,
         /^Lockfile is up to date/,
     ]),
-    strip("apt", /\bapt(?:-get)?\b/, [/^(?:Get:|Hit:|Ign:|Fetched |Selecting |Preparing to unpack|Unpacking |Setting up |Processing triggers)/]),
+    // `apt-get` before `apt`: the alternation is ordered, and the trailing guard would otherwise reject the
+    // longer spelling at its own hyphen.
+    strip("apt", invocation(String.raw`apt-get|apt`), [
+        /^(?:Get:|Hit:|Ign:|Fetched |Selecting |Preparing to unpack|Unpacking |Setting up |Processing triggers)/,
+    ]),
     // Test runners: on a green run (this only fires on exit 0) the per-test PASS lines are noise, drop them and
     // keep the summary. Failures (exit ≠ 0) skip all command cleaners, so failing tests survive verbatim.
-    strip("test", /\b(?:vitest|jest|pytest|rspec|mocha|phpunit)\b|\bgo test\b|\bcargo test\b/, [
+    strip("test", invocation(String.raw`vitest|jest|pytest|rspec|mocha|phpunit|go\s+test|cargo\s+test`), [
         /^\s*[✓√]\s/, // per-test pass (vitest/jest/mocha)
         /^--- PASS:/, // go test per-test
         /^\s*test .+\.\.\. ok$/, // cargo test per-test
@@ -215,6 +295,7 @@ const COMMAND_CLEANERS = [
     ]),
     { id: "ls", apply: compactListing },
     { id: "files", apply: foldPathRuns },
+    { id: "hits", apply: foldHitRuns },
 ];
 
 // The full toggle vocabulary: every registry cleaner id, plus the global stages. `dedup` and `redact` run on all
@@ -539,10 +620,21 @@ const READ_MAX = 2000;
  * trade is deliberate: over-keeping a log costs tokens once, while gutting a file read costs the read AND the
  * re-read that follows it.
  *
- * `git\s+(?:-\S+\s+)*` before the verb because git's global options sit between the two words: `git --no-pager
+ * `GIT_OPTIONS` before the verb because git's global options sit between the two words: `git --no-pager
  * diff` is the form the agent instructions here ask for, and without this it read as a log and had its middle
  * gutted: a 274-line diffstat came back as 81 lines. */
-const READ_COMMAND = /(?<![\w.-])(?:cat|bat|sed\s+-n|awk|git\s+(?:-\S+\s+)*(?:diff|show)\b|git\s+(?:-\S+\s+)*log\s+(?:[^;&|]*\s)?-p)\b/;
+
+/* Git's global options, as many as precede the verb. Two shapes, and only the first is obvious: a flag glued to
+ * its value (`--no-pager`, `--git-dir=/x/.git`) is one `\S+` token, but SIX of them take their value as a
+ * SEPARATE word, and `-\S+\s+` then stops at the value and never reaches the verb. `git -C <path> diff` is the
+ * spelling every cross-worktree command in this workspace uses, and the ledger caught it being read as a log:
+ * a 252 KB diff of `_sandbox` came back as 81 lines with the middle gone. The list is explicit rather than
+ * "any flag may take a value", because guessing that would let `git -C . log --oneline` swallow `--oneline` and
+ * match nothing, or worse, let a value that happens to read as a verb turn a log into a read. */
+const GIT_OPTIONS = String.raw`(?:(?:-[Cc]|--(?:git-dir|work-tree|namespace|exec-path|super-prefix))\s+\S+\s+|-\S+\s+)*`;
+const READ_COMMAND = new RegExp(
+    String.raw`(?<![\w.-])(?:cat|bat|sed\s+-n|awk|git\s+${GIT_OPTIONS}(?:diff|show)\b|git\s+${GIT_OPTIONS}log\s+(?:[^;&|]*\s)?-p)\b`,
+);
 
 // Whole lines from the front of `source` until `budget` bytes are spent: a partial line would misrepresent the
 // output it came from, so the budget is spent in line-sized steps or not at all.

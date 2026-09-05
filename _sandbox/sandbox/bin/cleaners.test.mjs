@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import { filterOutput } from "./agent-output-filter.mjs";
-import { CACHE_MARKER, CLEANERS, cleanLines, collapseCached, parseCleaners, sessionKeyFromLog } from "./cleaners.mjs";
+import { CACHE_MARKER, CLEANERS, cleanLines, collapseCached, matchedCleaners, parseCleaners, sessionKeyFromLog } from "./cleaners.mjs";
+
 
 // An in-memory stand-in for the file-backed cache store, so cache tests stay deterministic (no disk).
 const memoryStore = () => {
@@ -99,6 +100,23 @@ test("cleanLines: git global options before the verb still read as a deliberate 
     expect(cleanLines(lines, { command: "git --no-pager log --oneline", exitCode: "0", enabled: new Set(CLEANERS) }).lines.length).toBeLessThan(100);
 });
 
+// Six git options take their value as a SEPARATE word, and a `-\S+\s+` skip stops at the value and never
+// reaches the verb. `git -C <path> diff` is how every cross-worktree command here is written, and the ledger
+// caught it read as a log: a 252 KB diff of `_sandbox` came back as 81 lines with the middle gone.
+test("cleanLines: a git option that takes a separate value still reads as a deliberate read", () => {
+    const lines = Array.from({ length: 300 }, (_, i) => `+ line ${i}`);
+    for (const command of [
+        "git -C /history/worktrees/mellow-moth/intentic diff -- _sandbox",
+        "git -C /repo show HEAD:src/app.ts",
+        "git --git-dir /repo/.git --work-tree /repo diff",
+        "git -C /repo log -p -- src/app.ts",
+    ]) {
+        expect(cleanLines(lines, { command, exitCode: "0", enabled: new Set(CLEANERS) }).lines).toHaveLength(300);
+    }
+    // The value is skipped, not swallowed: `log` without `-p` stays history whatever precedes it.
+    expect(cleanLines(lines, { command: "git -C /repo log --oneline", exitCode: "0", enabled: new Set(CLEANERS) }).lines.length).toBeLessThan(100);
+});
+
 test("cleanLines: cap disabled keeps all lines", () => {
     const lines = Array.from({ length: 200 }, (_, i) => `line ${i}`);
     expect(cleanLines(lines, { command: "echo", exitCode: "0", enabled: parseCleaners("-cap") }).lines).toHaveLength(200);
@@ -190,6 +208,35 @@ test("cleaner: drops per-test pass lines on green, keeps the summary", () => {
     const lines = ["✓ src/a.test.ts (3)", "✓ src/b.test.ts (2)", "Test Files  2 passed (2)", "Tests  5 passed (5)"];
     const out = cleanLines(lines, { command: "vitest run", exitCode: "0", enabled: new Set(CLEANERS) }).lines;
     expect(out).toEqual(["Test Files  2 passed (2)", "Tests  5 passed (5)"]);
+});
+
+/* A stripper claims a command by finding its name in the line, and a filename carries that name too. Over one
+ * ledger window `\bpnpm\b` claimed 90 commands that never ran pnpm (`node_modules/.pnpm/…`, `':!pnpm-lock.yaml'`)
+ * and `\bvitest\b` claimed 66 that never ran a test, four of which had 2 KB deleted out of output the stripper
+ * was not written for. A wrong claim also empties the gaps report, which asks which commands no handler took. */
+test("a stripper claims the command, not a filename that contains its name", () => {
+    const enabled = new Set(CLEANERS);
+    for (const command of [
+        "cd /work && rg -n foo node_modules/.pnpm/@cursor+sdk/dist",
+        "git diff --stat -- ':!pnpm-lock.yaml'",
+        "cat _editor/web/vitest.setup.ts",
+        "cd /work && ls _sandbox/src/peers/peer-routes.test.ts",
+        "cat scripts/adapt.sh",
+    ]) {
+        expect(matchedCleaners(command, enabled)).toEqual([]);
+    }
+    // …while the invocations themselves are still claimed, quoted by the launcher or behind a `cd … &&`.
+    expect(matchedCleaners("pnpm install", enabled)).toEqual(["pnpm"]);
+    expect(matchedCleaners("cd /work/intentic && pnpm build", enabled)).toEqual(["pnpm"]);
+    expect(matchedCleaners(WRAPPED("timeout 900 npx vitest run src/agents"), enabled)).toEqual(["test"]);
+    expect(matchedCleaners("cargo test --release", enabled)).toEqual(["test"]);
+    expect(matchedCleaners("sudo apt-get install -y jq", enabled)).toEqual(["apt"]);
+});
+
+test("a stripper that no longer claims a command leaves its output entirely alone", () => {
+    // `PASS`/`✓` lines in a listing are content: only a real test run may drop them.
+    const lines = ["✓ src/a.test.ts (4)", "PASS src/b.test.ts", "M  src/c.test.ts"];
+    expect(cleanLines(lines, { command: "cat notes/vitest.md", exitCode: "0", enabled: new Set(CLEANERS) }).lines).toEqual(lines);
 });
 
 test("cleaner: a failing run keeps everything (command cleaners skip on non-zero exit)", () => {
@@ -385,6 +432,51 @@ test("files cleaner: a run mixing absolute and relative paths shares no root and
     const out = cleanLines(lines, { command: "find .", exitCode: "0", enabled: parseCleaners("files") }).lines;
     expect(out[0]).toBe("12 paths in 2 directories:");
     expect(out).toHaveLength(3);
+});
+
+/* `discover` has named grep/rg grouping the biggest remaining gap for a while: a search that lands 40 times in
+ * one file pays for that path 40 times, and those results sit under the byte cap where nothing else looks. */
+test("hits cleaner: says each file once and indents its later hits, keeping every line and number", () => {
+    const lines = [
+        "_editor/web/src/composables/workspace/commitMessage.ts:92:export const fillCommitMessage = (",
+        "_editor/web/src/composables/workspace/commitMessage.ts:103:export const clearFilledMessage = (",
+        "_editor/web/src/composables/workspace/commitMessage.ts:126:export const followFilledMessage = (",
+        "_editor/web/src/composables/workspace/changeOrigins.ts:93:type MessageCarrier = {",
+        "_editor/web/src/composables/workspace/changeOrigins.ts:110:export const landedMessage = (",
+        "_editor/web/src/composables/workspace/changeOrigins.ts:111:    card?.landedMessage",
+    ];
+    expect(cleanLines(lines, { command: "rg -n message _editor", exitCode: "0", enabled: parseCleaners("hits") }).lines).toEqual([
+        "_editor/web/src/composables/workspace/commitMessage.ts:92:export const fillCommitMessage = (",
+        "  103:export const clearFilledMessage = (",
+        "  126:export const followFilledMessage = (",
+        "_editor/web/src/composables/workspace/changeOrigins.ts:93:type MessageCarrier = {",
+        "  110:export const landedMessage = (",
+        "  111:    card?.landedMessage",
+    ]);
+});
+
+test("hits cleaner: a column number survives, and one hit per file is left as it came", () => {
+    const withColumn = Array.from({ length: 6 }, (_, i) => `src/deep/module.ts:${10 + i}:4:const value${i} = ${i};`);
+    const out = cleanLines(withColumn, { command: "rg -n --column value src", exitCode: "0", enabled: parseCleaners("hits") }).lines;
+    expect(out[0]).toBe("src/deep/module.ts:10:4:const value0 = 0;");
+    expect(out[1]).toBe("  11:4:const value1 = 1;");
+    // Six distinct files fold to exactly what they replaced, so the fold is not taken.
+    const scattered = Array.from({ length: 6 }, (_, i) => `src/mod-${i}.ts:${i}:import x`);
+    expect(cleanLines(scattered, { command: "rg -n import src", exitCode: "0", enabled: parseCleaners("hits") }).lines).toEqual(scattered);
+});
+
+test("hits cleaner: leaves short runs, timestamps and non-hit text alone", () => {
+    const short = Array.from({ length: 5 }, (_, i) => `src/a.ts:${i}:x`);
+    expect(cleanLines(short, { command: "rg -n x src", exitCode: "0", enabled: parseCleaners("hits") }).lines).toEqual(short);
+    // `12:34:56` and `Note:12:00` parse as `path:line:` perfectly well and are not hits: the key must be a filename.
+    const stamps = Array.from({ length: 12 }, (_, i) => `12:3${i % 10}:00 started worker ${i}`);
+    expect(cleanLines(stamps, { command: "cat run.log", exitCode: "0", enabled: parseCleaners("hits") }).lines).toEqual(stamps);
+});
+
+test("hits cleaner: never reorders, so a file whose hits are interleaved keeps its line order", () => {
+    const lines = ["a/x.ts:1:one", "a/x.ts:2:two", "b/y.ts:3:three", "a/x.ts:4:four", "a/x.ts:5:five", "b/y.ts:6:six"];
+    const out = cleanLines(lines, { command: "rg -n . a b", exitCode: "0", enabled: parseCleaners("hits") }).lines;
+    expect(out).toEqual(["a/x.ts:1:one", "  2:two", "b/y.ts:3:three", "a/x.ts:4:four", "  5:five", "b/y.ts:6:six"]);
 });
 
 test("sessionKeyFromLog: recovers the agent session name from a per-command pane-log path", () => {

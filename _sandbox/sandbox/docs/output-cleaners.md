@@ -19,12 +19,21 @@ verbatim. When lines are dropped it prints a footer naming the retrieval command
 Each cleaner has a stable `id`, and there are two kinds:
 
 - **Command-scoped** (`pnpm`, `apt`, `test`): a command regex plus a line transform.
-- **Shape** (`ls`, `files`): no `match` at all. They are offered on every success and decide from the OUTPUT:
-  `ls` rewrites long-listing entries to `<octal> <name> <size>`, `files` folds a run of ≥10 bare paths into one
-  line per directory under a shared root. This is not a stylistic choice: a command regex cannot see past
-  `cd x && …`, and a replay of the session corpus says four out of five agent commands are written that way.
-  Both fall back to the lines they were handed when they recognise nothing (a non-English `ls` locale, a run of
-  loose words), so being always-on costs nothing when they are wrong.
+- **Shape** (`ls`, `files`, `hits`): no `match` at all. They are offered on every success and decide from the
+  OUTPUT: `ls` rewrites long-listing entries to `<octal> <name> <size>`, `files` folds a run of ≥10 bare paths
+  into one line per directory under a shared root, `hits` says a search result's path once and indents that
+  file's later hits under it. This is not a stylistic choice: a command regex cannot see past `cd x && …`, and a
+  replay of the session corpus says four out of five agent commands are written that way. All three fall back to
+  the lines they were handed when they recognise nothing (a non-English `ls` locale, a run of loose words, a
+  timestamp that reads like `path:line:`), so being always-on costs nothing when they are wrong.
+
+**A stripper claims the command, not a filename that contains its name.** `\bpnpm\b` matched
+`node_modules/.pnpm/@cursor+sdk` and `':!pnpm-lock.yaml'`; `\bvitest\b` matched `cat _editor/web/vitest.setup.ts`.
+Over one ledger window that was 90 of 318 pnpm claims and 66 of 266 test claims, and on four of them the stripper
+reached into output it was never written for and deleted 2 KB of it. It also empties the **gaps** report, whose
+whole question is which high-volume commands no handler claimed: a command wrongly claimed is a handler
+opportunity hidden. The match is anchored the way `READ_COMMAND` is and for the same reason (below): a lookbehind
+on `[\w.\-/]` rather than a statement start, so the quote, the `&&` and the line start all read alike.
 
 Global stages are `dedup` (collapse ≥3 identical consecutive lines), `cap` (head/tail truncation), and `redact`
 (mask secret-named assignments, AWS keys, bearer tokens, URL creds: on both success and failure).
@@ -38,8 +47,13 @@ cost the model real information:
   a non-word character rather than a statement start. Anchored the other way it recognised `cd x && cat y` and
   missed a bare `cat y`, which over one day misread 88 of 93 shell reads as logs and gutted the middle out of,
   among others, five reads of the workspace README. Git's global options sit *between* the two words, so the
-  verb is matched past them (`git\s+(?:-\S+\s+)*diff`): `git --no-pager diff` is the spelling this workspace's
-  own instructions ask for, and without that it read as a log and came back as 81 lines of a 274-line diffstat.
+  verb is matched past them (`GIT_OPTIONS`): `git --no-pager diff` is the spelling this workspace's own
+  instructions ask for, and without that it read as a log and came back as 81 lines of a 274-line diffstat.
+  Six of those options take their value as a **separate word** (`-C`, `-c`, `--git-dir`, `--work-tree`,
+  `--namespace`, `--exec-path`), where a `-\S+\s+` skip stops at the value and never reaches the verb: `git -C
+  <path> diff` is how every cross-worktree command here is written, and the ledger caught it read as a log with
+  a 252 KB diff of `_sandbox` coming back as 81 lines. The list is explicit rather than "any flag may take a
+  value", because guessing that lets `git -C . log --oneline` swallow `--oneline` and match nothing.
 - **A LINE is not a unit of size.** The cap has a byte budget beside the line count: `LOG_MAX_BYTES` 16k,
   `READ_MAX_BYTES` 96k, because counting lines alone left a hole big enough to see in the ledger: **8.2% of one
   window's entire raw volume** arrived in commands *under* the 100-line limit, so the cap never looked at them.
@@ -54,10 +68,26 @@ cost the model real information:
   six-character floor made the mask fire on MAGNITUDE, `"outputTokens": 94746` survived and the same field one
   order up did not: so it passed every small test and only failed on real data.
 
+- **A search hit repeats its file on every line.** `hits` is what `discover` named for a long time as the
+  biggest remaining gap, and it was: one ledger window carried 1,523 search commands and 20 MB of raw output,
+  with the repetition sitting in the results too small for `cap` to notice and too big to be free. The path is
+  said once and that file's later hits are indented under it; nothing is summarised, so every line number and
+  every matched line survives. Measured over **906 real search results** pulled from the session corpus:
+  **15.3% smaller**, and a round-trip of all 906 recovers every `(file, line, content)` triple exactly. Over the
+  whole corpus (89,709 Bash results) it removes **1.87 MB**, about eight times the next mechanism, and trips
+  `guard` on 1.2 KB of it. It folds
+  **consecutive** hits only and never regroups: gathering scattered ones buys another 0.9 points and pays for it
+  by reordering the output, and a result whose line order is not the tool's own is a worse thing to hand a
+  reader than a repeated prefix. The first hit of each file keeps its full `path:line:` spelling rather than
+  becoming a bare header: it costs nothing (the header would have cost a line of its own) and it leaves every
+  group headed by an anchor that can be copied straight into an editor.
+
 **Add a cleaner:** append `{ id, match, apply }` (or a `strip(id, match, patterns)`) to `COMMAND_CLEANERS`:
 omit `match` for a shape cleaner: and it joins `CLEANERS` automatically. Keep it dependency-free (the filter
-must never break). Candidates surface from `discover` (below); today it names `grep`/`rg` grouping, by a wide
-margin, as the next one worth writing.
+must never break). Candidates surface from `discover` (below). Add the id to `CLEANER_OPTIONS` in
+`_editor/web/src/pages/sandbox/savingsChart.ts` in the same commit: that list is what draws the switch on the
+Agent tab and labels the mechanism's mark on the savings bar, and a cleaner missing from it saves tokens under
+a name no screen can print.
 
 **Deleting a cleaner is a normal outcome.** Eight command-scoped strippers (`npm`, `yarn`, `docker`, `git`,
 `pip`, `lint`, `gh`, `build`) were removed after a corpus replay showed each removing *exactly zero* bytes over

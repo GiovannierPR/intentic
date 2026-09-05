@@ -21,6 +21,7 @@ export const CLEANER_OPTIONS = [
     { id: `test`, label: `test runners` },
     { id: `ls`, label: `directory listings` },
     { id: `files`, label: `file lists` },
+    { id: `hits`, label: `search hits` },
     { id: `dedup`, label: `dedupe repeats` },
     { id: `cap`, label: `head/tail cap` },
     { id: `redact`, label: `redact secrets` },
