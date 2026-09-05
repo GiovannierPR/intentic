@@ -4,6 +4,7 @@ import { useNow } from "@intentic/ui/async";
 import { computed, ref, watch } from "vue";
 import { useAgents } from "../composables/agents/useAgents";
 import { fallbackAccount, fallbackLabel } from "../composables/chat/limitFallback";
+import { askLimitReset, claimLimitReset, limitResetFor, limitResetNote } from "../composables/chat/limitReset";
 import { pickUpStatus } from "../composables/chat/pickUp";
 import { formatWait } from "../composables/chat/usageStatus";
 import { usePaneView } from "../composables/chat/useChat-view";
@@ -51,7 +52,7 @@ const { conversation, connected, pickUp, autoContinue, autoContinueAt, setAutoCo
     usePaneView();
 const { reachable } = useSandbox();
 const { mobile } = useDevice();
-const { setResumeAfterOutage, setResumeAfterLimit } = useAgents();
+const { agentById, setResumeAfterOutage, setResumeAfterLimit } = useAgents();
 
 // The clock runs only while something on screen counts down: an allowance reset, an outage retry, an armed
 // continuation. Every other chat in the app pays nothing for this strip existing.
@@ -171,6 +172,63 @@ const fallback = computed(() =>
         : fallbackAccount(provider.value, account.value, accounts.value, model.value === `` ? undefined : { id: model.value }),
 );
 
+/* THE WAY PAST THE WALL ITSELF, which is the only control on this strip that changes whether a press can work
+ * rather than when.
+ *
+ * A five-hour window at 100% beside a weekly allowance a third full is the commonest refusal in this app, and
+ * the provider will reopen that window on demand, once a week, leaving the weekly pool alone. Every affordance
+ * beside this one answers the wall by routing around it (another account) or by outliving it (an appointment,
+ * a countdown); this one removes it, on the account the user is already on, and it was the answer nobody could
+ * reach from here. limitReset.ts holds the mechanism and why the offer is the provider's answer rather than
+ * anything inferred from a full meter.
+ *
+ * WHICH ACCOUNT IS BEING ASKED ABOUT, and why the composer's selection is not enough on its own: a chat that
+ * names nobody ("anyone") still ran its refused turn on a particular account, and that is the one holding the
+ * grant. The conversation's own pick wins when it has one, because the user may have re-pointed the chat since
+ * it was refused, and then the press they are about to make is on the account they chose. */
+const limitAccount = computed(() =>
+    spentLimit.value === undefined ? undefined : (account.value ?? agentById(conversation.value.conversationId)?.account),
+);
+// Asked when the strip appears and not again: the answer only matters while this line is on screen, and the
+// probe tells the provider the account is at the wall, which is a claim worth making only while it is true.
+watch(limitAccount, (id) => void askLimitReset(id, conversation.value.box.value), { immediate: true });
+const resetOffer = computed(() => (limitAccount.value === undefined ? undefined : limitResetFor(limitAccount.value)));
+
+/* The press, and the one control here that spends something scarce, hence its own in-flight flag and its own
+ * sentence when it comes back having changed nothing. A claim that succeeds continues immediately: the window
+ * is open, the turn is held, and making the user press a second button to use what they just spent would be
+ * the two-gesture problem this strip exists to end.
+ *
+ * WHETHER THE BUTTON SURVIVES ITS OWN FAILURE is limitReset.ts's answer, not this component's, and the two
+ * outcomes differ: an answer ABOUT the account (already spent, not eligible, no longer limited) retires the
+ * offer and leaves the note to explain the button's absence; an answer that never arrived spent nothing and
+ * proved nothing, so the press stays and the note sits under it. A failure that took away the only way to
+ * retry it would be the worse of the two mistakes.
+ *
+ * The note itself goes on its own line rather than into the row, for the reason its markup gives: it is a
+ * sentence, and a sentence in a row of labels is what makes the row stop being readable. */
+const resetting = ref(false);
+const resetNote = ref<string>();
+const canReset = computed(() => resetOffer.value?.available === true);
+const useLimitReset = async (): Promise<void> => {
+    const id = limitAccount.value;
+    if (id === undefined || !reachable.value || resetting.value) {
+        return;
+    }
+    resetting.value = true;
+    resetNote.value = undefined;
+    try {
+        const claim = await claimLimitReset(id, conversation.value.box.value);
+        if (claim.result === `reset`) {
+            emit(`continue`);
+            return;
+        }
+        resetNote.value = limitResetNote(claim);
+    } finally {
+        resetting.value = false;
+    }
+};
+
 /* THE STANDING VERSION OF THE PRESS, offered where the wish for it happens: reading this line for the third
  * time in half an hour. Only while it is OFF; armed, the strip below carries both the state and the way out of
  * it. Absent while the daemon is already retrying: two automations on one stopped turn is the thing this whole
@@ -181,13 +239,19 @@ const fallback = computed(() =>
  * with the same visual weight as the way out of the thing on screen is how a row stops being readable. */
 const offerAutoContinue = computed(() => !autoContinue.value && outage.value?.automatic === undefined);
 
-/* THE AUTO-CONTINUE AFFORDANCE:
- * When fallback is available (i.e. multiple variants), the chevron menu opens "Other ways on" offering
- * both fallback and auto-continue.
- * When there is NO fallback (the overwhelmingly common 2-action situation: Continue and Auto-continue),
- * auto-continue is shown directly as a secondary action button instead of hiding behind a chevron menu. */
-const showInlineAutoContinue = computed(() => fallback.value === undefined && offerAutoContinue.value);
-const hasMenu = computed(() => fallback.value !== undefined);
+/* WHAT GOES IN THE ROW AND WHAT GOES BEHIND THE CARET, which is a ranking rather than a layout: the row holds
+ * the state, this ending's wait, and the press, and anything else is a variant of the press.
+ *
+ * Auto-continue rides inline in the overwhelmingly common two-action case (Continue and Auto-continue), where
+ * a menu would cost a click to reveal a single item. It goes back behind the caret as soon as there is a
+ * genuine variant to rank it against, because three ways on plus a preference is the paragraph-in-button-form
+ * this strip's header argues against.
+ *
+ * THE RESET IS THE ONE THING THAT IS NOT A VARIANT. Everything in the menu answers the wall by going around it
+ * or waiting it out, on some other account or at some other hour; the reset removes the wall, here, now, and
+ * it is offered for at most one moment a week — so it is in the row, and the menu items step aside for it. */
+const showInlineAutoContinue = computed(() => fallback.value === undefined && !canReset.value && offerAutoContinue.value);
+const hasMenu = computed(() => fallback.value !== undefined || (canReset.value && offerAutoContinue.value));
 const waysOpen = ref(false);
 const waysAnchor = ref<HTMLElement>();
 // A menu whose strip has gone, or whose contents have, is a panel floating over an answer nobody asked for:
@@ -300,9 +364,24 @@ const autoContinueLine = computed(() =>
         >
             Send it when it's back
         </Button>
-        <!-- THE PRESS AND ITS VARIANTS: Continue, inline Auto-continue when there are only 2 actions,
-             or a chevron dropdown when multiple variants exist (e.g. fallback account). -->
+        <!-- THE PRESS AND ITS VARIANTS: the reset when the provider is granting one, Continue, inline
+             Auto-continue when there are only 2 actions, or a chevron dropdown when variants exist. -->
         <div ref="waysAnchor" class="flex shrink-0 items-center gap-1">
+            <!-- WHAT IT SPENDS, ON THE CONTROL THAT SPENDS IT. A once-a-week grant is exactly the kind of
+                 thing somebody presses and then wishes they had been told about, and the tooltip is the last
+                 place it can be said before it is gone. The weekly allowance surviving is half the point: it
+                 is why this is worth pressing at all with a weekly pool that still has room in it. -->
+            <Button
+                v-if="canReset"
+                size="small"
+                severity="secondary"
+                :text="true"
+                :disabled="!reachable || resetting"
+                v-tooltip.top="'Reopen this account\'s session limit now — spends one of its weekly resets. Your weekly allowance is untouched and still applies'"
+                @click="useLimitReset"
+            >
+                <Icon name="refresh" class="mr-1 text-2xs" />{{ resetting ? `Resetting…` : `Reset limit now` }}
+            </Button>
             <Button
                 v-if="showInlineAutoContinue"
                 size="small"
@@ -331,6 +410,13 @@ const autoContinueLine = computed(() =>
                 <Icon name="chevron-down" class="text-2xs" />
             </Button>
         </div>
+        <!-- WHAT CAME BACK WHEN THE RESET CHANGED NOTHING, on a line of its own inside the same card.
+             `basis-full` rather than a slot in the row: these are sentences, not labels — the shortest is 35
+             characters and the commonest 52 — and inline they made the status yield past its floor and wrap,
+             which put a two-line paragraph and five controls on the one row this strip's header exists to keep
+             ranked. Below the controls in reading order, because that is what it is: what happened when you
+             pressed the thing above it. -->
+        <span v-if="resetNote !== undefined" class="basis-full text-2xs text-subtle">{{ resetNote }}</span>
     </div>
     <!-- THE PRESS'S VARIANTS: shown in the dropdown when multiple alternative ways on exist. -->
     <ResponsiveOverlay v-model="waysOpen" :anchor="waysAnchor" cross="end" header="Other ways on" panel-class="w-80 p-1">

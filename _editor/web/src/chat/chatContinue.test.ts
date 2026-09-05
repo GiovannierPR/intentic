@@ -85,6 +85,23 @@ vi.mock(`../composables/sandbox/useSandbox`, async (importOriginal) => {
     };
 });
 
+/* THE PROVIDER'S ANSWER ABOUT A SESSION-LIMIT RESET, stubbed at the composable rather than at the transport,
+ * because whether the offer EXISTS is the provider's judgement and this file is about what the strip does with
+ * it. limitReset.test.ts pins the asking (once per account, never on a timer, a failure is not an answer);
+ * `limitResetNote` stays real, since the sentence a failed claim shows is part of the affordance. */
+const { resetOffer, claimReset } = await vi.hoisted(async () => {
+    const { ref: vueRef } = await import(`vue`);
+    // A ref, not a plain box: a claim that retires the offer has to repaint the strip, which is half of what
+    // the failure cases below assert.
+    return { resetOffer: vueRef<unknown>(undefined), claimReset: vi.fn() };
+});
+vi.mock(`../composables/chat/limitReset`, async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    askLimitReset: vi.fn().mockResolvedValue(undefined),
+    limitResetFor: () => resetOffer.value,
+    claimLimitReset: claimReset,
+}));
+
 let app: App | undefined;
 
 const settle = async (): Promise<void> => {
@@ -160,6 +177,10 @@ beforeEach(async () => {
     // `connected` is the composer's own gate: with no account on the provider the box is inert and says so.
     providerAccounts.value = { ...providerAccounts.value, claude: [{ id: `acc-1`, email: `a@b.c` }] as never };
     useLayout().setChatWidth(2000);
+    // No grant on offer is the state every test but the reset's own runs in, and the state a sandbox is in
+    // ~51 weeks of the year: the strip must be its old self whenever the provider is not granting anything.
+    resetOffer.value = undefined;
+    claimReset.mockReset();
     await nextTick();
 });
 
@@ -519,4 +540,91 @@ it(`keeps the press's variants behind the caret rather than in the row`, async (
 
     expect(button(`Continue on`)).toEqual(expect.any(Object));
     expect(button(`Auto-continue`)).toEqual(expect.any(Object));
+});
+
+/* ---- the wall that does not have to be waited out at all -------------------------------------------------
+ * Anthropic reopens a spent session window on demand, once a week per account, leaving the WEEKLY allowance
+ * where it is. So the commonest refusal in this app — a five-hour pool at 100% beside a weekly pool a third
+ * full — has an answer that costs nothing the user is not already paying for, and the strip carried a
+ * countdown and nothing else. These pin the offer appearing only on the provider's own say-so, the press
+ * reaching the held turn, and what a claim that changed nothing says instead.
+ */
+
+it(`offers the reset in the row when the provider is granting one, and re-runs the held turn on it`, async () => {
+    resetOffer.value = { available: true };
+    claimReset.mockResolvedValue({ result: `reset` });
+    twoAccounts(99, 10);
+    const conversation = limitChat();
+    const resume = vi.spyOn(conversation, `resumeHeldTurn`).mockResolvedValue(true);
+    await mountPanel();
+
+    /* IN THE ROW, not behind the caret, which is the one place this differs from every other way on. The menu
+     * holds variants of the press — the same verb somewhere else, or standing — and this is not one: it is the
+     * only control here that changes whether a press can work at all, and it exists for at most one moment a
+     * week. The variants step aside for it, so the row stays three things long. */
+    const reset = button(`Reset limit now`);
+    expect(reset).toEqual(expect.any(Object));
+    expect(button(`Auto-continue`)).toBeUndefined();
+
+    reset?.click();
+    await settle();
+
+    // One press: the grant is spent and the turn goes again, rather than a press that spends it and then asks
+    // the user to press Continue with what they just bought.
+    expect(claimReset).toHaveBeenCalledTimes(1);
+    expect(claimReset.mock.calls[0]?.[0]).toBe(`acc-1`);
+    expect(resume).toHaveBeenCalledTimes(1);
+});
+
+it(`offers no reset when the provider is not granting one, whatever the meters say`, async () => {
+    // Spent on both accounts and past the wall: everything a client could infer an offer from, and the answer
+    // is still no, because eligibility turns on the plan, the account's age and the week's grant — none of it
+    // visible from a reading.
+    resetOffer.value = { available: false, reason: `already_used` };
+    twoAccounts(100, 100);
+    limitChat();
+    await mountPanel();
+
+    expect(button(`Reset limit now`)).toBeUndefined();
+    // And the strip is exactly its old self: the wait's control and the press, with auto-continue back inline.
+    expect(button(`Send it when it's back`)).toEqual(expect.any(Object));
+    expect(button(`Auto-continue`)).toEqual(expect.any(Object));
+});
+
+it(`says why nothing happened when a claim changes nothing, and does not re-run the turn`, async () => {
+    resetOffer.value = { available: true };
+    // An answer ABOUT the account retires the offer, which is limitReset.ts's own rule and is modelled here
+    // because it is half of what this test is about: the sentence has to end up standing where the button was.
+    claimReset.mockImplementation(async () => {
+        resetOffer.value = undefined;
+        return { result: `already_used` };
+    });
+    twoAccounts(99, 10);
+    const conversation = limitChat();
+    const resume = vi.spyOn(conversation, `resumeHeldTurn`).mockResolvedValue(true);
+    await mountPanel();
+
+    button(`Reset limit now`)?.click();
+    await settle();
+
+    // Leaving the button up beside the reason it did not work would invite the same press again.
+    expect(button(`Reset limit now`)).toBeUndefined();
+    expect(document.querySelector(`.chat-pane`)?.textContent).toContain(`already spent`);
+    expect(resume).not.toHaveBeenCalled();
+});
+
+it(`keeps the press when the claim never landed, since nothing was spent and nothing was proved`, async () => {
+    resetOffer.value = { available: true };
+    // The offer survives a claim that got no answer (limitReset.ts keeps it), so the row has to carry both the
+    // reason and the retry: an error that takes away the only way to try again is the worse of the two.
+    claimReset.mockResolvedValue({ result: `error`, detail: `The provider answered 503.` });
+    twoAccounts(99, 10);
+    limitChat();
+    await mountPanel();
+
+    button(`Reset limit now`)?.click();
+    await settle();
+
+    expect(button(`Reset limit now`)).toEqual(expect.any(Object));
+    expect(document.querySelector(`.chat-pane`)?.textContent).toContain(`503`);
 });

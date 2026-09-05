@@ -9,9 +9,13 @@ import { SPENT_PERCENT, usagePercent, usageStatusFor } from "./usageStatus";
  * know were related, on a screen whose only stated way on was to wait for the reset. selectAccount's own header
  * says as much: "the answer to it is usually on a different account".
  *
- * WHY THIS IS NOT THE CLI'S `/limit-reset`. That command is upstream's escape hatch for the same moment, it is
- * gated behind a server-side feature flag that is off for every account here, and it spends a once-a-week grant
- * when it does work. This spends nothing: it moves the turn to a pool the user already pays for.
+ * WHY THIS IS NOT THE SESSION-LIMIT RESET, which is the strip's other way past a wall (limitReset.ts) and was
+ * once written up here as impossible. The reset is upstream's own escape hatch for this moment, `/limit-reset`
+ * in the CLI, and the claim that it was "off for every account" came from probing it with our own reader: the
+ * provider only reports eligibility to a request that identifies as Claude Code, and answers `ineligible_reason:
+ * "surface"` to everything else, which reads exactly like a feature flag that is off. It is not. The two offers
+ * are different trades and both are worth having: the reset spends a once-a-week grant to reopen THIS account's
+ * window, and this one spends nothing at all, because it moves the turn to a pool the user already pays for.
  *
  * ONLY EVER OFFERED FROM A READING WITH ROOM IN IT. `isSpent` answers false for an account nobody has measured
  * (usagePercent is undefined there), so the negative test would have offered an unmeasured account as though it

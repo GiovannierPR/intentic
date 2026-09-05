@@ -58,6 +58,56 @@ export const AccountUsageSchema = z.object({
     measuredAt: z.number(),
 });
 export type AccountUsage = z.infer<typeof AccountUsageSchema>;
+/* THE ONE WAY PAST A SPENT SESSION WINDOW THAT IS NOT WAITING, which Anthropic grants once a week per account.
+ *
+ * Every other affordance around a refused turn is about WHEN: arm the appointment, count down to the reset,
+ * press when it opens. This one moves the clock. The provider reopens the five-hour window immediately and
+ * charges the account one of its weekly resets; the WEEKLY allowance is untouched and still binds, so this
+ * buys back the session pool and nothing else. Upstream's own CLI spells it `/limit-reset`.
+ *
+ * THE ANSWER IS THE PROVIDER'S, NEVER OURS. There is no rule here to re-derive: eligibility turns on the plan
+ * tier, how long the account has existed, whether it is actually at the wall, whether another experiment holds
+ * it, and whether the week's reset is already spent — all of it decided server-side and none of it visible from
+ * a usage reading. So this shape is a transcription of what the endpoint said, and the button exists only while
+ * it says `available`. A client must never infer availability from a 100% window.
+ *
+ * `reason` is the provider's own word for the refusal ("tier", "tenure", "not_at_wall", "weekly_limit",
+ * "already_used", …) and is carried rather than translated, because the set is the provider's to extend and a
+ * word we don't recognise is still worth showing to somebody asking why the button is not there. */
+export const LimitResetStatusSchema = z.object({
+    available: z
+        .boolean()
+        .describe("Whether the provider will reopen this account's session window right now. The only thing a button may be drawn from."),
+    reason: z
+        .string()
+        .optional()
+        .describe("Why not, in the provider's own word, when it gave one. Absent when it is available, or when the provider said nothing."),
+    // Both epoch SECONDS, matching every other reset instant on the wire (UsageWindow.resetsAt, limitResetsAt).
+    nextAvailableAt: z
+        .number()
+        .optional()
+        .describe("When the next reset may be claimed, in epoch seconds, where the provider publishes it. Absent means unknown, never 'now'."),
+    weeklyResetsAt: z.number().optional().describe("When the weekly allowance itself reopens, in epoch seconds, where the provider publishes it."),
+});
+export type LimitResetStatus = z.infer<typeof LimitResetStatusSchema>;
+/* WHAT CLAIMING IT DID, in the provider's own vocabulary plus the two failures that are ours.
+ *
+ * `reset` is the only outcome that changed anything, and the caller's cue to send the held turn again. The rest
+ * are all "nothing happened", and they are kept APART rather than folded into one failure because they are read
+ * by somebody who just pressed a button and is owed the difference: `already_used` means come back next week,
+ * `not_limited` means the window reopened while they were reading, `ineligible` means this account never had
+ * it, and `unavailable`/`error` mean try again. Collapsing them would make every one of those read as a fault.
+ *
+ * Never throws over the wire: a claim that fails leaves the account exactly as it was, and the honest answer to
+ * a press is a word, not a stack trace. */
+export const LimitResetClaimSchema = z.object({
+    result: z
+        .enum(["reset", "already_used", "not_limited", "ineligible", "unavailable", "error"])
+        .describe("What the provider did. Only `reset` reopened the window; every other value means nothing changed."),
+    nextAvailableAt: z.number().optional().describe("When another reset may be claimed, in epoch seconds, where the provider published it."),
+    detail: z.string().optional().describe("What went wrong, in words, for the two outcomes that are this sandbox's fault rather than the plan's."),
+});
+export type LimitResetClaim = z.infer<typeof LimitResetClaimSchema>;
 /* THE LAST TIME A PROVIDER ACTUALLY REFUSED A TURN, the other half of "can I run on this", and the half no
  * meter can supply.
  *

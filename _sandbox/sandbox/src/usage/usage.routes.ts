@@ -1,9 +1,10 @@
 import { usageContract } from "@intentic/sandbox-contract";
 import { implement } from "@orpc/server";
+import { claimLimitReset, readLimitReset } from "./claude-limit-reset.js";
 import type { Services } from "../composition.js";
 import type { OrpcContext } from "../context.js";
 
-export type UsageRoutesDeps = Pick<Services, "headroom" | "usage">;
+export type UsageRoutesDeps = Pick<Services, "headroom" | "usage" | "claudeStore">;
 
 // How long a forced re-measure waits for the sweep: somebody is watching a spinner they started, so giving up
 // early would answer the question with the stale number the press was doubting. Bounded by the readers' own
@@ -20,5 +21,13 @@ export const createUsageRoutes = (services: UsageRoutesDeps) => {
             await services.headroom.refresh({ ...(input.force ? { maxAgeMs: 0 } : {}), withinMs: FORCED_WAIT_MS });
             return { ok: true } as const;
         }),
+        /* The way past a spent session window that is not waiting for it (claude-limit-reset.ts next door holds
+         * the whole mechanism, and why the probe is asked rather than polled).
+         *
+         * Claude's store answers for an account it does not hold exactly as it answers for one with no grant:
+         * nothing available. So a caller may ask about any account it can name without first working out which
+         * provider grants one, and no provider needs a row here until it grows the same idea. */
+        limitReset: i.limitReset.handler(async ({ input }) => readLimitReset(services.claudeStore, input.account)),
+        claimLimitReset: i.claimLimitReset.handler(async ({ input }) => claimLimitReset(services.claudeStore, input.account)),
     };
 };

@@ -48,3 +48,33 @@ test("usage.rollup round-trips the ledger's rows and forwards the day bounds to 
     // The query reaches the store as day strings, so the store owns the range semantics (inclusive bounds).
     expect(asked).toEqual([{ from: "2026-07-01", to: "2026-07-31" }]);
 });
+
+/* The session-limit reset, over the one seam THESE routes have: Claude's credential store. What the reset
+ * itself is, and every shape the provider answers with, is claude-limit-reset.test.ts next door; this is about
+ * the route reaching the named account and answering rather than throwing for one it has never heard of.
+ *
+ * An account the store cannot produce a token for is the case worth pinning here, because it is the one a
+ * client hits by asking about any account it holds without first knowing which provider grants a reset: it has
+ * to come back as "nothing available", never as a failure that would break the strip drawing the refusal. */
+test("usage.limitReset answers for an account the store has no credential for, rather than failing the strip that asked", async () => {
+    const asked: string[] = [];
+    const client = routesClient(
+        usageContract,
+        createUsageRoutes(
+            unstubbed<UsageRoutesDeps>("usage deps", {
+                claudeStore: unstubbed("claudeStore", {
+                    read: async (id) => {
+                        asked.push(id);
+                        return undefined;
+                    },
+                }),
+            }),
+        ),
+    );
+
+    expect(await client.limitReset({ account: "nobody" })).toEqual({ available: false });
+    // A claim on the same account says what would have to change, in words somebody can act on, and posts
+    // nothing: there is no credential to post with.
+    expect(await client.claimLimitReset({ account: "nobody" })).toMatchObject({ result: "error", detail: expect.stringContaining("Reconnect") });
+    expect(asked).toEqual(["nobody", "nobody"]);
+});

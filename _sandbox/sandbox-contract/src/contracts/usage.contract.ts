@@ -1,5 +1,6 @@
 import { oc } from "@orpc/contract";
 import { z } from "zod";
+import { LimitResetClaimSchema, LimitResetStatusSchema } from "../schemas/plan-limits.js";
 import { DayWindowQuerySchema, UsageRollupSchema } from "../schemas/usage.js";
 
 // The one control over the headroom readings a person has: measure again, now, every connection. `force`
@@ -38,4 +39,34 @@ export const usageContract = {
         })
         .input(RefreshPlanLimitsSchema)
         .output(z.object({ ok: z.literal(true) })),
+    /* THE WAY PAST A SPENT SESSION WINDOW THAT ISN'T WAITING (LimitResetStatusSchema has what it costs).
+     *
+     * ASKED, NOT POLLED, and that is the whole reason it is a route of its own rather than another field on the
+     * account list. The provider only evaluates it when told the account is at the wall, so asking is a claim
+     * about the account's state; asking on every headroom sweep, for every connection, would be that claim made
+     * continuously and falsely. It is asked at the one moment it is true — a refused turn, with its strip on
+     * screen — and the answer is worth nothing a moment later, so nothing caches it.
+     *
+     * Answers `available: false` rather than failing for an account with no such mechanism, so a caller can ask
+     * about any account it holds without first knowing which provider grants one. */
+    limitReset: oc
+        .route({
+            method: "GET",
+            path: "/usage/limit-reset/{account}",
+            summary: "Whether this account's session window can be reopened now",
+            description:
+                "Asks the provider whether it will reopen this account's spent session window immediately, which some plans grant once a week. Only worth asking about an account that has actually been refused: the answer is the provider's judgement at this moment, it is not cached, and an account with no such grant answers plainly that it has none.",
+        })
+        .input(z.object({ account: z.string().min(1).describe("Which account.") }))
+        .output(LimitResetStatusSchema),
+    claimLimitReset: oc
+        .route({
+            method: "POST",
+            path: "/usage/limit-reset/{account}/claim",
+            summary: "Reopen this account's session window now",
+            description:
+                "Spends one of the account's weekly resets to reopen its session window immediately. The weekly allowance is untouched and still binds. Answers with what the provider actually did: only `reset` changed anything, and it is the cue to send the refused turn again.",
+        })
+        .input(z.object({ account: z.string().min(1).describe("Which account.") }))
+        .output(LimitResetClaimSchema),
 };
