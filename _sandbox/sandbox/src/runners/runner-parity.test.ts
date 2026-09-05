@@ -74,10 +74,10 @@ const runnerClaim = async (settings: Record<string, unknown>): Promise<string> =
     emitDefinitionToml(await settingsDefinition({ sandboxSettings: { get: async () => settings } } as unknown as Services));
 
 test("agreement is an EMPTY drift list, distinct from the absent one a silent runner gets", async () => {
-    const toml = await runnerClaim({ terseOutput: true });
+    const toml = await runnerClaim({ hashlineEdits: true });
     const agreeing = await runnerSummaries(
         summaryServices({
-            parentSettings: { terseOutput: true },
+            parentSettings: { hashlineEdits: true },
             parentOverlayHash: "h1",
             runnerToml: toml,
             state: { image: "img", overlayHash: "h1" },
@@ -95,14 +95,14 @@ test("a differing overlay hash and a differing setting each earn their line, wit
     const toml = await runnerClaim({});
     const summaries = await runnerSummaries(
         summaryServices({
-            parentSettings: { terseOutput: true },
+            parentSettings: { hashlineEdits: true },
             parentOverlayHash: "h1",
             runnerToml: toml,
             state: { image: "img", overlayHash: "h2" },
         }),
     );
     const drift = summaries[0]?.drift ?? [];
-    expect(drift.map((line) => line.subject)).toEqual(["Environment overlay", "Setting terseOutput"]);
+    expect(drift.map((line) => line.subject)).toEqual(["Environment overlay", "Setting hashlineEdits"]);
     // The overlay's remedy is a rebuild (remove and re-add); the setting's is the sync door, which the UI
     // keys off the "Setting " subject prefix.
     expect(drift[0]?.detail?.length).toBeGreaterThan(0);
@@ -119,20 +119,19 @@ test("adopt REPLACES: an omitted key returns to its default, and adopting the pa
     let stored: Record<string, unknown> | undefined;
     const runner = {
         sandboxSettings: {
-            get: async () => stored ?? { hashlineEdits: true },
+            get: async () => stored ?? { iqSearch: true },
             set: async (settings: Record<string, unknown>) => {
                 stored = settings;
             },
         },
     } as unknown as Services;
 
-    // The parent stopped setting hashlineEdits and turned terseOutput on; the runner had the opposite.
-    const parentClaim = await runnerClaim({ terseOutput: true });
+    // The parent stopped setting iqSearch and turned hashlineEdits on; the runner had the opposite.
+    const parentClaim = await runnerClaim({ hashlineEdits: true });
     const applied = await adoptDefinitionSettings(runner, parseDefinitionToml(parentClaim));
-    expect(applied).toEqual(["terseOutput"]);
-    expect(stored?.["terseOutput"]).toBe(true);
-    // Replace semantics, the whole point: the key the definition omits is BACK AT DEFAULT, not kept.
-    expect(stored?.["hashlineEdits"]).toBe(SandboxSettingsSchema.parse({}).hashlineEdits);
+    expect(applied).toEqual(["hashlineEdits"]);
+    expect(stored?.["hashlineEdits"]).toBe(true);
+    expect(stored?.["iqSearch"]).toBe(SandboxSettingsSchema.parse({}).iqSearch);
 
     // And the loop closes: the runner's next claim equals the parent's, so the drift lines are gone.
     expect(await runnerClaim(stored ?? {})).toBe(parentClaim);

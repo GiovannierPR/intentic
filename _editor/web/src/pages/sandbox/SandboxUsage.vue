@@ -9,8 +9,7 @@ import { useSandboxOutline } from "../../composables/sandbox/useSandboxOutline";
 import { useSavings } from "../../composables/sandbox/useSavings";
 import { useUsage } from "../../composables/sandbox/useUsage";
 import PlanLimitsPanel from "./PlanLimitsPanel.vue";
-import { compositionOf, verdictsOf } from "./savingsChart";
-import SavingsArmsChart from "./SavingsArmsChart.vue";
+import { compositionOf } from "./savingsChart";
 import SavingsCard from "./SavingsCard.vue";
 import SavingsStackBar from "./SavingsStackBar.vue";
 import UsageColumnChart from "./UsageColumnChart.vue";
@@ -155,15 +154,10 @@ const { savings } = useSavings(window);
 const composition = computed(() => (savings.value === undefined ? undefined : compositionOf(savings.value.input)));
 // A section that would only say "nothing yet" is not shown at all: every other panel on this tab is about
 // turns that ran, and an empty savings card on a sandbox that never enabled a cleaner is just furniture.
-const hasSavings = computed(() => (savings.value?.input.commands ?? 0) > 0 || savings.value?.output !== undefined);
+const hasSavings = computed(() => (savings.value?.input.commands ?? 0) > 0 || savings.value?.search !== undefined);
 // Which calendar these numbers are on, said next to them rather than left to the range picker above: a total
 // under a 7-day filter and the same total over all time are the same digits with different meanings.
 const savingsPeriod = computed(() => (preset.value === `all` ? `all time` : `this range`));
-
-/* The experiment's headline comes from one function, so "Measuring" and "Off" land in the same slot, at the
- * same size, as a delta would: see verdictsOf. It takes the undefined case itself, which is what lets this be
- * a plain computed and the card one shape. */
-const outputVerdicts = computed(() => verdictsOf(savings.value?.output));
 
 // ---- the table and the export -------------------------------------------------------------------------------
 
@@ -366,9 +360,8 @@ const hasSpend = computed(() => current.value.length > 0);
                          experiments stack beside it. They are the same shape as each other and roughly half its
                          height, so the alternative (plain flow) parks the third card under the first and
                          leaves a card-sized hole where the second one ended. -->
-                    <div class="grid items-start gap-3 @2xl:grid-cols-2 @5xl:grid-cols-3">
+                    <div class="grid items-start gap-3 @2xl:grid-cols-2">
                         <SavingsCard
-                            class="@2xl:row-span-2 @5xl:row-auto"
                             title="Tool output → assistant"
                             :value="`${savings?.input.savedPct ?? 0}%`"
                             unit="of shell output removed"
@@ -405,43 +398,6 @@ const hasSpend = computed(() => current.value.length > 0);
                                     >· last command {{ relativeTime(savings.input.updatedAt) }}</template
                                 >
                             </template>
-                        </SavingsCard>
-
-                        <SavingsCard
-                            title="Assistant's own output"
-                            :value="outputVerdicts.headline.value"
-                            :unit="outputVerdicts.headline.unit"
-                            :tone="outputVerdicts.headline.tone"
-                        >
-                            <template #hint>
-                                Mean prose written per turn with the terse steer appended, against a random unsteered control: the only honest way to
-                                measure it, since a turn can't be re-run to see what it would have said. Only turns the steer was eligible for count:
-                                a turn under a custom system prompt drops it along with everything else the daemon appends.
-                            </template>
-
-                            <SavingsArmsChart
-                                v-if="savings?.output !== undefined"
-                                :reading="savings.output.metrics[0]"
-                                :detail="outputVerdicts.headline.detail"
-                                on-label="steer on"
-                                off-label="steer off · control"
-                            />
-                            <template v-else>
-                                <p class="text-xs text-muted">
-                                    Needs the switch on and a turn holdout set: with no control arm there is nothing to compare against.
-                                </p>
-                                <!-- The category holding the switch, named: the Agent tab shows one group of
-                                     settings at a time, so a link that only names the tab lands somewhere this
-                                     row's own switch isn't. -->
-                                <RouterLink
-                                    :to="{ name: `sandbox`, params: { tab: `agent` }, query: { section: `instructions` } }"
-                                    class="flex items-center gap-1 self-start text-xs text-link hover:underline"
-                                >
-                                    Terse responses<Icon name="chevron-right" />
-                                </RouterLink>
-                            </template>
-
-                            <template #footnote>terse steer · A/B against a random holdout</template>
                         </SavingsCard>
                     </div>
                 </section>

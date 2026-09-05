@@ -117,11 +117,6 @@ export type TurnPlan =
           // frames and the activity log. Undefined when the credential came from the container env, or from a
           // translator subscription rather than an account this sandbox stores.
           readonly account?: string;
-          // Which arm of the terse experiment this turn was built on, when it was in the experiment at all,
-          // stamped onto the spend ledger at turn end (UsageTurn.terse) because that is the only record of it.
-          // It rides the plan rather than the request: the request is what the SDK is handed, and the steer has
-          // already been folded into the prompt by the time one exists.
-          readonly terseArm?: boolean;
           // The iq-search teaching experiment's CONVERSATION-level arm. It cannot flip per turn: once a skill
           // has entered a provider session, a later control turn in that session is already contaminated.
           readonly searchArm?: boolean;
@@ -373,18 +368,6 @@ export const planTurn = async (services: Services, input: AgentTurn, context: Tu
         persona.persona?.systemPromptMode === "custom" ? await readPersonaPrompt(services.workspace.root, persona.persona.id) : undefined,
         settings,
     );
-    /* THE TERSE EXPERIMENT'S COIN FLIP, above the split with everything else about the instructions. The steer
-     * is eligible wherever the daemon still adds to the prompt, a custom prompt takes it away with everything
-     * else, and a runtime with no system seam never had it, and the holdout then runs its fraction of eligible
-     * turns WITHOUT it, so the savings report has two populations of the same command stream to compare instead
-     * of an assertion. A turn outside the experiment records no arm at all (see UsageTurn.terse): "the steer was
-     * off for everyone" is not a control group.
-     *
-     * It reads the RESOLVED mode rather than the setting, so a persona that writes its own prompt takes the
-     * steer away for its turns exactly as the sandbox-wide setting does, and a persona pinned to a built-in
-     * base gets it back even where the sandbox is on a custom prompt. */
-    const terseEligible = settings.terseOutput && prompt.mode !== "custom" && capabilities.instructions !== "none" && settings.terseHoldout > 0;
-    const terseArm = terseEligible ? Math.random() >= settings.terseHoldout : undefined;
     const shared: TurnContext = {
         ...context,
         settings,
@@ -439,7 +422,6 @@ export const planTurn = async (services: Services, input: AgentTurn, context: Tu
             setupNoticeFor(setup),
             persona,
             installed,
-            terseArm,
             prompt,
             {
                 map: workspaceMapEligible,
@@ -479,9 +461,6 @@ export const planTurn = async (services: Services, input: AgentTurn, context: Tu
     }
     return {
         ...plan,
-        // Both arms are stamped HERE now, on the one path that flips them, the harness arm used to report the
-        // terse one because it was the only arm that ran the experiment, which was the bug rather than the design.
-        ...(terseArm !== undefined ? { terseArm } : {}),
         ...(searchArm !== undefined ? { searchArm, ...(teaching !== undefined ? { searchCohort: teaching.cohort } : {}) } : {}),
     };
 };
@@ -535,9 +514,6 @@ const honoured = (
     // The UNFILTERED manifest, this needs to know which connectors exist in order to know whose credentials to
     // withhold, which the already-filtered list by definition cannot say.
     installed: readonly Capability[],
-    // Which arm of the terse experiment this turn drew, when it is in the experiment at all. Undefined ⇒ no
-    // experiment, and the plain setting decides.
-    terseArm: boolean | undefined,
     // Which system prompt this turn runs on, with the persona's answer already resolved against the sandbox's
     // (personas.ts personaPrompt).
     prompt: { readonly mode: SystemPromptMode; readonly systemPrompt: string },
@@ -569,8 +545,6 @@ const honoured = (
         capabilities,
         ...prompt,
         stableSystemPrompt: settings.stableSystemPrompt,
-        // The arm decides when the experiment is running; the plain setting decides when it isn't.
-        terseOutput: terseArm ?? settings.terseOutput,
         ...(actingNote === undefined ? {} : { personaNote: actingNote }),
     });
     /* WHERE THE CARD SAYS TO STAND, a folder under the turn's own root, which is the worktree for an isolated

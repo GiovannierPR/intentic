@@ -30,7 +30,7 @@ export interface UsageStore {
     // day bounds.
     readonly rollup: (query: { from?: string | undefined; to?: string | undefined }) => Promise<UsageRollupRow[]>;
     // The rows themselves, same bounds. The rollup is a projection built for the cost panels and cannot answer
-    // a question about the SPREAD of turns, the terse experiment needs a per-turn variance to put a margin on
+    // a question about the SPREAD of turns: turn-level experiments need a per-turn variance to put a margin on
     // its delta, and summing that out of grouped rows is exactly the information the grouping destroyed.
     readonly turns: (query: { from?: string | undefined; to?: string | undefined }) => Promise<UsageTurn[]>;
 }

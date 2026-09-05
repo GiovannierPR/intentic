@@ -69,9 +69,9 @@ describe(`stageLabel`, () => {
 // than trusted to three templates that drifted apart once already.
 
 const reading = (overrides: Partial<TurnMetricReading> = {}): TurnMetricReading => ({
-    metric: `proseChars`,
-    on: { turns: 133, mean: 38_500 },
-    off: { turns: 14, mean: 28_100 },
+    metric: `searchCalls`,
+    on: { turns: 133, mean: 3.2 },
+    off: { turns: 14, mean: 6.4 },
     ...overrides,
 });
 
@@ -85,9 +85,9 @@ const headlineOf = (readings: TurnMetricReading[], overrides: Partial<TurnExperi
 
 describe(`verdictsOf`, () => {
     it(`states a measured saving as a signed, arrowed delta carrying its margin`, () => {
-        const verdict = headlineOf([reading({ deltaPct: -12, marginPct: 4, saved: 91_000 })]);
-        expect(verdict).toMatchObject({ value: `↓12%`, unit: `prose written per turn`, tone: `success` });
-        expect(verdict.detail).toBe(`±4pp (95%) · ~91K chars saved in this range`);
+        const verdict = headlineOf([reading({ deltaPct: -12, marginPct: 4, saved: 91.4 })]);
+        expect(verdict).toMatchObject({ value: `↓12%`, unit: `searches per turn`, tone: `success` });
+        expect(verdict.detail).toBe(`±4pp (95%) · ~91 searches saved in this range`);
     });
 
     it(`states an increase without alarm: an experiment that says the mechanism cost more is working`, () => {
@@ -131,12 +131,10 @@ describe(`verdictsOf`, () => {
         expect(verdict.detail).toBe(`needs 30 conversations per arm, 19 more on the shorter one`);
     });
 
-    /* MEASURED, NO EFFECT: its own verdict, because the reader's next move differs from "Measuring". The steer
-     * crossed thirty control turns and published +31.2% ± 35.1pp: an interval from −3.4% to +66.7%, rendered as
-     * an alarming number pointing the wrong way. The daemon now withholds the delta and sends the margin alone. */
+    /* MEASURED, NO EFFECT: its own verdict, because the reader's next move differs from "Measuring". */
     it(`says so when the arms are big enough and the effect still isn't resolvable`, () => {
-        const verdict = headlineOf([reading({ off: { turns: 31, mean: 28_100 }, marginPct: 35.1 })]);
-        expect(verdict).toMatchObject({ value: `No effect`, unit: `measurable in prose written per turn`, tone: `muted` });
+        const verdict = headlineOf([reading({ off: { turns: 31, mean: 6.4 }, marginPct: 35.1 })]);
+        expect(verdict).toMatchObject({ value: `No effect`, unit: `measurable in searches per turn`, tone: `muted` });
         expect(verdict.detail).toBe(`±35.1pp (95%) · keep collecting`);
     });
 
@@ -144,7 +142,7 @@ describe(`verdictsOf`, () => {
      * in it. The estimate is coarse and says so by being an order of magnitude, but it is the difference between
      * waiting and changing the holdout. */
     it(`says how much more control data a withheld delta would need`, () => {
-        const verdict = headlineOf([reading({ off: { turns: 31, mean: 28_100 }, marginPct: 35.1, controlTurnsNeeded: 5_800 })]);
+        const verdict = headlineOf([reading({ off: { turns: 31, mean: 6.4 }, marginPct: 35.1, controlTurnsNeeded: 5_800 })]);
         expect(verdict).toMatchObject({ value: `No effect`, tone: `muted` });
         expect(verdict.detail).toBe(`±35.1pp (95%) · ~5.8K more control turns would settle it`);
     });
@@ -158,9 +156,9 @@ describe(`verdictsOf`, () => {
 // The bars carry the arms' own units, and the two experiments' units are not interchangeable: a chart that
 // labelled searches as characters would be a picture of the wrong quantity.
 describe(`meanLabel`, () => {
-    it(`prints prose compact and searches to the tenth, the same split the daemon rounds on`, () => {
-        expect(meanLabel(reading(), 38_500)).toBe(`38.5K chars/turn`);
-        expect(meanLabel(reading({ metric: `searchCalls` }), 3.2)).toBe(`3.2 searches/turn`);
+    it(`prints searches to the tenth`, () => {
+        expect(meanLabel(reading(), 3.2)).toBe(`3.2 searches/turn`);
+        expect(meanLabel(reading({ metric: `openingSearches` }), 1.5)).toBe(`1.5 searches/turn`);
     });
 });
 

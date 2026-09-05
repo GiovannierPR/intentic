@@ -5,7 +5,7 @@ import { Card, InfoHint } from "@intentic/ui";
  *
  * The three mechanisms this section reports on measure different things in different units and two of them are
  * experiments, so the cards used to be written independently and drifted into three layouts: one led with a
- * percentage, the other two led with a methodology tag ("terse steer · A/B") and opened with a paragraph. A
+ * percentage, the other two led with a methodology tag and opened with a paragraph. A
  * reader could not scan the row, because there was no slot that held the answer on every card.
  *
  * So the frame fixes four positions, and a card may only fill them:

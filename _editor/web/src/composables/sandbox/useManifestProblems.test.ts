@@ -16,10 +16,10 @@ describe(`ManifestProblemsSchema`, () => {
 
     it(`carries a suggestion when the daemon could name one, and tolerates its absence`, () => {
         const [guessed, unguessed] = ManifestProblemsSchema.parse([
-            { path: `a.json`, problems: [{ kind: `unknownKey`, detail: `terseOutpt`, suggestion: `terseOutput` }] },
+            { path: `a.json`, problems: [{ kind: `unknownKey`, detail: `hashlineEdit`, suggestion: `hashlineEdits` }] },
             { path: `b.json`, problems: [{ kind: `unknownKey`, detail: `somethingNew` }] },
         ]);
-        expect(guessed?.problems[0]?.suggestion).toBe(`terseOutput`);
+        expect(guessed?.problems[0]?.suggestion).toBe(`hashlineEdits`);
         expect(unguessed?.problems[0]?.suggestion).toBeUndefined();
     });
 

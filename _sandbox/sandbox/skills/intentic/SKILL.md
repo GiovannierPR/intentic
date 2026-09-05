@@ -82,7 +82,7 @@ description of the product, and it may describe a project that has nothing to do
 /work                                the workspace (your worktree is mounted here during an isolated turn)
 /work/refs/                          reference shelf: read, cite by path, never edit
 /work/public/                        outbox: every file in it is on the public internet
-/work/.intentic/config/settings.json this sandbox's agent settings (systemPromptMode, skills, terseOutput,
+/work/.intentic/config/settings.json this sandbox's agent settings (systemPromptMode, skills,
                                      stableSystemPrompt, iqSearch, hashlineEdits, subagent limits, rules…)
 /work/.intentic/config/              capabilities.json, personas/, automations.json, workflows.json,
                                      environment.Dockerfile (the owner's overlay), skills/ (their own),

@@ -23,7 +23,7 @@ const definition: SandboxDefinition = {
     ],
     capabilities: [{ id: "linear", kind: "mcp", config: { url: "https://mcp.linear.app/sse" } }],
     secrets: ["OPENAI_API_KEY", "SLACK_WEBHOOK_URL"],
-    settings: { workspaceMap: true, terseHoldout: 0.25 },
+    settings: { workspaceMap: true, iqSearchHoldout: 0.25 },
 };
 
 test("emit → parse is the identity, dockerfile bytes included", () => {
@@ -103,7 +103,7 @@ test("diff answers empty for agreement and one line per real difference", () => 
     expect(subjects).toContain("Connection linear"); // here, not in the definition
     expect(subjects).toContain("Secret NEW_KEY"); // named, no value stored
     expect(subjects).toContain("Setting workspaceMap");
-    expect(subjects).toContain("Setting terseHoldout"); // absent in target ⇒ default, differs from 0.25
+    expect(subjects).toContain("Setting iqSearchHoldout"); // absent in target ⇒ default, differs from 0.25
 });
 
 test("the workspace section drifts in three directions, and a definition without one is not silence", () => {
@@ -124,18 +124,16 @@ test("the workspace section drifts in three directions, and a definition without
 });
 
 test("a setting spelled at its default is no drift against one that omits it", () => {
-    const explicit: SandboxDefinition = { ...definition, settings: { ...definition.settings, terseOutput: false } };
+    const explicit: SandboxDefinition = { ...definition, settings: { ...definition.settings, iqSearch: false } };
     expect(definitionDiff(definition, explicit)).toEqual([]);
 });
 
 /* ---- the runner-scoped surfaces: the settings-only definition and its drift lines ---- */
 
 test("settingsDefinition is settings-only: non-defaults in, every other section empty", async () => {
-    const services = { sandboxSettings: { get: async () => ({ terseOutput: true, hashlineEdits: false }) } };
+    const services = { sandboxSettings: { get: async () => ({ hashlineEdits: true, iqSearch: false }) } };
     const scoped = await settingsDefinition(services as unknown as Parameters<typeof settingsDefinition>[0]);
-    // The default-valued flag is dropped (stating it would freeze today's default into every future apply);
-    // nothing else grows a section, which is what makes this safe to ship to a runner.
-    expect(scoped.settings).toEqual({ terseOutput: true });
+    expect(scoped.settings).toEqual({ hashlineEdits: true });
     // No workspace either: a runner's tree arrives through the parent's git door, never by cloning a remote.
     expect(scoped.workspace).toBeUndefined();
     expect(scoped.repositories).toEqual([]);
@@ -157,10 +155,9 @@ test("settingsDrift names each differing key once, with defaults meaning agreeme
     });
     // Agreement, spelled two ways: both omit, and one side states the default the other omits.
     expect(settingsDrift(scoped({}), scoped({}))).toEqual([]);
-    expect(settingsDrift(scoped({ terseOutput: false }), scoped({}))).toEqual([]);
-    // One real difference, one line, subject the sync surfaces key off ("Setting …").
-    const lines = settingsDrift(scoped({ terseOutput: true }), scoped({}));
+    expect(settingsDrift(scoped({ iqSearch: false }), scoped({}))).toEqual([]);
+    const lines = settingsDrift(scoped({ hashlineEdits: true }), scoped({}));
     expect(lines).toHaveLength(1);
-    expect(lines[0]?.subject).toBe("Setting terseOutput");
+    expect(lines[0]?.subject).toBe("Setting hashlineEdits");
     expect(lines[0]?.detail).toContain("true");
 });

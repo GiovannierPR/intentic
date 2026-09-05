@@ -5,7 +5,7 @@ import { SANDBOX_SAVINGS } from "../queryKeys";
 import { useSandboxQuery } from "./useSandboxQuery";
 
 /* What each of this sandbox's token-reduction mechanisms was worth, from the daemon's /settings/savings route:
- * the cleaners' realized per-command savings (exact) and the terse steer's measured A/B (an experiment, with a
+ * the cleaners' realized per-command savings (exact) and the iq search teaching's measured A/B (an experiment, with a
  * sample size). Read-only; refetched on focus so the surfaces reflect recent turns.
  *
  * WINDOWED SERVER-SIDE, unlike useUsage, which fetches the whole rolled-up ledger once and lets the browser

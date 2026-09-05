@@ -443,13 +443,13 @@ test("no other op grows a pairing", async () => {
  * exact-equality test above is that half's pin. */
 test("starting a runner ships the approved overlay with its pinning hash and the settings as a seed", async () => {
     const approved = "FROM ghcr.io/intentic/sandbox:stable\nRUN true\n";
-    const { services, sent } = runnerServices({ approved, settings: { terseOutput: true } });
+    const { services, sent } = runnerServices({ approved, settings: { hashlineEdits: true } });
     await drain(manageDeviceSandbox(services, "rog", { op: "runner-up", slug: "rig" }));
     const flow = sent[0] as DeviceSandboxFlow;
     expect(flow.overlay).toBe(approved);
     expect(flow.overlayHash).toBe(sha256Hex(approved));
     // The seed is a settings-only definition: the flag travels, and nothing else grew a section.
-    expect(flow.definition).toContain("terseOutput = true");
+    expect(flow.definition).toContain("hashlineEdits = true");
     expect(flow.definition).not.toContain("[[capabilities]]");
     expect(flow.definition).not.toContain("secrets");
 });

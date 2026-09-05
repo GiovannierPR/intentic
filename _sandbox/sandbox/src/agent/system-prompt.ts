@@ -9,7 +9,7 @@ import { INTENTIC_PROMPT } from "./intentic-prompt.js";
  * Three bases, decided by one setting, and they do NOT split three ways, they split two.
  *
  * `intentic` (the default) and `claude` are peers: a base prompt, then the daemon's appends on top of it, the
- * widget guidance below, the terse steer. Only the base differs, and only in how it is
+ * widget guidance below. Only the base differs, and only in how it is
  * carried: Claude's preset is a flag the CLI expands on its way to the API (so its extras go in the SDK's
  * `append`), while Intentic's is text we ship, which reaches the same place as one concatenated string.
  *
@@ -17,9 +17,8 @@ import { INTENTIC_PROMPT } from "./intentic-prompt.js";
  * literally rather than quietly softened, because a "replace" that still smuggles four blocks in is a setting
  * whose behaviour nobody can predict; the settings page states the cost at the moment of the edit instead.
  *
- * ORDER, wherever appends happen, is most-stable-first: the guidance never changes, the terse steer moves
- * with one toggle. The cached system+tools prefix survives a session that way, which is the whole point of
- * stableSystemPrompt.
+ * ORDER, wherever appends happen, is most-stable-first: the guidance never changes. The cached system+tools
+ * prefix survives a session that way, which is the whole point of stableSystemPrompt.
  *
  * SIX RUNTIMES READ THIS, NOT ONE, and until recently only one of them did. The setting was composed inside the
  * Claude Code arm, so a turn on native Codex, Grok, Gemini, Pi or an ACP agent ran with the owner's prompt
@@ -291,19 +290,7 @@ const DIAGNOSTICS_GUIDANCE =
     "`mcp__diagnostics__resources` is memory, OOM kills and event-loop stalls over time. Each takes a window and " +
     "answers newest-first; none can write.";
 
-/* The concise-response steer (terseOutput): cuts the model's OWN output tokens without dropping substance.
- * Kept short so it barely costs tokens itself each turn.
- *
- * The closing sentence is the one part that is not about brevity, and it is there because the holdout says the
- * steer does not stay in its lane: over the opus turns of one week, the treated arm ran a median 55 steps
- * against the control's 64 while its prose fell only 4.3k chars to 4.7k. A small control (n=44) makes that
- * suggestive rather than settled, but "be concise" is read by the model as a budget on the TURN, not on the
- * paragraph, and a steer whose whole purpose is to save output tokens has no business buying them back by
- * skipping a check. Naming the boundary costs ~20 tokens against the ~2k the steer is there to save. */
-const TERSE_NOTE =
-    "Response style: be concise. Don't restate the request, re-quote files you just read, or echo tool output the user can already see. Lead with the answer or the action; expand only where detail changes a decision. This governs your PROSE, not your work: never skip a step, a check or a tool call to make a turn shorter.";
-
-/* HOW TO LOOK UP ANOTHER CONVERSATION (agents/fleet-recall.ts, bin/agents), and this one is here because of
+/* THE CONVENTIONS THAT BELONG TO THE WORKSPACE, not to whoever is reading it. Each describes something enforced
  * what its absence measurably cost.
  *
  * A turn regularly needs to know what a sibling conversation did — the user names one, a handoff points at
@@ -347,7 +334,6 @@ export interface TurnPromptInput {
     readonly systemPrompt: string;
     // Keep the system prefix byte-stable across the session (nothing session-volatile enters the append).
     readonly stableSystemPrompt: boolean;
-    readonly terseOutput: boolean;
     /* Which persona this turn is wearing, when it is wearing one (personas/personas.ts personaNote).
      *
      * It rides the SYSTEM append rather than the user message wherever there is one, and it may do so even
@@ -375,7 +361,7 @@ export interface TurnPromptPlacement {
 /* Where each composed piece of this turn's instructions goes. One function because the destinations are one
  * decision: a note that rides the user message must NOT also ride the append, a custom prompt takes both
  * choices away at once, and what the runtime will accept decides whether there is a choice at all. */
-export const turnPromptPlacement = ({ capabilities, mode, systemPrompt, stableSystemPrompt, terseOutput, personaNote }: TurnPromptInput): TurnPromptPlacement => {
+export const turnPromptPlacement = ({ capabilities, mode, systemPrompt, stableSystemPrompt, personaNote }: TurnPromptInput): TurnPromptPlacement => {
     const { instructions, runtime } = capabilities;
 
     /* NO SYSTEM SEAM AT ALL (Pi, ACP). The owner's prompt is not applied, quietly softening that into a note
@@ -401,9 +387,6 @@ export const turnPromptPlacement = ({ capabilities, mode, systemPrompt, stableSy
          * them here would say them twice on the one runtime that already has them, and every other runtime
          * would hear them from nowhere at all. */
         ...(runtime === "claude-code" ? [] : WORKSPACE_GUIDANCE),
-        ...(terseOutput ? [TERSE_NOTE] : []),
-        // Last, so it sits closest to the turn it governs, and after the terse steer, which must not be
-        // the final word when the turn is about to act as somebody in public.
         ...(personaNote === undefined ? [] : [personaNote]),
     ].join("\n\n");
     return append === "" ? {} : { systemAppend: append };

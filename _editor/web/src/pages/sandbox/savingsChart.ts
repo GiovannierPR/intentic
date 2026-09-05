@@ -7,9 +7,8 @@ import { formatCompact } from "./usageChart";
  * the same split as usageChart.ts, and for the same reason: the arithmetic under a "89% saved" claim should be
  * testable without mounting a component.
  *
- * The two families the report carries are never merged into one ranking here. The cleaners' savings are exact
- * (each command yields its own raw baseline); the terse steer's are an experiment with a sample size. A single
- * chart of both would lend the second the first's confidence. */
+ * The cleaners' savings are exact (each command yields its own raw baseline).
+ */
 
 // --- mechanism identity -------------------------------------------------------------------------------------
 
@@ -125,22 +124,13 @@ export const compositionOf = (input: InputSavings): Composition => {
  * near-identical quantities, the second is a prefix of the first, and naming them as if they were unrelated
  * would invite a reader to treat two readings of one experiment as two findings. */
 const METRIC_UNITS = {
-    proseChars: `prose written per turn`,
     searchCalls: `searches per turn`,
     openingSearches: `searches before the first file`,
 } satisfies Record<TurnMetricReading["metric"], string>;
 
-// An arm's mean in the metric's own unit. Prose compact (a turn writes thousands of characters), searches to
-// the tenth (a turn runs a handful, and the delta between two arms is a fraction of one), the same split the
-// daemon rounds on, in turn-experiments.ts.
-export const meanLabel = (reading: TurnMetricReading, value: number): string =>
-    reading.metric === `proseChars` ? `${formatCompact(value)} chars/turn` : `${value} searches/turn`;
+export const meanLabel = (_reading: TurnMetricReading, value: number): string => `${value} searches/turn`;
 
-// What the mechanism was worth over this window, in whole units. Searches are rounded to one: the figure is a
-// count of things that either happened or didn't, and a mean difference's spare decimal is arithmetic, not a
-// fifth of a search anybody ran.
-const savedLabel = (reading: TurnMetricReading): string =>
-    reading.metric === `proseChars` ? `${formatCompact(reading.saved ?? 0)} chars` : `${Math.round(reading.saved ?? 0)} searches`;
+const savedLabel = (reading: TurnMetricReading): string => `${Math.round(reading.saved ?? 0)} searches`;
 
 /* Both A/B cards' HEADLINE, from one function, because the two experiments differ in nothing a reader cares
  * about: each states a verdict, what the verdict is a verdict about, and the one line the figure is worthless
@@ -148,7 +138,7 @@ const savedLabel = (reading: TurnMetricReading): string =>
  *
  * A verdict is a WORD when there is no figure. "Measuring" sitting at the same size, in the same place, as
  * "↓12%" is what lets the savings row be read in one scan, the version this replaces left the headline slot
- * holding a methodology tag ("terse steer · A/B") and buried the actual state four lines down in 11px prose,
+ * holding a methodology tag and buried the actual state four lines down in 11px prose,
  * so the only way to learn an experiment had no answer yet was to read a paragraph. */
 export interface ExperimentVerdict {
     readonly value: string;
@@ -192,7 +182,7 @@ export const readingVerdict = (
          * it, joined by a middot. It used to read "anything real is inside ±35.1pp (95%): ~5.8K more control
          * turns would settle it": a clause, a figure and a second clause in one breath, which is exactly the
          * run-on the settings rows could not lay out. The framing it drops is carried by the headline this
-         * detail sits under ("No effect measurable in prose written per turn"), so nothing is lost. */
+         * detail sits under ("No effect measurable in searches per turn"), so nothing is lost. */
         return { value: `No effect`, unit: `measurable in ${unit}`, tone: `muted`, detail: `±${reading.marginPct}pp (95%) · ${wait}` };
     }
 

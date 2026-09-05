@@ -12,7 +12,7 @@ import { newestRunVersion } from "./newest-run.js";
  *
  *   • a file that is not valid JSON, or that the schema rejects whole, reads as ALL DEFAULTS. Every toggle the
  *     user set is quietly off, and nothing anywhere says the file was even looked at.
- *   • a MISSPELLED key parses fine. Zod strips what it does not recognise, so `terseOutpt` is dropped on the
+ *   • a MISSPELLED key parses fine. Zod strips what it does not recognise, so `hashlineEdit` is dropped on the
  *     way in and the feature simply never turns on, the single hardest of these to diagnose, because the file
  *     looks right and the daemon looks healthy.
  *   • one bad ENTRY in a list is skipped so the rest survive (capabilities, personas). That is the correct

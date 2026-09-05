@@ -83,14 +83,6 @@ export const UsageTurnSchema = z.object({
     cacheCreationTokens: z.number().describe("Tokens written to cache, which cost more up front and less afterwards."),
     costUsd: z.number().describe("What it cost, in dollars."),
     durationMs: z.number().describe("How long it took, in milliseconds."),
-    /* Which arm of the terse experiment this turn ran on (settings.terseHoldout), the only record of it, and
-     * the reason the savings report can say what the steer is worth instead of guessing.
-     *
-     * ABSENT means "not part of the experiment", not "off": a turn under a custom system prompt drops the
-     * steer along with everything else the daemon appends, and a turn run with the experiment switched off has
-     * no control to be compared against. Pooling those into the off-arm would compare steered turns against a
-     * population selected by something other than the coin flip, which is not a control at all. */
-    terse: z.boolean().optional(),
     /* Which arm of the iq SEARCH-TEACHING experiment this conversation runs on
      * (settings.iqSearchHoldout). Stable for every turn in one conversation: the treatment is instruction
      * loaded into a provider session, so flipping it per turn would call a remembered treatment a control.
@@ -99,25 +91,9 @@ export const UsageTurnSchema = z.object({
     // Hash of the plugin nudge + skill body used for this arm. Control turns carry it too, so a report can keep
     // both sides of one treatment revision together and exclude older wording after an upgrade.
     iqSearchCohort: z.string().optional(),
-    /* Characters of the model's own PROSE this turn, the `delta` frames only, so no tool-call arguments and no
-     * thinking. What the terse steer is judged on, and the reason it can be judged at all.
-     *
-     * `outputTokens` cannot serve: measured over a day of real turns it is 91.6% tool-call arguments (an Edit's
-     * old_string and new_string, a Write's whole file body) and 7.8% prose. The steer moves prose. So a fifth
-     * off the model's narration moves the total by 1.6%, against a margin of ±35 points, which is to say the
-     * experiment was structurally unable to see its own treatment, and the number it printed instead was
-     * whichever arm happened to draw the bigger tasks.
-     *
-     * CHARACTERS, not tokens, because the provider bills a total and never breaks it down, a token figure here
-     * would be chars÷4 wearing a unit it had not earned. For a comparison of two arms the constant cancels
-     * anyway, and the honest unit is the one actually counted.
-     *
-     * Absent ⇒ the turn predates this being measured; `armOf` drops it from the population rather than reading
-     * it as a silent turn. */
-    proseChars: z.number().optional(),
     /* SEARCHES THIS TURN RAN, every tool call that went looking for code, the dedicated search tools and the
      * CLI searches alike (isSearchCall owns the rule; `iq q` is Bash and would otherwise not be counted at all).
-     * What the search teaching is judged on, and the same correction `proseChars` is to the terse steer.
+     * What the search teaching is judged on.
      *
      * COST PER TURN CANNOT SERVE: cost is a whole turn's worth of work, a search mechanism touches one part of
      * it, and the part lives inside the noise of the rest, exactly the shape that made output tokens unable to

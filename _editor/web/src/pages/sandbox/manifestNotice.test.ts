@@ -71,7 +71,7 @@ describe(`keys this build does not know`, () => {
         const [notice] = manifestNotices(
             report(
                 { kind: `unknownKey`, detail: `skils`, suggestion: `skills` },
-                { kind: `unknownKey`, detail: `terseOutpt`, suggestion: `terseOutput` },
+                { kind: `unknownKey`, detail: `hashlineEdit`, suggestion: `hashlineEdits` },
             ),
         );
         expect(notice?.impact).toBe(`2 settings ignored`);

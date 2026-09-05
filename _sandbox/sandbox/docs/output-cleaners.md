@@ -149,34 +149,6 @@ under the never-worse rule on trims where the full one did not.
 Note the corpus replay is the WRONG instrument for this one and says it is a wash: its inputs are transcript
 tool-results, which already carry the footers the live filter wrote. Ledger and transcripts, not the corpus.
 
-## Output-side reduction: `terseOutput`
-
-Separate from tool-output cleaning: the **`terseOutput`** setting appends a short concise-response steer to the
-**end** of the system prompt (a stable suffix, so it composes with `stableSystemPrompt` and doesn't bust the
-prompt cache), cutting the model's own output tokens. (Headroom-style effort routing is deferred: it maps poorly
-to intentic's per-turn tool loop; revisit if benchmarks show model output dominates.)
-
-**Measuring it needs an experiment.** A cleaned command yields its own baseline in the same event; a turn cannot
-be re-run to see what it would have said unsteered. So **`terseHoldout`** (fraction [0,1], default 0) is a
-turn-level holdout: `turn-plan.ts` flips the coin, and the arm it picked is stamped on the spend ledger
-(`UsageTurn.terse`: absent means the turn was never in the experiment, e.g. a custom system prompt, which drops
-the steer with everything else). `usage/turn-experiments.ts` reads the two arms back: mean **prose characters**
-per turn, `n` per arm, and a Welch margin.
-
-**It is judged on prose, not on output tokens**, because those are different quantities: measured over a day of
-real turns the model's output is 91.6% tool-call arguments (an Edit's two strings, a Write's file body) and 7.8%
-prose. The steer moves prose. Scored on the total, a fifth off the narration moves the number by 1.6%: well
-inside the margin: so the experiment could not see its own treatment, and what it reported instead was whichever
-arm had drawn the longer tasks. `UsageTurn.proseChars` counts the turn's `delta` frames; characters rather than
-tokens because the provider bills one total and never breaks it down, and for a two-arm comparison the constant
-cancels.
-
-**A number is withheld twice.** Below `MIN_ARM_TURNS` (30) per arm it reports the arms and no delta. Past that it
-reports the delta only if the 95% margin EXCLUDES zero: the steer crossed its thirtieth control turn and
-published +31.2% ± 35.1pp, an interval from −3.4% to +66.7%, which is no measurement at all rendered as an
-alarming number pointing the wrong way. The margin still goes out on its own: "smaller than ±35 points" is the
-true reading, and the one that says to keep collecting rather than to go and change something.
-
 **Pre-turn retrieval (`iqContext`) shipped as a fourth mechanism and was removed after being measured.** The
 daemon searched the workspace for the user's opening message and prepended the ranked answer, so the turn would
 open with anchors instead of buying them with its first searches. Three weeks of its own A/B killed it twice
@@ -190,12 +162,10 @@ they are what the iq search teaching is judged on.
 
 ## What the report says: `/settings/savings`
 
-`SavingsReport` is three families, deliberately never one ranking:
+`SavingsReport` is two families, deliberately never one ranking:
 
 - `input` (the cleaners, from `filter-stats.jsonl`. Exact, windowed by UTC day. `gaps`) the un-cleaned
   commands worth a handler: is **grouped by command line**, `commands` runs summing to `tokens`.
-- `output`, the terse A/B above. One reading, `metric: "proseChars"`. Absent entirely when the experiment isn't
-  running.
 - `search`: the iq search teaching A/B, randomized per conversation. Two readings, `"searchCalls"` then
   `"openingSearches"`. Same `TurnExperiment` shape, same Welch machinery, same absence rule.
 

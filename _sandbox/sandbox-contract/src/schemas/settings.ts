@@ -251,8 +251,6 @@ export const SkillRemoveSchema = z.object({
 //                        tool is one daemon-side registry entry, not a new settings field.
 //   hashlineEdits    , swaps the native Read/Edit/Write for hash-anchored edits on the Claude path (stale-file
 //                        guard + fewer output tokens); off ⇒ the native file tools.
-//   terseOutput      , appends a concise-response steer to the end of the system prompt (a stable suffix, so it
-//                        composes with stableSystemPrompt) to cut the model's OWN output tokens.
 //   systemPromptMode , which base the agent's prompt is: "intentic" (default), "claude", or "custom".
 //   systemPrompt     , the owner's own prompt text, used only by "custom" mode, where it is the ENTIRE system
 //                        prompt and nothing the daemon would otherwise append rides with it, see its own note.
@@ -312,22 +310,6 @@ export const SandboxSettingsSchema = z.object({
         .describe(
             "Have the agent edit files by line number rather than by quoting the text it wants replaced. Cheaper on large files, and less forgiving of a stale read.",
         ),
-    terseOutput: z.boolean().default(false).describe("Ask the agent to say less. It changes how much it narrates, not how much it does."),
-    /* Measurement control for the terse steer, at TURN level, the same trick `outputHoldout` plays over
-     * commands, one layer up. A fraction [0,1] of otherwise-eligible turns run WITHOUT the steer and record
-     * which arm they ran on (UsageTurn.terse), so the savings report can compare two real populations.
-     *
-     * It has to be an experiment: unlike a cleaned command, which yields its own raw baseline in the same
-     * event, a turn cannot be re-run to see what it would have said unsteered. 0 ⇒ no measurement (every
-     * eligible turn is steered), which is the default because the control costs the very tokens it measures. */
-    terseHoldout: z
-        .number()
-        .min(0)
-        .max(1)
-        .default(0)
-        .describe(
-            "What share of turns to run without that instruction, so the two can be compared honestly. It has to be measured this way, because a turn cannot be re-run to see what it would have said. Zero means no measurement, which is the default, since the comparison costs the very tokens it is measuring.",
-        ),
     /* WHICH SYSTEM PROMPT THE AGENT RUNS ON, the base, before anything this turn composes.
      *
      *   intentic. Intentic's own prompt, tuned for this harness (intentic-prompt.ts). The default.
@@ -337,15 +319,14 @@ export const SandboxSettingsSchema = z.object({
      *
      * The first two are peers: both get the harness's own guidance appended (the AskUserQuestion/plan blocks
      * the chat's cards need, the checklist guidance behind the todo panel, the browser-tool guidance), plus the
-     * delegation note and the terse steer. `custom` is the one that does not, by the owner's explicit choice,
-     * see the field below. */
+     * delegation note. `custom` is the one that does not, by the owner's explicit choice, see the field below. */
     systemPromptMode: SystemPromptModeSchema.default("intentic").describe(
         "Which instructions the agent starts from: intentic's own, the ones the installed Claude Code carries, or your own. The first two both get this product's own guidance added on top; your own gets nothing added, which is the point of it.",
     ),
     /* The owner's own prompt, used only when `systemPromptMode` is "custom". Then it is the ENTIRE system
-     * prompt: both built-in bases are gone and so is everything the daemon would otherwise append, the widget
-     * guidance the chat's cards are driven by, and the terse-output steer (whose toggle goes inert). That is
-     * the price of total control, and the UI states it at the moment of the edit rather than letting the
+     * prompt: both built-in bases are gone and so is everything the daemon would otherwise append, including
+     * the widget guidance the chat's cards are driven by. That is the price of total control, and the UI states
+     * it at the moment of the edit rather than letting the
      * widgets go quietly dark. Only the cross-provider delegation note survives, because it has a home outside
      * the system prompt already (the user-message preamble stableSystemPrompt puts it in).
      *
@@ -800,19 +781,9 @@ export const BuiltinPromptTextSchema = z.object({ text: z.string(), version: z.s
 export type BuiltinPromptText = z.infer<typeof BuiltinPromptTextSchema>;
 /* ---- savings report: what each token-reduction mechanism actually saved ----
  *
- * TWO FAMILIES, deliberately never one list of bars. They are measured differently, and a chart that ranks
- * them side by side claims a confidence and a denominator that only one of them has:
- *
- *   input , shell output the cleaners trimmed before the model ever saw it. Both sides of the comparison come
- *            off the SAME command (raw in, emitted out), so the counterfactual is observed rather than
- *            estimated: exact, per command, no sample size to argue about.
- *   output, the model's own tokens under the terse steer. There is no second run of the same turn to compare
- *            against, so the only honest number is an experiment: a turn-level holdout, an n per arm, and a
- *            margin. It is absent entirely until both arms are large enough for the delta to mean anything.
- *
- * The two are also in different units of value, a saved tool-output token is saved again on every later
- * request of that conversation, an output token is saved once but costs several times as much, which is the
- * other reason they are separate sections with separate totals rather than one number.
+ * Input-side savings: shell output the cleaners trimmed before the model ever saw it. Both sides of the
+ * comparison come off the SAME command (raw in, emitted out), so the counterfactual is observed rather than
+ * estimated: exact, per command, no sample size to argue about.
  */
 
 // One mechanism's realized saving, biggest first. `savedTokens` is what THIS stage removed from what reached
@@ -851,15 +822,12 @@ export const SavingsArmSchema = z.object({ turns: z.number(), mean: z.number() }
  * stand behind. An experiment can carry several, see TurnExperimentSchema.
  *
  * `metric` says what `mean` counts and what `deltaPct` is a delta in, and choosing it is most of the work.
- *   proseChars     , the terse steer: the thing it steers, and the only part of the model's output that
- *                     responds to being asked to be brief (UsageTurn.proseChars has why output tokens cannot).
  *   searchCalls    , the search teaching: the searches a turn ran, which the teaching directly changes.
  *   openingSearches, the same, narrower: the searches before the turn first touched a file.
  * Search mechanisms must not be judged on COST. Cost is a whole turn's work, a search mechanism moves one part
- * of it, and the part sits inside the noise of the rest exactly as the steer's effect once sat inside its
- * tool-call arguments. */
+ * of it, and the part sits inside the noise of the rest. */
 export const TurnMetricReadingSchema = z.object({
-    metric: z.enum(["proseChars", "searchCalls", "openingSearches"]),
+    metric: z.enum(["searchCalls", "openingSearches"]),
     on: SavingsArmSchema,
     off: SavingsArmSchema,
     /* HOW MUCH LONGER, when the margin spans zero and the honest answer is "keep collecting": the additional
@@ -886,23 +854,20 @@ export const TurnMetricReadingSchema = z.object({
     /* THE CLAIM, present only once there is one. Both together, and only when the margin does NOT span zero.
      *
      * A schema that can't express a half-measured experiment is how a 34%-that-becomes-8%-tomorrow never
-     * reaches the screen, and clearing `minTurns` turned out not to be enough to buy that. The terse steer
-     * crossed its thirtieth control turn and immediately reported +31.2% ± 35.1pp: a confidence interval
+     * reaches the screen, and clearing `minTurns` turned out not to be enough to buy that. An early search
+     * teaching run crossed its thirtieth control turn and immediately reported +31.2% ± 35.1pp: a confidence interval
      * running from −3.4% to +66.7%, which is to say no effect was measured at all, rendered as an alarming
      * number pointing the wrong way. Thirty turns is where the normal approximation starts to hold, not where
      * this much per-turn spread resolves an effect; requiring the interval to exclude zero is the same
      * withhold-until-it-means-something rule applied to the thing that actually decides whether it does.
      *   deltaPct, change in the metric's mean per turn under the mechanism; negative is a saving.
      *   saved   , what the delta is worth over the turns that actually ran with it, in this window, in the
-     *              metric's own unit (characters, or searches). */
+     *              metric's own unit (searches). */
     deltaPct: z.number().optional(),
     saved: z.number().optional(),
 });
 export type TurnMetricReading = z.infer<typeof TurnMetricReadingSchema>;
-/* A turn-level A/B, the one shape both of this sandbox's turn experiments report in, because they differ in
- * nothing but which flag flips and what the turns are judged on. Only turns the mechanism was ELIGIBLE for are
- * counted: a turn under a custom system prompt drops the terse steer along with everything else the daemon
- * appends, so it belongs to neither arm.
+/* A turn-level A/B, the shape the iq search teaching experiment reports in.
  *
  * ONE COIN FLIP, SEVERAL READINGS. `metrics` is a list because the search teaching is judged on two, the
  * searches a turn ran, and the ones it ran before touching a file, and they are two readings of the SAME
@@ -927,9 +892,9 @@ export const TurnExperimentSchema = z.object({
     cohort: z.string().optional(),
 });
 export type TurnExperiment = z.infer<typeof TurnExperimentSchema>;
-// `output`/`search` are absent when that experiment isn't running at all (its flag off, or no holdout set), a
-// section that isn't there reads as "not measured", which is the truth, while zeros would read as "measured,
-// worth nothing".
+// `search` is absent when that experiment isn't running at all (its flag off, or no holdout set), a section
+// that isn't there reads as "not measured", which is the truth, while zeros would read as "measured, worth
+// nothing".
 /* WHAT THE COMPLEXITY JUDGE HAS BEEN SAYING, read back off the spend ledger's tier fields (UsageTurn.tierScore
  * and friends) over the requested window. The three numbers docs/model-routing-design.md §4 says the feature
  * cannot be defended without, plus the veto count, and nothing else: no counterfactual "you would have saved
@@ -964,7 +929,6 @@ export const TierReportSchema = z.object({
 export type TierReport = z.infer<typeof TierReportSchema>;
 export const SavingsReportSchema = z.object({
     input: InputSavingsSchema,
-    output: TurnExperimentSchema.optional(),
     search: TurnExperimentSchema.optional(),
     // Automatic tier selection's readout, see TierReportSchema. Absent ⇒ nothing was judged in the window.
     tier: TierReportSchema.optional(),

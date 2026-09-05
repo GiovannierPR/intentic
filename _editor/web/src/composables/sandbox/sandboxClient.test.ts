@@ -91,8 +91,8 @@ it("blames the image for a 400 on a route whose shape the daemon disagrees about
 it("passes an ordinary 400 through with the daemon's own words", async () => {
     // The route is present and both sides agree on its shape, so the daemon knows best why it refused.
     setDaemonRoutes([...SANDBOX_ROUTE_NAMES], { ...SANDBOX_ROUTE_SHAPES });
-    const error = await sandboxError(json(400, { message: `terseHoldout must be between 0 and 1` }), { method: `POST`, path: `/settings` });
-    expect(error.message).toBe(`terseHoldout must be between 0 and 1`);
+    const error = await sandboxError(json(400, { message: `iqSearchHoldout must be between 0 and 1` }), { method: `POST`, path: `/settings` });
+    expect(error.message).toBe(`iqSearchHoldout must be between 0 and 1`);
 });
 
 it("passes a 500 through untouched even on a drifted route", async () => {

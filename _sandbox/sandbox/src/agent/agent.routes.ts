@@ -1449,13 +1449,9 @@ async function* runTurn(
     // ledger below appends numbers rather than re-narrowing unknowns. SUMMED, not last-wins: a turn emits one
     // frame per SDK turn, and a steered follow-up or an imp-mode round is a second one, the money is the total.
     let usage: UsageFrame | undefined;
-    /* The model's own prose this turn, in characters, the terse steer's metric, and the only one it can be
-     * scored on. The provider bills one output-token total and never says how much of it was narration; a real
-     * turn's output is over nine parts tool-call arguments, so the steer's whole effect lives inside a tenth of
-     * the number and cannot be seen there. Counted here because `delta` is the only frame that carries prose,
-     * and nothing downstream of this loop still knows which bytes were which. */
+    /* Characters of the model's own prose this turn, counted off `delta` frames for silent-ending detection. */
     let proseChars = 0;
-    /* WHETHER THIS TURN EVER ADDRESSED THE USER, and how much work it did without doing so. The pair
+    /* Whether this turn ever addressed the user, and how much work it did without doing so. The pair
      * `silentEnding` reads at the `done` frame; ADDRESSED_FRAMES says what counts as addressing and why.
      *
      * The tool count is carried for the SENTENCE rather than the verdict: "the model stopped mid-turn" and "the
@@ -1463,9 +1459,8 @@ async function* runTurn(
      * that knows which one happened. */
     const kinds = new Set<AgentEvent["kind"]>();
     let toolCalls = 0;
-    /* The turn's search work, the search teaching's metric, on exactly the same footing as `proseChars` above:
-     * the mechanism changes how the turn searches, so searches are what it has to be scored on, and cost per
-     * turn could never see it (UsageTurn.searchCalls says why).
+    /* The turn's search work, the search teaching's metric. The mechanism changes how the turn searches, so
+     * searches are what it has to be scored on, and cost per turn could never see it (UsageTurn.searchCalls says why).
      *
      * `openingSearches` stops at the first file the turn opens or changes, which is the moment orientation ended
      * and the work began. Counted here for the same reason as the prose: the frame stream is the only place that
@@ -1982,19 +1977,10 @@ async function* runTurn(
                 ...ending,
                 ...(billed
                     ? {
-                          // Counted off this turn's own frames rather than taken from the provider, which reports
-                          // one output total and no breakdown, see UsageTurn.proseChars.
-                          proseChars,
-                          // Likewise off the frames, and in their order, see UsageTurn.searchCalls for why the
-                          // search-teaching experiment is judged on these and not on what the turn cost.
                           searchCalls,
                           openingSearches,
                       }
                     : {}),
-                // The turn experiments' arms, when this turn was in them, the ledger is the only place they
-                // are recorded, and without them the steer's and the teaching's effects are unmeasurable
-                // after the fact.
-                ...(plan.terseArm !== undefined ? { terse: plan.terseArm } : {}),
                 ...(plan.searchArm !== undefined ? { iqSearchArm: plan.searchArm } : {}),
                 ...(plan.searchCohort !== undefined ? { iqSearchCohort: plan.searchCohort } : {}),
                 /* What the complexity judge said, and whether anything came of it. Absent together when

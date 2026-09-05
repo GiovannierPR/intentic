@@ -79,7 +79,7 @@ const mannWhitneyZ = (first: number[], second: number[]): number => {
     return deviation === 0 ? 0 : (u - (n1 * n2) / 2) / deviation;
 };
 
-// Arms smaller than this cannot say anything, the same floor `terseHoldout` publishes under.
+// Arms smaller than this cannot say anything, the same floor turn experiments publish under.
 const MIN_HELD_COMMANDS = 30;
 const Z_95 = 1.96;
 
@@ -173,7 +173,7 @@ export const readInputSavings = async (historyRoot: string, window: DayWindowQue
      *   in it. On one window the two arms' INPUTS differed by 9.5%, arms that are by construction the same
      *   command stream, and the estimator published −6% while the exact paired count said +3%.
      * - It published whatever it computed. A between-arm comparison this noisy has to clear a significance bar
-     *   before it means anything, exactly as `terseHoldout` does; an interval straddling zero is not a
+     *   before it means anything, exactly as turn-level holdouts do; an interval straddling zero is not a
      *   measurement, and rendering it as a percentage invites someone to switch off a mechanism that works.
      *
      * So the median ratio is the figure (robust to the tail) and Mann-Whitney is the gate. Below the bar

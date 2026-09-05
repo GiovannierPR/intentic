@@ -18,7 +18,7 @@ import { ui } from "@intentic/ui";
 import { commitPercent } from "./numberInputs";
 
 /* THE "MEASURE IT" BLOCK (a setting's control group and what its experiment has said so far) written once
- * for the two settings that carry one (the terse steer, the iq search teaching).
+ * for settings that carry one (the iq search teaching).
  *
  * ONE COMPONENT BECAUSE THE SHAPE THEY HAD DRIFTED INTO WAS THE FAULT. Both rows glued four separate facts:
  * the verdict, its margin, how much sample is still owed, and the two arms' sizes: into a single sentence

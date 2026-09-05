@@ -2,7 +2,7 @@ import type { z } from "zod";
 import type { ManifestProblem } from "./manifest-problems.js";
 
 /* THE TYPO THAT PARSES. Zod strips what a schema does not declare and reports success, so a settings file
- * carrying `terseOutpt` is read as a settings file that never mentioned terse output, the write succeeds, the
+ * carrying `hashlineEdit` is read as a settings file that never mentioned hashline edits, the write succeeds, the
  * flag stays off, and the only evidence is a key sitting in the file doing nothing.
  *
  * It is the worst of the three ways a manifest can be wrong (see manifest-problems.ts) precisely because

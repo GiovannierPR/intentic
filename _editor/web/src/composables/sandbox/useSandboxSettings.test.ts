@@ -83,15 +83,15 @@ test("a field the daemon strips is NAMED, not just snapped back", async () => {
             return Promise.resolve({ ok: true }) as Promise<never>;
         }
         reads += 1;
-        return Promise.resolve(reads === 1 ? DEFAULTS : { ...DEFAULTS, terseHoldout: undefined }) as Promise<never>;
+        return Promise.resolve(reads === 1 ? DEFAULTS : { ...DEFAULTS, iqSearchHoldout: undefined }) as Promise<never>;
     });
     const { save, settings, dropped } = mounted(() => useSandboxSettings());
     await vi.waitFor(() => expect(settings.value).toEqual(DEFAULTS));
 
-    save.mutate({ ...DEFAULTS, terseHoldout: 0.1 });
+    save.mutate({ ...DEFAULTS, iqSearchHoldout: 0.1 });
 
-    await vi.waitFor(() => expect(settings.value?.terseHoldout).toBe(0));
-    await vi.waitFor(() => expect(dropped.value).toContain(`terseHoldout`));
+    await vi.waitFor(() => expect(settings.value?.iqSearchHoldout).toBe(0));
+    await vi.waitFor(() => expect(dropped.value).toContain(`iqSearchHoldout`));
 });
 
 test("a rejected save rolls back, so a switch never claims a setting the sandbox refused", async () => {
@@ -119,7 +119,7 @@ test("patch sends the whole settings object with just the named fields changed",
     const { patch, settings } = mounted(() => useSandboxSettings());
     await vi.waitFor(() => expect(settings.value).toEqual(DEFAULTS));
 
-    patch({ iqSearch: true, terseOutput: true });
+    patch({ iqSearch: true, hashlineEdits: true });
 
     // The mutation reaches the client a tick later, and reads share the same mock, so wait for the POST and
     // assert on that one rather than on whichever call happened to be last.
@@ -127,7 +127,7 @@ test("patch sends the whole settings object with just the named fields changed",
         const call = jsonMock.mock.calls.findLast(([, init]) => init?.method === `POST`);
         return JSON.parse(call?.[1]?.body as string) as SandboxSettings;
     };
-    await vi.waitFor(async () => expect(await posted()).toEqual({ ...DEFAULTS, iqSearch: true, terseOutput: true }));
+    await vi.waitFor(async () => expect(await posted()).toEqual({ ...DEFAULTS, iqSearch: true, hashlineEdits: true }));
 });
 
 // Settings not yet loaded: there is no object to spread, and inventing one would write this app's defaults over

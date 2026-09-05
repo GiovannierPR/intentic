@@ -486,10 +486,9 @@ test("a turn that fails before the provider bills anything still lands on the le
         turns: 0,
         costUsd: 0,
     });
-    /* And the experiment metrics are ABSENT, not zero. A turn that died before the provider spoke has no prose
-     * and no searches as a matter of arithmetic; fed to the arms as zeros, a burst of refusals would read as
-     * whichever arm was running having silenced the model. Absent is the value those readers already discard. */
-    expect("proseChars" in (ledger[0] ?? {})).toBe(false);
+    /* And the search metrics are ABSENT, not zero. A turn that died before the provider spoke has no searches
+     * as a matter of arithmetic; fed to the arms as zeros, a burst of refusals would read as whichever arm was
+     * running having silenced the model. Absent is the value those readers already discard. */
     expect("searchCalls" in (ledger[0] ?? {})).toBe(false);
 });
 
@@ -510,7 +509,7 @@ test("a turn that succeeds is recorded as such, with the experiment metrics it e
     await runAgentTurn(client, { prompt: "go", conversationId: "conv-ok" });
 
     await vi.waitFor(() => expect(ledger).toHaveLength(1), SETTLES);
-    expect(ledger[0]).toMatchObject({ outcome: "ok", costUsd: 0.5, proseChars: 4 });
+    expect(ledger[0]).toMatchObject({ outcome: "ok", costUsd: 0.5, searchCalls: 0, openingSearches: 0 });
     // Nothing failed, so there is no code and no sentence to carry.
     expect("errorCode" in (ledger[0] ?? {})).toBe(false);
     expect("errorMessage" in (ledger[0] ?? {})).toBe(false);

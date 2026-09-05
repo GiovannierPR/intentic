@@ -56,7 +56,7 @@ const searchReadings = computed<PanelReading[]>(() => {
                     @update:model-value="(value: boolean) => patch({ iqSearch: value })"
                 />
             </template>
-            <!-- The same measurement block the terse steer carries, and the same one line about it. Why the arm
+            <!-- The measurement block for the search teaching experiment, and the same one line about it. Why the arm
                  has to stay pinned for a whole conversation is a paragraph, and it now lives in the (i) where a
                  paragraph can be read: on the row it was three lines of 11px text between a switch and its
                  own result. -->

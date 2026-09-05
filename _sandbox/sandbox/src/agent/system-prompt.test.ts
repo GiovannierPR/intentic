@@ -27,27 +27,10 @@ const CODEX = capabilitiesOf("codex", "native");
 const GROK = capabilitiesOf("grok", "native");
 const ACP = capabilitiesOf("some-installed-agent", "native");
 
-test("a built-in base appends the terse steer", () => {
-    const placement = turnPromptPlacement({
-        capabilities: CLAUDE,
-        mode: "intentic",
-        systemPrompt: "",
-        stableSystemPrompt: false,
-        terseOutput: true,
-    });
-    expect(placement.systemPrompt).toBeUndefined();
-    expect(placement.systemAppend).toMatch(/concise/i);
-    expect(placement.userNotes).toBeUndefined();
-    // Claude's preset is the same deal: the base differs, the composition around it does not.
-    expect(
-        turnPromptPlacement({ capabilities: CLAUDE, mode: "claude", systemPrompt: "", stableSystemPrompt: false, terseOutput: true }),
-    ).toEqual(placement);
-});
-
 test("nothing to append is undefined, not an empty string", () => {
     // The runner spreads the result into the request; "" would hang a trailing separator off the base prompt.
     expect(
-        turnPromptPlacement({ capabilities: CLAUDE, mode: "intentic", systemPrompt: "", stableSystemPrompt: false, terseOutput: false }).systemAppend,
+        turnPromptPlacement({ capabilities: CLAUDE, mode: "intentic", systemPrompt: "", stableSystemPrompt: false }).systemAppend,
     ).toBeUndefined();
 });
 
@@ -57,13 +40,11 @@ test("custom replaces everything: nothing is appended to it", () => {
         mode: "custom",
         systemPrompt: CUSTOM,
         stableSystemPrompt: false,
-        terseOutput: true,
         personaNote: PERSONA,
     });
     expect(placement.systemPrompt).toBe(CUSTOM);
-    // The terse steer is dropped with the rest; its toggle is inert under a custom prompt, and the settings page
-    // says so rather than leaving the switch looking live. So is the persona note: the owner is doing their own
-    // instructing, and the accounts a card withholds are withheld by absence rather than by that sentence.
+    // So is the persona note: the owner is doing their own instructing, and the accounts a card withholds are
+    // withheld by absence rather than by that sentence.
     expect(placement.systemAppend).toBeUndefined();
     expect(placement.userNotes).toBeUndefined();
 });
@@ -72,7 +53,7 @@ test("custom replaces everything: nothing is appended to it", () => {
  * around whichever base is in force (sdkSystemPrompt below), so repeating them in the append would say the same
  * paragraph twice on the one runtime that already has it, and every other runtime would hear it nowhere. */
 test("a runtime outside the Claude Code loop is told the workspace conventions; that loop is not told twice", () => {
-    const codex = turnPromptPlacement({ capabilities: CODEX, mode: "intentic", systemPrompt: "", stableSystemPrompt: false, terseOutput: false });
+    const codex = turnPromptPlacement({ capabilities: CODEX, mode: "intentic", systemPrompt: "", stableSystemPrompt: false });
     expect(codex.systemAppend).toContain("`refs/`");
     expect(codex.systemAppend).toContain("`public/`");
     // How work leaves the session is the third of them: a runtime told nothing ends every turn offering to
@@ -83,7 +64,7 @@ test("a runtime outside the Claude Code loop is told the workspace conventions; 
     expect(codex.systemAppend).not.toContain("AskUserQuestion");
     expect(codex.systemAppend).not.toContain("mcp__web__browser");
 
-    const claude = turnPromptPlacement({ capabilities: CLAUDE, mode: "intentic", systemPrompt: "", stableSystemPrompt: false, terseOutput: false });
+    const claude = turnPromptPlacement({ capabilities: CLAUDE, mode: "intentic", systemPrompt: "", stableSystemPrompt: false });
     expect(claude.systemAppend).toBeUndefined();
 });
 
@@ -96,7 +77,6 @@ test("a custom prompt is added where it cannot replace", () => {
         mode: "custom",
         systemPrompt: CUSTOM,
         stableSystemPrompt: false,
-        terseOutput: true,
     });
     expect(placement.systemPrompt).toBeUndefined();
     expect(placement.systemAppend).toBe(CUSTOM);
@@ -107,9 +87,9 @@ test("a custom prompt is added where it cannot replace", () => {
 // request as no system message.
 test("an emptied custom prompt replaces with nothing, and adds nothing", () => {
     expect(
-        turnPromptPlacement({ capabilities: CLAUDE, mode: "custom", systemPrompt: "", stableSystemPrompt: false, terseOutput: false }).systemPrompt,
+        turnPromptPlacement({ capabilities: CLAUDE, mode: "custom", systemPrompt: "", stableSystemPrompt: false }).systemPrompt,
     ).toBe("");
-    const grok = turnPromptPlacement({ capabilities: GROK, mode: "custom", systemPrompt: "", stableSystemPrompt: false, terseOutput: false });
+    const grok = turnPromptPlacement({ capabilities: GROK, mode: "custom", systemPrompt: "", stableSystemPrompt: false });
     expect(grok.systemAppend).toBeUndefined();
     expect(grok.systemPrompt).toBeUndefined();
 });
@@ -124,7 +104,6 @@ test("a runtime with no system prompt still hears which persona it is wearing", 
         mode: "custom",
         systemPrompt: CUSTOM,
         stableSystemPrompt: false,
-        terseOutput: true,
         personaNote: PERSONA,
     });
     expect(placement.systemPrompt).toBeUndefined();
@@ -132,7 +111,7 @@ test("a runtime with no system prompt still hears which persona it is wearing", 
     expect(placement.userNotes).toEqual([{ title: "Who this turn is acting as", text: PERSONA }]);
     // Nothing at all to say is nothing at all sent: an empty list would put a bare separator in front of the
     // user's own words.
-    expect(turnPromptPlacement({ capabilities: ACP, mode: "intentic", systemPrompt: "", stableSystemPrompt: false, terseOutput: true })).toEqual({});
+    expect(turnPromptPlacement({ capabilities: ACP, mode: "intentic", systemPrompt: "", stableSystemPrompt: false })).toEqual({});
 });
 
 test("intentic ships its own prompt as the base, with the harness guidance after it", () => {
@@ -250,7 +229,7 @@ test("an unattended turn keeps them: a wake nobody watches is where polling cost
 /* Same rule as the browser and the question card: these name THIS loop's seams (the Bash tool's background flag,
  * an MCP server turn-plan wires here), so a Codex or Grok turn must not be told to reach for them. */
 test("a runtime outside the Claude Code loop is not told to use seams it has not got", () => {
-    const codex = turnPromptPlacement({ capabilities: CODEX, mode: "intentic", systemPrompt: "", stableSystemPrompt: false, terseOutput: false });
+    const codex = turnPromptPlacement({ capabilities: CODEX, mode: "intentic", systemPrompt: "", stableSystemPrompt: false });
     expect(codex.systemAppend).not.toContain("run_in_background");
     expect(codex.systemAppend).not.toContain("mcp__watch__start");
 });
@@ -259,7 +238,7 @@ test("a runtime outside the Claude Code loop is not told to use seams it has not
  * the same image and pays grep's 30× on the same orientation calls. It sits with the reference shelf and the
  * outbox for exactly that reason. */
 test("the search-binary steer travels to every runtime, like the other image facts", () => {
-    const codex = turnPromptPlacement({ capabilities: CODEX, mode: "intentic", systemPrompt: "", stableSystemPrompt: false, terseOutput: false });
+    const codex = turnPromptPlacement({ capabilities: CODEX, mode: "intentic", systemPrompt: "", stableSystemPrompt: false });
     expect(codex.systemAppend).toContain("`rg` (ripgrep)");
     const claude = sdkSystemPrompt({ ...BASE, mode: "intentic", custom: undefined, append: undefined }) as string;
     expect(claude).toContain("`rg` (ripgrep)");
@@ -308,7 +287,7 @@ test("both built-in bases say what the agent runs inside and where the product's
 // The skill lives in /root/.claude/skills, which only the Claude Code loop's settingSources load: a Codex turn
 // told to load it would look for something that is not there.
 test("a runtime outside the Claude Code loop is not pointed at a skill it cannot load", () => {
-    const codex = turnPromptPlacement({ capabilities: CODEX, mode: "intentic", systemPrompt: "", stableSystemPrompt: false, terseOutput: false });
+    const codex = turnPromptPlacement({ capabilities: CODEX, mode: "intentic", systemPrompt: "", stableSystemPrompt: false });
     expect(codex.systemAppend).not.toContain("`intentic` skill");
 });
 
@@ -331,6 +310,6 @@ test("the diagnostics tools are named on the turns that mounted them, and nowher
     const unattended = sdkSystemPrompt({ ...BASE, mode: "intentic", custom: undefined, unattended: true, diagnostics: true }) as string;
     expect(unattended).toContain("mcp__diagnostics__errors");
     // And a Codex turn, which has no such server, is not sent looking for one.
-    const codex = turnPromptPlacement({ capabilities: CODEX, mode: "intentic", systemPrompt: "", stableSystemPrompt: false, terseOutput: false });
+    const codex = turnPromptPlacement({ capabilities: CODEX, mode: "intentic", systemPrompt: "", stableSystemPrompt: false });
     expect(codex.systemAppend).not.toContain("mcp__diagnostics__");
 });

@@ -72,9 +72,6 @@ original: any error → emit nothing, Claude Code keeps the raw output. The foot
   `trim-savings` (and future marketing numbers: "−12% measured on 11k real commands") honest.
 - Interplay with Claude Code's own output truncation: check whether the hook sees pre- or post-truncation
   text; the cap budgets may need to sit under the harness's ceiling rather than the sandbox's.
-- The terse steer (`terseOutput`) ships **off by default** behind an env toggle, documented as
-  experimental: its own A/B in the sandbox has not yet excluded zero, and the plugin should not sell an
-  unproven number.
 
 **Placement: the one structural decision.** A marketplace install takes the plugin directory alone, so the
 plugin must be self-contained: the three scripts **move into the plugin dir**, which becomes their single
