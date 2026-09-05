@@ -94,6 +94,7 @@ const draftOf = (persona: Persona): PersonaDraft => ({
     startIn: persona.workspace?.startIn === undefined ? [] : [persona.workspace.startIn],
     folders: [...(persona.workspace?.folders ?? [])],
     systemPromptMode: persona.systemPromptMode,
+    context: persona.context,
 });
 
 /* Changing the draft without the autosave below reading it as an edit: installing one on open, and writing a
@@ -181,6 +182,7 @@ const cardFrom = (state: PersonaDraft): Persona => {
         // Same rule as the two above: a card following the sandbox stores nothing, so the file says what was
         // decided rather than restating a default nobody chose.
         ...(state.systemPromptMode !== undefined ? { systemPromptMode: state.systemPromptMode } : {}),
+        ...(state.context !== undefined ? { context: state.context } : {}),
     };
 };
 

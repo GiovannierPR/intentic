@@ -155,6 +155,11 @@ export const PersonaSchema = z.object({
         "What a conversation wearing it may do. Absent means the full toolbox, so a card written before this existed behaves exactly as it did.",
     ),
     workspace: PersonaWorkspaceSchema.optional().describe("Where it works. Absent means the whole workspace."),
+    /* WHICH PART OF THE WORKSPACE A SESSION WEARING THIS CARD CARRIES, the id of a context shelf
+     * (schemas/context.ts). A different question from `workspace.folders`: that one fences what the file tools
+     * may TOUCH inside a tree that holds everything, this one decides what the tree HOLDS. Absent falls through to
+     * the sandbox's `contextShelf` setting, and from there to everything. */
+    context: entryId.optional().describe("Which context shelf a conversation wearing it opens on: the part of the workspace it carries. Absent follows the sandbox setting."),
     /* WHICH SYSTEM PROMPT A SESSION WEARING THIS CARD RUNS ON, the same three bases the sandbox chooses
      * between, asked per card. ABSENT is the fourth answer and the default: follow the sandbox, which is what
      * every card meant before this field existed and what almost every card will go on meaning.

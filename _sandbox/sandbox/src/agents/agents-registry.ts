@@ -3,6 +3,7 @@ import {
     type AgentStatus,
     type AgentSummary,
     type AgentTurn,
+    type ContextComposition,
     deriveTitle,
     type LandedMessageDraft,
     planParts,
@@ -485,7 +486,11 @@ export interface AgentsRegistry {
      * because a restore failed would be a worse outcome than the failure itself. */
     readonly withRewindLease: <T>(conversationId: string, fn: () => Promise<T>) => Promise<T | undefined>;
     // Record the worktree composition on first creation (per-repo full base shas).
-    readonly recordWorktree: (id: string, repos: readonly PersistedAgent["repos"][number][]) => Promise<void>;
+    /* Write down what the conversation's checkout IS (its repos, each with the main-line sha it stands on) and,
+     * on the turn that created it, what it was decided it SHOULD carry (agents-store.ts `composition`). The
+     * composition is set only when given, so the callers that rewrite the repos alone, the pre-turn rebase, a
+     * join or a leave, keep the decision the opening turn made. */
+    readonly recordWorktree: (id: string, repos: readonly PersistedAgent["repos"][number][], composition?: ContextComposition) => Promise<void>;
     /* Take repos that no longer exist out of EVERY composition, live and archived, and answer with the
      * conversations that named them. The one write that may edit a composition after it is frozen, because a
      * deleted repo is the one change to the workspace a frozen composition cannot survive: every per-repo pass
@@ -1129,12 +1134,12 @@ export const createAgentsRegistry = (store: AgentsStore, standings: LandStanding
             broadcast();
             return true;
         },
-        recordWorktree: async (id, repos) => {
+        recordWorktree: async (id, repos, composition) => {
             const entry = entryOf(id);
             if (entry === undefined) {
                 return;
             }
-            replace({ ...entry, repos: [...repos] });
+            replace({ ...entry, repos: [...repos], ...(composition === undefined ? {} : { composition }) });
             await persist();
         },
         dropRepos: async (repos) => {

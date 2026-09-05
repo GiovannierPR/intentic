@@ -57,6 +57,11 @@ export interface PersonaDraft extends PersonaPowersDraft {
      * its own route (usePersonaKit). Carrying it in this draft would put a system prompt inside the debounced
      * whole-card autosave, so every keystroke would rewrite the committed personas file. */
     systemPromptMode: SystemPromptMode | undefined;
+    /* Which context shelf a session wearing this card opens on (contract schemas/context.ts): the part of the
+     * workspace it carries. Carried through the draft so a save rewrites the card WITH it: the card is rebuilt
+     * from this draft on every autosave, and a field the draft did not hold would be dropped by the first edit
+     * to anything else. No control draws it yet; it is set in the card's file. */
+    context: string | undefined;
 }
 
 const { draft, accounts, connected, grantables, error } = defineProps<{

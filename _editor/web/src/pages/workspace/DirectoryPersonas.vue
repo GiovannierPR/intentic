@@ -155,6 +155,15 @@ const bounds = computed(() => {
     return stored === undefined ? undefined : personaBounds({ id: cardId.value, capabilities: [], powers: stored });
 });
 
+/* THE DECISIONS THIS PANEL DOES NOT ASK ABOUT and must not undo when it rewrites an existing card: which projects
+ * prefer it, which prompt it runs on, which context shelf it opens on. A card rebuilt from this form without them
+ * would lose each on the first folder change, silently, in a tracked file. */
+const carriedOver = (existing: Persona | undefined): Pick<Persona, "repos" | "systemPromptMode" | "context"> => ({
+    ...(existing?.repos !== undefined ? { repos: existing.repos } : {}),
+    ...(existing?.systemPromptMode !== undefined ? { systemPromptMode: existing.systemPromptMode } : {}),
+    ...(existing?.context !== undefined ? { context: existing.context } : {}),
+});
+
 /* THE WHOLE CARD THIS PANEL IS ABOUT TO WRITE, or undefined when the form does not describe one yet. Built here
  * rather than inline in the handler so the two shapes sit side by side: the mode that only moves a card touches
  * exactly one field of it, and the mode that writes one spells out every field it is responsible for. */
@@ -177,7 +186,7 @@ const draftCard = (folder: string): Persona | undefined => {
         // Carried over, not asked about: see the header. A new card starts with no accounts, which is what a
         // persona created to work in a folder rather than to post as somebody wants.
         capabilities: existing?.capabilities ?? [],
-        ...(existing?.repos !== undefined ? { repos: existing.repos } : {}),
+        ...carriedOver(existing),
         // Only worth storing when it says something the id does not.
         ...(named !== `` && named !== cardId.value ? { label: named } : {}),
         // Absent means the full toolbox, so an untouched Advanced section commits nothing.

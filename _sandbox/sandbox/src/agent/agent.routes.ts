@@ -30,6 +30,7 @@ import { resolveWithin } from "../workspace/workspace-files-paths.js";
 import { startAnchor, type TurnPlacement } from "../agents/isolation.js";
 import { holdAccount } from "../claude/claude-credentials.js";
 import { isIsolated } from "../agents/agents-store.js";
+import { ensureComposedWorktree } from "../context/conversation-context.js";
 import { anchorWorktree, forkWorktreeBase } from "./anchor-worktree.js";
 import { anchorSteeredMessage } from "./steer-anchors.js";
 import { landAgent } from "../agents/land.js";
@@ -463,11 +464,9 @@ async function* runConversationTurn(
     if (runnerId !== undefined) {
         let remoteFailed = false;
         try {
-            const entry = services.agents.entry(conversationId);
-            const worktree = await services.agentWorktrees.ensure(conversationId, entry?.repos ?? [], input.worktreeBase, entersNamespace(input));
-            if ((entry?.repos.length ?? 0) === 0) {
-                await services.agents.recordWorktree(conversationId, worktree.repos);
-            }
+            // The mirror carries what the conversation carries: the same composition decision the local arm
+            // makes below, so a shelf narrows a remote conversation exactly as it narrows one that runs here.
+            const worktree = await ensureComposedWorktree(services, input, conversationId, input.worktreeBase, entersNamespace(input));
             const root = worktree.repos.find((repo) => repo.repo === "root") ?? worktree.repos[0];
             yield { kind: "worktree", branch: worktree.branch, base: (root?.base ?? "").slice(0, 7), remote: runnerId };
             yield* anchorIsolatedTurn(services, conversationId, worktree.repos, turn);
@@ -539,10 +538,12 @@ async function* runConversationTurn(
          * A workflow's own pinned base still wins: it pins every candidate to ONE snapshot on purpose, and a
          * fork inside one must not quietly step off it. */
         const worktreeBase = input.worktreeBase ?? (await forkWorktreeBase(services.turnAnchors, input.forkOf));
-        const worktree = await services.agentWorktrees.ensure(conversationId, entry?.repos ?? [], worktreeBase, entersNamespace(input));
-        if ((entry?.repos.length ?? 0) === 0) {
-            await services.agents.recordWorktree(conversationId, worktree.repos);
-        }
+        /* WHAT THE CONVERSATION CARRIES, decided on the turn that creates its worktrees and never re-decided
+         * (context/conversation-context.ts): the shelf its persona or the sandbox names, or everything. A later
+         * turn hands the recorded composition back to ensure, which brings the checkout to it, a repo cloned
+         * since that the composition names joins, one it stopped naming leaves, and rewrites the record whenever
+         * the set of repos moved, not only on the opening turn as before. */
+        const worktree = await ensureComposedWorktree(services, input, conversationId, worktreeBase, entersNamespace(input));
         /* Then put the branch on TODAY's main line, before the model reads a line of it (agents/sync.ts). A
          * conversation parked on a question can sit for hours while the user commits around it, and everything
          * downstream of here, what the agent reads, what it edits, what the auto-land tries to apply, is

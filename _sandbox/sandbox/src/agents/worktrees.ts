@@ -16,8 +16,10 @@ import { mirroredDirs, overlaysDir, overlaysRoot, type TurnIsolation } from "./i
 // invisible to the /work tree walk + watcher + iq + history scopes, and their gitdir pointers never straddle
 // volumes. The object stores are shared; a worktree costs only its checkout.
 //
-// The composition is FROZEN at first ensure: repos cloned into /work later don't join an existing
-// conversation, and repos the agent clones inside its worktree are outside diff/land (both v2).
+// A conversation with no SELECTION (context/shelves.ts repoSelectionOf) has its composition FROZEN at first
+// ensure: repos cloned into /work later don't join it. A conversation on a context shelf is instead brought to
+// its selection on every ensure, a named repo joins and an unnamed one leaves (reconcile, below). Either way,
+// repos the agent clones inside its worktree are outside diff/land.
 
 export interface ConversationWorktree {
     // The agent's cwd for isolated turns, the root repo's worktree dir.
@@ -42,7 +44,7 @@ export interface AgentWorktrees {
     // and hands it to every candidate, so a fan-out cannot observe several different moving workspaces.
     readonly snapshot: () => Promise<ConversationWorktree["repos"]>;
     // Create the composition on first use (recorded = []), optionally at a caller-owned immutable snapshot;
-    // else repair what the recorded composition names.
+    // else repair what the recorded composition names, and bring it to the selection where one is given.
     readonly ensure: (
         id: string,
         recorded: readonly { repo: string; base: string }[],
@@ -51,6 +53,15 @@ export interface AgentWorktrees {
          * linkMirrors). Absent ⇒ the container's own answer, for the callers that are not about to run a turn
          * (a sweep, a repair, a test). */
         namespaced?: boolean,
+        /* WHICH REPOSITORIES THE CONVERSATION CARRIES, as repo ids, root implied (context/shelves.ts
+         * repoSelectionOf). Absent ⇒ every live repository, the composition every conversation had before a
+         * shelf could narrow one. Present, the composition is brought to it: on first use only the named repos
+         * are checked out, and on a later turn a repo named here that the record lacks JOINS (a fresh checkout
+         * at main's head, or its old branch back off the shelf), while a recorded repo not named here LEAVES
+         * (its remainder committed onto agent/<id>, the checkout removed, the branch parked), so the returned
+         * `repos` are the record to write down. A name that is not a live repository is ignored: a shelf may
+         * name a repo that has yet to be cloned, as a persona names an account that has yet to sign in. */
+        selection?: readonly string[],
     ) => Promise<ConversationWorktree>;
     // Tear down: worktree remove (before the ref goes, git refuses to delete a checked-out branch), then the dir.
     readonly remove: (id: string, recorded: readonly { repo: string; base: string }[]) => Promise<void>;
@@ -387,6 +398,102 @@ export const createAgentWorktrees = (
         await Promise.all(repos.map(({ repo }) => linkMirrors(id, repo, namespaced)));
     };
 
+    /* KEEP WHAT ONE CHECKOUT HOLDS, on its branch, before the checkout goes: retire's first pass for one repo,
+     * and the first half of a repo LEAVING a conversation's composition. No repo lock (retire says why: the
+     * status read, the index write and the commit all happen inside this agent's own worktree).
+     *
+     * ONE spawn to answer "is there anything to keep", which is the answer in the common case: a cleanly-landed
+     * agent's worktree is already clean, because land committed its remainder. Porcelain covers staged,
+     * unstaged AND untracked, which is exactly what `add -A` below would sweep. It also OVER-reports, dirty
+     * content inside a nested repo stages as nothing, which is why the commit itself is
+     * commitWorktreeRemainder's call, on the index, and not this probe's. */
+    const preserveOne = async (id: string, repo: string, title: string | undefined): Promise<void> => {
+        const worktree = worktreeDir(id, repo);
+        if (!(await exists(join(worktree, ".git")))) {
+            return; // Never created, or already retired: nothing to preserve.
+        }
+        // The repository this checkout belongs to is gone (see repoBehind): no git command can run here, so
+        // there is nothing to commit and no way to commit it. The caller still reclaims the dir, and
+        // agents/vanished-repos.ts takes the repo out of the composition for good.
+        if (!(await repoBehind(worktree))) {
+            logger.warn({ id, repo }, "agents: retiring a checkout whose repository is gone, nothing to preserve");
+            return;
+        }
+        const { stdout } = await git(worktree, ["status", "--porcelain", "-z"]);
+        if (stdout === "") {
+            return;
+        }
+        await commitWorktreeRemainder(repo, worktree, `Agent: ${title ?? id}`, git);
+    };
+
+    /* DROP ONE CHECKOUT AND PARK ITS BRANCH, retire's second pass for one repo, and the second half of a repo
+     * leaving a composition. Under the repo lock (worktree admin area). The commits stay, they ARE the archive,
+     * but the BRANCH does not: it moves to the parked shelf (agent-refs.ts), so an archive costs the repo no
+     * refs/heads/ entry for as long as nobody opens the conversation again. Inside the repo lock and strictly
+     * after the checkout is gone, because that is the one thing that makes the ref deletable. Best-effort: an
+     * agent whose ref will not park is an agent that archived fine and left a branch behind, which the next
+     * boot's sweep picks up. */
+    const releaseOne = (id: string, repo: string): Promise<void> =>
+        withRepoLock(repo, async () => {
+            const main = mainDir(repo);
+            await git(main, ["worktree", "remove", "--force", worktreeDir(id, repo)]).catch(() =>
+                git(main, ["worktree", "prune"]).catch(() => undefined),
+            );
+            await parkAgentRefs(main, new Set([id]), git).catch((error: unknown) => logger.warn({ err: error, repo, id }, "agents: branch park failed"));
+        });
+
+    /* A REPO JOINING A CONVERSATION THAT ALREADY HAS ITS WORKTREES, the restore-or-create the recorded path
+     * splits across repairOne and createOne. A repo that left earlier has its branch on the parked shelf; taking
+     * it back first means createOne finds the branch and ATTACHES, so the work the repo left with comes back
+     * with it, the same round trip retire and ensure already make for a whole conversation. A repo that was
+     * never here has no branch and gets a fresh one at main's head (or the pinned base a snapshot supplied). */
+    const joinOne = async (id: string, repo: string, pinned: string | undefined): Promise<{ repo: string; base: string } | undefined> =>
+        withRepoLock(repo, async () => {
+            await unparkAgentRef(mainDir(repo), `agent/${id}`, git).catch((error: unknown) =>
+                logger.warn({ err: error, repo }, "agents: branch unpark failed"),
+            );
+            return createOne(id, repo, pinned);
+        });
+
+    /* BRING A RECORDED COMPOSITION TO WHAT IT SHOULD HOLD: the repos `want` names that the record lacks join,
+     * the recorded ones it does not name leave, and the answer is the new record, in `want`'s (discovery)
+     * order so root still leads it. Root is never a leaver: it is the conversation's own directory, and the
+     * `wanted` list always carries it.
+     *
+     * Leaving is a retire of one repo, preserve then release, so a switched-off repo's uncommitted edits are on
+     * agent/<id> and not on the floor. Join and leave run concurrently across repos, as the passes they are
+     * taken from do; nothing in a composition depends on anything else in it but root's directory, which
+     * exists throughout. */
+    const reconcile = async (
+        id: string,
+        recorded: readonly { repo: string; base: string }[],
+        want: readonly { repo: string; base: string | undefined }[],
+    ): Promise<readonly { repo: string; base: string }[]> => {
+        const have = new Map(recorded.map((entry) => [entry.repo, entry]));
+        const wanted = new Set(want.map(({ repo }) => repo));
+        const leaving = recorded.filter(({ repo }) => repo !== "root" && !wanted.has(repo));
+        const joining = want.filter(({ repo }) => !have.has(repo));
+        if (leaving.length === 0 && joining.length === 0) {
+            return recorded;
+        }
+        const joined = new Map<string, { repo: string; base: string }>();
+        await Promise.all([
+            ...leaving.map(async ({ repo }) => {
+                await preserveOne(id, repo, undefined);
+                await releaseOne(id, repo);
+                logger.info({ id, repo }, "agents: repo left the conversation's composition");
+            }),
+            ...joining.map(async ({ repo, base }) => {
+                const made = await joinOne(id, repo, base);
+                if (made !== undefined) {
+                    joined.set(repo, made);
+                    logger.info({ id, repo }, "agents: repo joined the conversation's composition");
+                }
+            }),
+        ]);
+        return want.map(({ repo }) => have.get(repo) ?? joined.get(repo)).filter((entry): entry is { repo: string; base: string } => entry !== undefined);
+    };
+
     return {
         conversationDir,
         worktreeDir,
@@ -400,17 +507,31 @@ export const createAgentWorktrees = (
                 .filter((entry): entry is { repo: string; base: string } => entry.base !== undefined)
                 .map(({ repo, base }) => ({ repo, base }));
         },
-        ensure: async (id, recorded, base, namespaced) => {
+        ensure: async (id, recorded, base, namespaced, selection) => {
             const branch = `agent/${id}`;
+            /* What the conversation SHOULD hold, in discovery order with root leading: every live repo, or the
+             * selected ones and root. Read live rather than off the record so a repo cloned since the last turn
+             * is seen by both an unselected conversation (it joins, as it always has on first use) and a
+             * selected one whose shelf named it before it existed. */
+            const wanted = async (): Promise<readonly { repo: string; base: string | undefined }[]> => {
+                const live = base === undefined ? (await liveRepos()).map((repo) => ({ repo, base: undefined })) : base;
+                return selection === undefined ? live : live.filter(({ repo }) => repo === "root" || selection.includes(repo));
+            };
             if (recorded.length > 0) {
                 await eachRepo(recorded, "root-first", (repo) => withRepoLock(repo, () => repairOne(id, repo)));
-                await linkComposition(id, recorded, namespaced);
-                return { cwd: conversationDir(id), branch, repos: recorded };
+                /* An UNSELECTED conversation keeps the composition it was born with: repos cloned into /work
+                 * later do not join it, which is the freeze the header describes and the behaviour every
+                 * conversation had before selections existed. A SELECTED one is brought to its selection
+                 * instead, because the selection is a decision the conversation carries and the record is only
+                 * where it stands today. */
+                const repos = selection === undefined ? recorded : await reconcile(id, recorded, await wanted());
+                await linkComposition(id, repos, namespaced);
+                return { cwd: conversationDir(id), branch, repos };
             }
             // Root first: its checkout creates the conversation dir the nested worktrees mount into (the root
             // repo excludes every repo dir, syncRootExcludes, so the mounts never collide with its own
             // tracked files).
-            const live = base === undefined ? (await liveRepos()).map((repo) => ({ repo, base: undefined })) : base;
+            const live = await wanted();
             const created = new Map<string, { repo: string; base: string }>();
             await eachRepo(live, "root-first", async (repo) => {
                 const pinned = live.find((entry) => entry.repo === repo)?.base;
@@ -453,54 +574,12 @@ export const createAgentWorktrees = (
             // HEAD), and the only shared things it touches are the object store (content-addressed) and its own
             // refs/heads/agent/<id> (git's per-ref lockfile). The admin area `withRepoLock` exists to protect is
             // touched only by pass 2.
-            await Promise.all(
-                recorded.map(async ({ repo }) => {
-                    const worktree = worktreeDir(id, repo);
-                    if (!(await exists(join(worktree, ".git")))) {
-                        return; // Never created, or already retired: nothing to preserve.
-                    }
-                    // The repository this checkout belongs to is gone (see repoBehind): no git command can run
-                    // here, so there is nothing to commit and no way to commit it. Pass 2 still reclaims the dir,
-                    // and agents/vanished-repos.ts takes the repo out of the composition for good.
-                    if (!(await repoBehind(worktree))) {
-                        logger.warn({ id, repo }, "agents: retiring a checkout whose repository is gone, nothing to preserve");
-                        return;
-                    }
-                    // ONE spawn to answer "is there anything to keep", which is the answer in the common case:
-                    // a cleanly-landed agent's worktree is already clean, because land committed its remainder.
-                    // (The full changedFiles read this replaced cost five to seven spawns to say the same thing,
-                    // per repo, per agent, the single biggest chunk of an archive's wall clock.) Porcelain
-                    // covers staged, unstaged AND untracked, which is exactly what `add -A` below would sweep.
-                    // It also OVER-reports, dirty content inside a nested repo stages as nothing, which is
-                    // why the commit itself is commitWorktreeRemainder's call, on the index, and not this probe's.
-                    const { stdout } = await git(worktree, ["status", "--porcelain", "-z"]);
-                    if (stdout === "") {
-                        return;
-                    }
-                    await commitWorktreeRemainder(repo, worktree, `Agent: ${title ?? id}`, git);
-                }),
-            );
+            await Promise.all(recorded.map(({ repo }) => preserveOne(id, repo, title)));
             // PASS 2 does need the lock (worktree admin area), but only per repo, so the nested repos run
             // concurrently with each other. ROOT GOES LAST: its worktree dir is the parent the nested checkouts
             // mount into, so removing it first deletes them out from under their own `worktree remove`, which
             // then fails into a `prune` fallback, two wasted spawns per nested repo, every time.
-            const removeOne = (repo: string): Promise<void> =>
-                withRepoLock(repo, async () => {
-                    const main = mainDir(repo);
-                    await git(main, ["worktree", "remove", "--force", worktreeDir(id, repo)]).catch(() =>
-                        git(main, ["worktree", "prune"]).catch(() => undefined),
-                    );
-                    /* The commits stay, they ARE the archive, but the BRANCH does not: it moves to the
-                     * parked shelf (agent-refs.ts), so an archive costs the repo no refs/heads/ entry for as
-                     * long as nobody opens the conversation again. Inside the repo lock and strictly after
-                     * the checkout is gone, because that is the one thing that makes the ref deletable.
-                     * Best-effort: an agent whose ref will not park is an agent that archived fine and left a
-                     * branch behind, which the next boot's sweep picks up. */
-                    await parkAgentRefs(main, new Set([id]), git).catch((error: unknown) =>
-                        logger.warn({ err: error, repo, id }, "agents: branch park failed"),
-                    );
-                });
-            await eachRepo(recorded, "root-last", removeOne);
+            await eachRepo(recorded, "root-last", (repo) => releaseOne(id, repo));
             await rm(conversationDir(id), { recursive: true, force: true });
             // The branch is the archive; the overlays are not part of it, an archived conversation's
             // dependency scratch has no more claim on the disk than a removed one's.

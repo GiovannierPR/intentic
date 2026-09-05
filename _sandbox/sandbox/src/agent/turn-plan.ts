@@ -80,6 +80,8 @@ import { createDepsServer } from "../workspace/deps-tools.js";
 import { dependencyDirForCommand } from "./agent-deps.js";
 import { setupNoticeFor, setupNoticeTitle } from "../workspace/workspace-setup.js";
 import { loadedSkillCatalogNote, SKILL_CATALOG_NOTE_TITLE } from "../settings/loaded-skills.js";
+import { compactedSinceLastTurn } from "../agents/agents-store.js";
+import { contextNoteIfDue } from "../context/conversation-context.js";
 import { IQ_SEARCH_INSTRUCTION_TITLE, iqSearchInstruction } from "./iq-search-instruction.js";
 import { judgeCommand } from "./command-judge.js";
 import type { CommandGateOptions } from "../guard/command-gate.js";
@@ -147,6 +149,10 @@ export interface TurnContext {
     // The generated name/description catalogue for a runtime without a native skill loader. Opening turn only;
     // the provider session carries it thereafter, like the workspace map and iq teaching.
     readonly skillCatalogNote?: string;
+    // Which repositories this conversation's tree holds and which it does not (context/context-note.ts), for a
+    // conversation on a context shelf. Opening turn and the turn after a compaction; absent when the
+    // conversation carries the whole workspace, which has nothing to be told.
+    readonly contextNote?: TurnNote;
     // The `agents` CLI teaching for shell-only runtimes, resolved by planTurn on a conversation's opening turn
     // where the spawn door is open (children/spawn-note.ts). Rides the same notes list as the iq teaching.
     readonly spawnNote?: string;
@@ -246,7 +252,7 @@ export const planTurn = async (services: Services, input: AgentTurn, context: Tu
     // SETTINGS FIRST AND ALONE, one small local JSON read, resolved before the arms are dispatched to because
     // the composition of this turn's instructions reads it (honoured, below).
     const settings = context.settings ?? (await services.perf.track("turn.plan.settings", {}, () => services.sandboxSettings.get()));
-    const [installed, setup, cast, skillCatalogNote] = await Promise.all([
+    const [installed, setup, cast, skillCatalogNote, contextNote] = await Promise.all([
         // cli/mcp/plugin/browser/agent-kind capabilities, read once and shared by the arms that need them. NOT
         // the record above, these are what the OWNER installed, that is what the runtime can DO.
         services.perf.track("turn.plan.capabilities", {}, () => services.capabilities.list()),
@@ -280,6 +286,9 @@ export const planTurn = async (services: Services, input: AgentTurn, context: Tu
         capabilities.skillDiscovery === "prompt" && conversationTurns === 0
             ? services.perf.track("turn.plan.skills", {}, () => loadedSkillCatalogNote(context.localCwd, context.effectiveCwd))
             : Promise.resolve(undefined),
+        // What the conversation's tree holds, for a conversation a shelf narrowed (context/conversation-context.ts),
+        // on the two turns that owe the note.
+        services.perf.track("turn.plan.context", {}, () => contextNoteIfDue(services, input, entry, conversationTurns)),
     ]);
     /* WHO THIS TURN IS AND WHAT IT MAY DO, resolved ABOVE the provider split, which is the whole reason this
      * moved here from the harness arm.
@@ -375,6 +384,7 @@ export const planTurn = async (services: Services, input: AgentTurn, context: Tu
         iqSearchEnabled,
         ...(iqSearchNote !== undefined ? { iqSearchNote } : {}),
         ...(skillCatalogNote !== undefined ? { skillCatalogNote } : {}),
+        ...(contextNote !== undefined ? { contextNote } : {}),
         ...(teaching !== undefined ? { iqSearchCohort: teaching.cohort } : {}),
         ...(spawnNoteText !== undefined ? { spawnNote: spawnNoteText } : {}),
     };
@@ -411,8 +421,7 @@ export const planTurn = async (services: Services, input: AgentTurn, context: Tu
      * rather than never.
      *
      * NOT A FORK's opening message, for the map's reason: it continues a transcript that already carries this. */
-    const turnEndingEligible =
-        (conversationTurns === 0 && input.forkOf === undefined) || (entry?.compactedTurn !== undefined && entry.compactedTurn >= conversationTurns - 1);
+    const turnEndingEligible = (conversationTurns === 0 && input.forkOf === undefined) || compactedSinceLastTurn(entry, conversationTurns);
     const planned: TurnContext = {
         ...shared,
         base: honoured(
@@ -598,6 +607,9 @@ const honoured = (
               ]
             : []),
         ...(mapNote === undefined ? [] : [{ title: WORKSPACE_MAP_NOTE_TITLE, text: mapNote }]),
+        // After the map, which draws the tree, and before the skills: what the tree holds is the next question
+        // a map of a narrowed workspace raises.
+        ...[context.contextNote].filter((note) => note !== undefined),
         ...(context.skillCatalogNote === undefined ? [] : [{ title: SKILL_CATALOG_NOTE_TITLE, text: context.skillCatalogNote }]),
         /* THE DEPENDENCY NOTICE IS NOW THE FALLBACK RATHER THAN THE MECHANISM, and only for the runtimes that
          * have no mechanism to fall back FROM.

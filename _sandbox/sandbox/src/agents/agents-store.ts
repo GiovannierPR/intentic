@@ -3,6 +3,7 @@ import {
     AgentHarnessSchema,
     AgentOriginSchema,
     AgentProviderSchema,
+    ContextCompositionSchema,
     ForkedFromSchema,
     LandConflictSchema,
     type LandedMessage,
@@ -65,6 +66,14 @@ const PersistedAgentStatusSchema = z.enum(["idle", "interrupted", "stopped", "er
  * better arrives, which is the resting state of every title. */
 const AgentTitleSourceSchema = z.enum(["derived", "model", "plan", "user"]).catch("derived");
 export type AgentTitleSource = z.infer<typeof AgentTitleSourceSchema>;
+
+/* HAS THE WINDOW BEEN THROWN AWAY SINCE THE LAST TURN, the second of the two moments a standing preamble note has
+ * to be said again (the first is the opening turn). `>=` rather than `===` because the read is one turn behind
+ * the write: a compaction is filed under the turn it happened in (agents-registry's `compact` case), and it is
+ * the NEXT turn that has to say the note again, so a turn whose count did not advance (an ending that ran no
+ * turn at all) errs toward telling the model twice rather than never. */
+export const compactedSinceLastTurn = (entry: { readonly compactedTurn?: number | undefined } | undefined, conversationTurns: number): boolean =>
+    entry?.compactedTurn !== undefined && entry.compactedTurn >= conversationTurns - 1;
 
 export const PersistedAgentSchema = z.object({
     // The conversationId. `branch` is the placement discriminator: present for an isolated conversation,
@@ -164,6 +173,16 @@ export const PersistedAgentSchema = z.object({
             absorbed: z.number().optional(),
         }),
     ),
+    /* WHICH PART OF THE WORKSPACE THIS CONVERSATION CARRIES, the pick a context shelf made on the turn that
+     * created its worktrees (schemas/context.ts, context/shelves.ts). It is what `repos` above is brought to on
+     * every later turn (worktrees.ts ensure's selection), so the two are read together: this says what SHOULD be
+     * checked out, that says what IS and where it stands.
+     *
+     * Absent means everything the workspace has, which is every conversation opened with no shelf and every one
+     * that predates shelves. Decided ONCE, with the worktrees: a shelf edited afterwards changes what the next
+     * conversation carries and never what this one does, for the same reason a persona card edited mid-life does
+     * not move a running turn's account. */
+    composition: ContextCompositionSchema.optional(),
     /* WHAT THE LANDED WORK DID, as a commit subject, drafted from the diff the moment it reached the main tree
      * (agents/landed-subject.ts), for the Changes panel's "From" chip to file into the commit box.
      *

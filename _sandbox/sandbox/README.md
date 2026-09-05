@@ -730,6 +730,19 @@ reports the profile.
   read-only front desk a public web chat answers through, created when a Front Desk is saved rather than at boot.
   [src/personas/persona-kit.ts](src/personas/persona-kit.ts) is the folder beside each card, shaped as a plugin
   so the runtime's own loader reads that persona's prompt, skills and tools and this daemon parses none of it.
+- [src/context/shelves.ts](src/context/shelves.ts): which part of the workspace a conversation carries. A
+  context shelf (`.intentic/config/context/<id>.json`, contract `schemas/context.ts`) is the owner's ordered list
+  of repositories a session may take, with pins, denials and a cap, and `composeSelection` is the one function
+  that turns it into a conversation's composition, so the shelf is the ceiling however the pick is made.
+  [src/context/conversation-context.ts](src/context/conversation-context.ts) decides the composition on the turn
+  that creates a conversation's worktrees (persona card first, then the `contextShelf` setting, then everything)
+  and records it on the registry entry; every later turn hands it back to `ensure` in
+  [src/agents/worktrees.ts](src/agents/worktrees.ts), whose `selection` creates checkouts only for the named repos
+  and brings a recorded composition to it, a repo joining at main's head or from its parked branch, a repo
+  leaving with its remainder committed and its branch parked. [src/context/context-note.ts](src/context/context-note.ts)
+  is what the model is told about it, on the opening turn and after a compaction: the repositories carried,
+  and the live ones not, counted out loud, because a directory that is not there reads like one that was deleted.
+  This is step one of `docs/context-composition-plan.md` at the workspace root.
 - [src/agent/system-prompt.ts](src/agent/system-prompt.ts): what the model is told before the conversation
   starts, composed once per turn for whichever runtime is about to serve it. Its header carries the split that
   makes the setting honest: which guidance is a fact about the WORKSPACE or the image (the reference shelf, the

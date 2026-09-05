@@ -304,6 +304,18 @@ export const SandboxSettingsSchema = z.object({
             "Keep the instructions identical between turns so the provider can cache them, moving anything that varies into the message instead. Cheaper, at the cost of some flexibility.",
         ),
     skills: z.array(z.string()).default(["lsp", "fileq"]).describe("Which skills are switched on."),
+    /* WHICH CONTEXT SHELF A CONVERSATION OPENS ON when nothing closer to it says (schemas/context.ts). A persona
+     * card's own `context` wins where a turn wears one; this is the sandbox's answer for the turns that do not.
+     * Empty means no shelf, so a conversation carries every repository the workspace has, which is what every
+     * conversation did before shelves existed. Empty rather than optional because a settings object is parsed
+     * from `{}` until the owner first changes something, and every field here has to answer to that. */
+    contextShelf: z
+        .string()
+        .max(60)
+        .default("")
+        .describe(
+            "Which context shelf a conversation opens on when its persona names none: the part of the workspace it carries. Empty means every repository, as before shelves existed.",
+        ),
     hashlineEdits: z
         .boolean()
         .default(false)

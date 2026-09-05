@@ -562,3 +562,75 @@ test("the versioned state slice is checked out in the worktree and follows a reb
     expect(await readFile(join(work, STATE_DIR, "config", "settings.json"), "utf8")).toBe('{"model":"v2"}\n');
     expect(await sh(work, "status", "--short")).toBe("");
 });
+
+/* A SELECTION, the repositories a conversation carries when a context shelf narrowed it (context/shelves.ts
+ * repoSelectionOf). Root is always in; a nested repo is in when named. The three moves below are the whole of
+ * what a selection can do to a checkout: shape it at birth, bring a repo in later, take one out later without
+ * losing what it held. */
+test("a selection creates worktrees for root and the named repositories only", async () => {
+    const { worktrees } = await setup();
+    const conversation = await worktrees.ensure("c1", [], undefined, undefined, []);
+
+    expect(conversation.repos.map(({ repo }) => repo)).toEqual(["root"]);
+    expect(await readFile(join(conversation.cwd, "CLAUDE.md"), "utf8")).toBe("workspace notes\n");
+    expect(existsSync(join(conversation.cwd, "intent"))).toBe(false);
+    // A name that is no live repository is ignored, the way a persona names an account not yet signed in.
+    const named = await worktrees.ensure("c2", [], undefined, undefined, ["intent", "not-cloned-yet"]);
+    expect(named.repos.map(({ repo }) => repo)).toEqual(["root", "intent"]);
+});
+
+test("a repo the selection names joins a recorded composition at main's head, and the record says so", async () => {
+    const { work, worktrees } = await setup();
+    const created = await worktrees.ensure("c1", [], undefined, undefined, []);
+    const intent = join(work, "intent");
+    await writeFile(join(intent, "deploy.config.ts"), "v2\n");
+    await sh(intent, "add", "-A");
+    await sh(intent, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "intent moved");
+
+    const widened = await worktrees.ensure("c1", created.repos, undefined, undefined, ["intent"]);
+
+    expect(widened.repos.map(({ repo }) => repo)).toEqual(["root", "intent"]);
+    expect(widened.repos.find(({ repo }) => repo === "intent")?.base).toBe(await sh(intent, "rev-parse", "HEAD"));
+    expect(await readFile(join(widened.cwd, "intent", "deploy.config.ts"), "utf8")).toBe("v2\n");
+    expect(await sh(join(widened.cwd, "intent"), "branch", "--show-current")).toBe("agent/c1");
+    // A selection that already matches the record is a no-op returning the record itself.
+    expect(await worktrees.ensure("c1", widened.repos, undefined, undefined, ["intent"])).toMatchObject({ repos: widened.repos });
+});
+
+test("a repo the selection drops leaves with its work committed onto the branch, and comes back with it", async () => {
+    const { work, worktrees } = await setup();
+    const created = await worktrees.ensure("c1", []);
+    await writeFile(join(created.cwd, "intent", "deploy.config.ts"), "edited by the agent\n");
+
+    const narrowed = await worktrees.ensure("c1", created.repos, undefined, undefined, []);
+
+    expect(narrowed.repos.map(({ repo }) => repo)).toEqual(["root"]);
+    expect(existsSync(join(narrowed.cwd, "intent"))).toBe(false);
+    // The edit is on the branch, and the branch is parked off refs/heads like a retired agent's.
+    const intent = join(work, "intent");
+    expect(await sh(intent, "show", "agent/c1:deploy.config.ts")).toBe("edited by the agent");
+    expect(await sh(intent, "for-each-ref", "--format=%(refname)", "refs/heads/agent/")).toBe("");
+    // The main checkout never saw any of it.
+    expect(await readFile(join(intent, "deploy.config.ts"), "utf8")).toBe("v1\n");
+
+    // Rejoining takes the branch back off the shelf, so the checkout returns with the work it left with.
+    const rejoined = await worktrees.ensure("c1", narrowed.repos, undefined, undefined, ["intent"]);
+    expect(rejoined.repos.map(({ repo }) => repo)).toEqual(["root", "intent"]);
+    expect(await readFile(join(rejoined.cwd, "intent", "deploy.config.ts"), "utf8")).toBe("edited by the agent\n");
+    expect(await sh(join(rejoined.cwd, "intent"), "branch", "--show-current")).toBe("agent/c1");
+});
+
+test("a conversation with no selection keeps the composition it was born with", async () => {
+    const { work, worktrees } = await setup();
+    const created = await worktrees.ensure("c1", []);
+    // A repo cloned after the fact does not join an unselected conversation: the freeze the header describes.
+    const later = join(work, "later");
+    await gitInit(later, repoGitDir(join(work, "..", "history"), "later"));
+    await writeFile(join(later, "a.txt"), "a\n");
+    await sh(later, "add", "-A");
+    await sh(later, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "later");
+
+    const again = await worktrees.ensure("c1", created.repos);
+    expect(again.repos).toEqual(created.repos);
+    expect(existsSync(join(again.cwd, "later"))).toBe(false);
+});

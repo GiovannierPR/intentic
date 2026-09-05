@@ -15,7 +15,6 @@ test("a payload from a build that predates a toggle parses, with the new toggle 
         stableSystemPrompt: false,
         skills: [],
         hashlineEdits: false,
-        hashlineEdits: false,
         iqSearch: true,
         outputCleaners: "-cap",
         outputHoldout: 0.1,

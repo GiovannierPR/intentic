@@ -59,8 +59,6 @@ const armOfValues = (values: readonly number[]): Arm => {
     return { turns: values.length, mean, variance };
 };
 
-const armOf = (turns: readonly UsageTurn[], metric: Metric): Arm => armOfValues(turns.map(metric.of).filter((value) => value !== undefined));
-
 const RESOLVING_MARGIN_PCT = 10;
 
 const controlTurnsNeededFor = (offTurns: number, marginPct: number): number | undefined => {
