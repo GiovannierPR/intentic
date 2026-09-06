@@ -35,7 +35,9 @@ export const createAuth = (config: Config, prisma: PrismaClient) =>
         basePath: "/api/auth",
         trustedOrigins: [config.webOrigin],
         database: prismaAdapter(prisma, { provider: "postgresql" }),
-        emailAndPassword: { enabled: false },
+        // DEV-AUTH FORK: email/password enabled so a self-hosted platform signs users in without Google.
+        // Sign up: POST /api/auth/sign-up/email { email, password, name } — see docs/dev-auth.md.
+        emailAndPassword: { enabled: true },
         socialProviders: {
             google: {
                 clientId: config.google.clientId,
