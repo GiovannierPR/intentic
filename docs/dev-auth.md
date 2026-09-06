@@ -8,6 +8,24 @@ trade-off upstream documents).
 
 The change set is deliberately small: one config flip, one documented recipe. No auth flow is rewritten.
 
+## 0. Database without Docker: hosted Postgres (Supabase and kin)
+
+`pnpm dev` chains `db:up`, which starts Postgres in Docker. On a machine without Docker, point
+`DATABASE_URL` at any hosted Postgres and use the remote variants instead:
+
+```sh
+# .env
+DATABASE_URL=postgresql://postgres.<project-ref>:<password>@aws-1-<region>.pooler.supabase.com:6543/postgres
+```
+
+```sh
+pnpm dev:remote         # api + web + site, migrations against DATABASE_URL, no Docker
+pnpm dev:light:remote   # api + web only
+pnpm db:remote          # migrations alone
+```
+
+`db:remote` is `migrate:deploy` alone: the database is already running, there is nothing to compose up.
+
 ## 1. Platform: email + password sign-up
 
 `_platform/api/src/auth.ts` now ships `emailAndPassword: { enabled: true }`. Better Auth serves the standard
