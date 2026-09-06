@@ -1,7 +1,7 @@
 {
-    "name": "intentic",
-    "short_name": "intentic",
-    "description": "AI-agent workspace: chat with your agent, review changes, and manage your sandbox.",
+    "name": "YiyoDesk",
+    "short_name": "YiyoDesk",
+    "description": "YiyoDesk — AI-agent workspace: chat with your agent, review changes, and manage your sandbox.",
     "start_url": "/chat",
     "display": "standalone",
     "background_color": "#141210",
